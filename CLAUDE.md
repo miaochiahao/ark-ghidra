@@ -155,6 +155,10 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Ghidra Analyzer registration:** Analyzers implementing `ExtensionPoint` are auto-discovered. Must be on the classpath. Name must match pspec property `Analyzers.<name>`.
 - **Ark bytecode instruction formats:** 30+ formats covering all instruction layouts. Wide prefix (0xFD) changes operand sizes (8-bit → 16-bit). Jump offsets are signed. Packed 4-bit operands use bit fields.
 - **Duplicate opcode handling:** When generating opcode lookup tables, ensure each opcode maps to exactly one mnemonic. Watch for duplicates like `neg 0x1F`, `createarraywithbuffer 0x06/0x81`, `stsuperbyname 0xD0`, `stsuperbyvalue 0xC9`.
+- **CFG construction:** Leaders are at branch targets, exception handlers, and offsets after terminators (return/jmp). Backward edges indicate loops. Forward conditional edges are if/else.
+- **Decompiler variable tracking:** v0-v255 are virtual registers. First N are parameters (from AbcCode.numArgs). Use `let` for first assignment, bare name for reassignment. Accumulator (acc) is implicit.
+- **ArkTS syntax:** Use `let`/`const` (not `var`). No `any` type. Type annotations use `: type` syntax. Access modifiers are `public`/`private`/`protected`. Decorators use `@` prefix.
+- **Test fixture complexity:** Multi-class fixtures need careful offset management. Use AbcTestFixture helper for building complex ABC binaries. Space string area, class defs, code sections, and indexes apart by 50+ bytes.
 <!-- LINT_RULES_END -->
 
 ---
