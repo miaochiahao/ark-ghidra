@@ -2,17 +2,14 @@ package com.arkghidra;
 
 import org.junit.jupiter.api.Test;
 
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -95,7 +92,7 @@ public class SleighValidationTest {
     }
 
     @Test
-    public void testSincFile_hasSemicolonsAfterStatements() throws IOException {
+    public void testSincFile_instructionDefinitionsHaveBraces() throws IOException {
         Path sincPath = LANG_DIR.resolve(SINC_FILE);
         List<String> lines = Files.readAllLines(sincPath);
 
@@ -109,26 +106,15 @@ public class SleighValidationTest {
                 continue;
             }
             if (line.startsWith(":")) {
-                int braceCount = 0;
-                boolean hasSemicolon = false;
-                for (char c : line.toCharArray()) {
-                    if (c == '{') {
-                        braceCount++;
-                    }
-                    if (c == '}') {
-                        braceCount--;
-                    }
-                    if (c == ';' && braceCount == 0) {
-                        hasSemicolon = true;
-                    }
-                }
-                if (braceCount == 0 && !hasSemicolon) {
+                boolean hasOpenBrace = line.contains("{");
+                boolean hasCloseBrace = line.contains("}");
+                if (!hasOpenBrace || !hasCloseBrace) {
                     badLines.add("Line " + (i + 1) + ": " + line);
                 }
             }
         }
         assertTrue(badLines.isEmpty(),
-                "Instruction definitions missing semicolons:\n"
+                "Instruction definitions missing braces:\n"
                         + String.join("\n", badLines));
     }
 

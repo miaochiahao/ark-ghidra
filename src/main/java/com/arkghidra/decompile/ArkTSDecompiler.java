@@ -937,9 +937,9 @@ public class ArkTSDecompiler {
         }
 
         if (opcode == ArkOpcodesCompat.RESUMEGENERATOR) {
-            int reg = (int) operands.get(0).getValue();
+            // RESUMEGENERATOR has NONE format (no operands)
             ArkTSExpression expr =
-                    new ArkTSExpression.VariableExpression("v" + reg);
+                    new ArkTSExpression.VariableExpression("generator");
             return new StatementResult(null, expr);
         }
 
