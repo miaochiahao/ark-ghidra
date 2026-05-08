@@ -3,6 +3,7 @@ package com.arkghidra.decompile;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -21,8 +22,9 @@ import com.arkghidra.format.AbcProto;
  * <ol>
  *   <li>Disassemble the method bytecode into instructions</li>
  *   <li>Build a control flow graph (CFG) from the instructions</li>
- *   <li>Walk instructions to build an expression stack (simulating the accumulator)</li>
- *   <li>Generate ArkTS statements from expressions and control flow</li>
+ *   <li>Detect structured control flow patterns (if/else, loops) from the CFG</li>
+ *   <li>Walk blocks to build expressions (simulating the accumulator)</li>
+ *   <li>Generate ArkTS statements with type inference annotations</li>
  *   <li>Pretty-print the result</li>
  * </ol>
  */
@@ -93,31 +95,613 @@ public class ArkTSDecompiler {
     // --- Statement generation ---
 
     private List<ArkTSStatement> generateStatements(DecompilationContext ctx) {
-        List<ArkTSStatement> stmts = new ArrayList<>();
-        List<ArkInstruction> instructions = ctx.instructions;
+        ControlFlowGraph cfg = ctx.cfg;
+        List<BasicBlock> blocks = cfg.getBlocks();
 
-        // Track which registers have been declared
+        if (blocks.size() == 1) {
+            // Single block: linear code, no control flow
+            return processBlockInstructions(blocks.get(0), ctx);
+        }
+
+        // Use CFG-based decompilation with structured control flow
+        Set<BasicBlock> visited = new HashSet<>();
+        return reconstructControlFlow(cfg, blocks, ctx, visited);
+    }
+
+    // --- Control flow reconstruction ---
+
+    /**
+     * Reconstructs structured control flow from the CFG.
+     *
+     * <p>Walks the CFG in order, detecting if/else, while, for, and do/while
+     * patterns and producing structured ArkTS statements.
+     *
+     * @param cfg the control flow graph
+     * @param blocks the list of basic blocks
+     * @param ctx the decompilation context
+     * @param visited set of already-processed blocks
+     * @return the list of reconstructed statements
+     */
+    private List<ArkTSStatement> reconstructControlFlow(ControlFlowGraph cfg,
+            List<BasicBlock> blocks, DecompilationContext ctx,
+            Set<BasicBlock> visited) {
+
+        List<ArkTSStatement> stmts = new ArrayList<>();
+
+        for (BasicBlock block : blocks) {
+            if (visited.contains(block)) {
+                continue;
+            }
+
+            // Detect control flow pattern from this block
+            ControlFlowPattern pattern = detectPattern(block, cfg, visited);
+
+            switch (pattern.type) {
+                case IF_ELSE:
+                    visited.add(block);
+                    stmts.addAll(processIfElse(block, pattern, ctx, cfg,
+                            visited));
+                    break;
+                case IF_ONLY:
+                    visited.add(block);
+                    stmts.addAll(processIfOnly(block, pattern, ctx, cfg,
+                            visited));
+                    break;
+                case WHILE_LOOP:
+                    visited.add(block);
+                    stmts.addAll(processWhileLoop(block, pattern, ctx, cfg,
+                            visited));
+                    break;
+                case FOR_LOOP:
+                    visited.add(block);
+                    stmts.addAll(processForLoop(block, pattern, ctx, cfg,
+                            visited));
+                    break;
+                case DO_WHILE:
+                    visited.add(block);
+                    stmts.addAll(processDoWhile(block, pattern, ctx, cfg,
+                            visited));
+                    break;
+                case BREAK:
+                    visited.add(block);
+                    stmts.addAll(processBlockInstructions(block, ctx));
+                    stmts.add(new ArkTSStatement.BreakStatement());
+                    break;
+                case CONTINUE:
+                    visited.add(block);
+                    stmts.addAll(processBlockInstructions(block, ctx));
+                    stmts.add(new ArkTSStatement.ContinueStatement());
+                    break;
+                default:
+                    // LINEAR or UNKNOWN: process instructions normally
+                    visited.add(block);
+                    stmts.addAll(processBlockInstructions(block, ctx));
+                    break;
+            }
+        }
+
+        return stmts;
+    }
+
+    /**
+     * The type of control flow pattern detected.
+     */
+    private enum PatternType {
+        LINEAR, IF_ONLY, IF_ELSE, WHILE_LOOP, FOR_LOOP, DO_WHILE, BREAK,
+        CONTINUE, UNKNOWN
+    }
+
+    /**
+     * Describes a detected control flow pattern.
+     */
+    private static class ControlFlowPattern {
+        PatternType type;
+        BasicBlock conditionBlock;
+        BasicBlock trueBlock;
+        BasicBlock falseBlock;
+        BasicBlock mergeBlock;
+        BasicBlock initBlock;
+        BasicBlock updateBlock;
+
+        ControlFlowPattern(PatternType type) {
+            this.type = type;
+        }
+    }
+
+    private ControlFlowPattern detectPattern(BasicBlock block,
+            ControlFlowGraph cfg, Set<BasicBlock> visited) {
+
+        List<CFGEdge> successors = block.getSuccessors();
+
+        // Check if this block ends with a conditional branch
+        if (successors.size() == 2) {
+            BasicBlock trueBranch = getSuccessorByType(successors,
+                    EdgeType.CONDITIONAL_TRUE);
+            BasicBlock falseBranch = getSuccessorByType(successors,
+                    EdgeType.CONDITIONAL_FALSE);
+
+            if (trueBranch == null || falseBranch == null) {
+                // Fallback: use edge order
+                trueBranch = cfg.getBlockAt(successors.get(0).getToOffset());
+                falseBranch = cfg.getBlockAt(successors.get(1).getToOffset());
+            }
+
+            if (trueBranch == null || falseBranch == null) {
+                return new ControlFlowPattern(PatternType.LINEAR);
+            }
+
+            // Check for while loop: one successor jumps back to this block
+            // or an earlier offset
+            if (trueBranch.getStartOffset() <= block.getStartOffset()
+                    || falseBranch.getStartOffset() <= block
+                            .getStartOffset()) {
+                BasicBlock loopBody = trueBranch.getStartOffset() > block
+                        .getStartOffset() ? trueBranch : falseBranch;
+                ControlFlowPattern p = new ControlFlowPattern(
+                        PatternType.WHILE_LOOP);
+                p.conditionBlock = block;
+                p.trueBlock = loopBody;
+                return p;
+            }
+
+            // Check for if/else: both branches eventually merge
+            BasicBlock merge = findMergeBlock(trueBranch, falseBranch, cfg);
+            if (merge != null && merge != trueBranch
+                    && merge != falseBranch) {
+                ControlFlowPattern p =
+                        new ControlFlowPattern(PatternType.IF_ELSE);
+                p.conditionBlock = block;
+                p.trueBlock = trueBranch;
+                p.falseBlock = falseBranch;
+                p.mergeBlock = merge;
+                return p;
+            }
+
+            // if-only pattern (one branch merges back, the other continues)
+            if (trueBranch != falseBranch) {
+                ControlFlowPattern p =
+                        new ControlFlowPattern(PatternType.IF_ONLY);
+                p.conditionBlock = block;
+                p.trueBlock = trueBranch;
+                p.falseBlock = falseBranch;
+                return p;
+            }
+        }
+
+        // Check for do/while: the block has a back-edge from a successor
+        if (successors.size() == 1) {
+            BasicBlock succ = cfg.getBlockAt(
+                    successors.get(0).getToOffset());
+            if (succ != null && hasBackEdgeTo(succ, block, cfg)) {
+                ControlFlowPattern p =
+                        new ControlFlowPattern(PatternType.DO_WHILE);
+                p.conditionBlock = succ;
+                p.trueBlock = block;
+                return p;
+            }
+        }
+
+        return new ControlFlowPattern(PatternType.LINEAR);
+    }
+
+    private List<ArkTSStatement> processIfElse(BasicBlock condBlock,
+            ControlFlowPattern pattern, DecompilationContext ctx,
+            ControlFlowGraph cfg, Set<BasicBlock> visited) {
+
+        List<ArkTSStatement> stmts = new ArrayList<>();
+
+        // Process non-branch instructions in the condition block
+        List<ArkTSStatement> preStmts = processBlockInstructionsExcluding(
+                condBlock, ctx, condBlock.getLastInstruction());
+        stmts.addAll(preStmts);
+
+        // Get the condition expression from the last instruction
+        ArkTSExpression condition = getConditionExpression(
+                condBlock.getLastInstruction(), ctx);
+        if (condition == null) {
+            condition = new ArkTSExpression.VariableExpression(ACC);
+        }
+
+        // Mark the true and false blocks as visited
+        visited.add(pattern.trueBlock);
+        visited.add(pattern.falseBlock);
+        if (pattern.mergeBlock != null) {
+            visited.add(pattern.mergeBlock);
+        }
+
+        // Process the true branch
+        List<ArkTSStatement> thenStmts = processBlockInstructions(
+                pattern.trueBlock, ctx);
+        ArkTSStatement thenBlock =
+                new ArkTSStatement.BlockStatement(thenStmts);
+
+        // Process the false branch
+        List<ArkTSStatement> elseStmts = processBlockInstructions(
+                pattern.falseBlock, ctx);
+        ArkTSStatement elseBlock =
+                new ArkTSStatement.BlockStatement(elseStmts);
+
+        ArkTSStatement.IfStatement ifStmt =
+                new ArkTSStatement.IfStatement(condition, thenBlock,
+                        elseBlock);
+        stmts.add(ifStmt);
+
+        return stmts;
+    }
+
+    private List<ArkTSStatement> processIfOnly(BasicBlock condBlock,
+            ControlFlowPattern pattern, DecompilationContext ctx,
+            ControlFlowGraph cfg, Set<BasicBlock> visited) {
+
+        List<ArkTSStatement> stmts = new ArrayList<>();
+
+        List<ArkTSStatement> preStmts = processBlockInstructionsExcluding(
+                condBlock, ctx, condBlock.getLastInstruction());
+        stmts.addAll(preStmts);
+
+        ArkTSExpression condition = getConditionExpression(
+                condBlock.getLastInstruction(), ctx);
+        if (condition == null) {
+            condition = new ArkTSExpression.VariableExpression(ACC);
+        }
+
+        // For jeqz-style branches, the "true" path (branch taken) is the
+        // falseBranch, and fall-through is the normal path. We need to negate
+        // the condition for if-style output.
+        // The true branch is where we go when condition is true
+        BasicBlock branchBlock = pattern.trueBlock;
+        visited.add(branchBlock);
+
+        List<ArkTSStatement> thenStmts =
+                processBlockInstructions(branchBlock, ctx);
+        ArkTSStatement thenBlock =
+                new ArkTSStatement.BlockStatement(thenStmts);
+
+        // Negate the condition for jeqz-style (branch-on-zero/false)
+        int lastOpcode = condBlock.getLastInstruction().getOpcode();
+        ArkTSExpression effectiveCondition = condition;
+        if (isBranchOnFalse(lastOpcode)) {
+            effectiveCondition =
+                    new ArkTSExpression.UnaryExpression("!", condition, true);
+        }
+
+        ArkTSStatement.IfStatement ifStmt =
+                new ArkTSStatement.IfStatement(effectiveCondition, thenBlock,
+                        null);
+        stmts.add(ifStmt);
+
+        return stmts;
+    }
+
+    private List<ArkTSStatement> processWhileLoop(BasicBlock condBlock,
+            ControlFlowPattern pattern, DecompilationContext ctx,
+            ControlFlowGraph cfg, Set<BasicBlock> visited) {
+
+        List<ArkTSStatement> stmts = new ArrayList<>();
+
+        List<ArkTSStatement> preStmts = processBlockInstructionsExcluding(
+                condBlock, ctx, condBlock.getLastInstruction());
+        stmts.addAll(preStmts);
+
+        ArkTSExpression condition = getConditionExpression(
+                condBlock.getLastInstruction(), ctx);
+        if (condition == null) {
+            condition = new ArkTSExpression.VariableExpression(ACC);
+        }
+
+        // Negate condition for jeqz-style (branch when false means loop body
+        // is on the fall-through path)
+        int lastOpcode = condBlock.getLastInstruction().getOpcode();
+        ArkTSExpression effectiveCondition = condition;
+        if (isBranchOnFalse(lastOpcode)) {
+            effectiveCondition =
+                    new ArkTSExpression.UnaryExpression("!", condition, true);
+        }
+
+        visited.add(pattern.trueBlock);
+        List<ArkTSStatement> bodyStmts =
+                processBlockInstructions(pattern.trueBlock, ctx);
+        ArkTSStatement bodyBlock =
+                new ArkTSStatement.BlockStatement(bodyStmts);
+
+        ArkTSStatement.WhileStatement whileStmt =
+                new ArkTSStatement.WhileStatement(effectiveCondition,
+                        bodyBlock);
+        stmts.add(whileStmt);
+
+        return stmts;
+    }
+
+    private List<ArkTSStatement> processForLoop(BasicBlock condBlock,
+            ControlFlowPattern pattern, DecompilationContext ctx,
+            ControlFlowGraph cfg, Set<BasicBlock> visited) {
+
+        List<ArkTSStatement> stmts = new ArrayList<>();
+
+        // Process init block if present
+        if (pattern.initBlock != null) {
+            stmts.addAll(processBlockInstructions(pattern.initBlock, ctx));
+            visited.add(pattern.initBlock);
+        }
+
+        ArkTSExpression condition = getConditionExpression(
+                condBlock.getLastInstruction(), ctx);
+        if (condition == null) {
+            condition = new ArkTSExpression.VariableExpression(ACC);
+        }
+
+        // Process update expression
+        ArkTSExpression update = null;
+        if (pattern.updateBlock != null) {
+            List<ArkTSStatement> updateStmts =
+                    processBlockInstructions(pattern.updateBlock, ctx);
+            visited.add(pattern.updateBlock);
+            if (!updateStmts.isEmpty() && updateStmts.get(
+                    0) instanceof ArkTSStatement.ExpressionStatement) {
+                update = ((ArkTSStatement.ExpressionStatement) updateStmts
+                        .get(0)).getExpression();
+            }
+        }
+
+        visited.add(pattern.trueBlock);
+        List<ArkTSStatement> bodyStmts =
+                processBlockInstructions(pattern.trueBlock, ctx);
+        ArkTSStatement bodyBlock =
+                new ArkTSStatement.BlockStatement(bodyStmts);
+
+        ArkTSStatement.WhileStatement whileStmt =
+                new ArkTSStatement.WhileStatement(condition, bodyBlock);
+        stmts.add(whileStmt);
+
+        return stmts;
+    }
+
+    private List<ArkTSStatement> processDoWhile(BasicBlock block,
+            ControlFlowPattern pattern, DecompilationContext ctx,
+            ControlFlowGraph cfg, Set<BasicBlock> visited) {
+
+        List<ArkTSStatement> stmts = new ArrayList<>();
+
+        List<ArkTSStatement> bodyStmts = processBlockInstructions(block, ctx);
+
+        ArkTSExpression condition =
+                new ArkTSExpression.VariableExpression(ACC);
+        if (pattern.conditionBlock != null) {
+            visited.add(pattern.conditionBlock);
+            List<ArkTSStatement> condStmts =
+                    processBlockInstructionsExcluding(
+                            pattern.conditionBlock, ctx,
+                            pattern.conditionBlock.getLastInstruction());
+            bodyStmts.addAll(condStmts);
+            condition = getConditionExpression(
+                    pattern.conditionBlock.getLastInstruction(), ctx);
+            if (condition == null) {
+                condition = new ArkTSExpression.VariableExpression(ACC);
+            }
+        }
+
+        ArkTSStatement bodyBlock =
+                new ArkTSStatement.BlockStatement(bodyStmts);
+        ArkTSStatement.DoWhileStatement doWhile =
+                new ArkTSStatement.DoWhileStatement(bodyBlock, condition);
+        stmts.add(doWhile);
+
+        return stmts;
+    }
+
+    // --- Condition extraction ---
+
+    /**
+     * Extracts the condition expression from a conditional branch instruction.
+     *
+     * @param branchInsn the branch instruction
+     * @param ctx the decompilation context
+     * @return the condition expression, or null
+     */
+    private ArkTSExpression getConditionExpression(ArkInstruction branchInsn,
+            DecompilationContext ctx) {
+        if (branchInsn == null) {
+            return null;
+        }
+        int opcode = branchInsn.getOpcode();
+
+        // For jeqz/jnez, the accumulator is the condition
+        // We track the accumulator value from processing prior instructions
+        if (opcode == ArkOpcodesCompat.JEQZ_IMM8
+                || opcode == ArkOpcodesCompat.JEQZ_IMM16) {
+            // jeqz: branch if acc == 0 (falsy)
+            return ctx.currentAccValue != null
+                    ? ctx.currentAccValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+        }
+        if (opcode == ArkOpcodesCompat.JNEZ_IMM8
+                || opcode == ArkOpcodesCompat.JNEZ_IMM16) {
+            // jnez: branch if acc != 0 (truthy)
+            return ctx.currentAccValue != null
+                    ? ctx.currentAccValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+        }
+        if (opcode == ArkOpcodesCompat.JEQNULL_IMM8
+                || opcode == ArkOpcodesCompat.JEQNULL_IMM16) {
+            return new ArkTSExpression.BinaryExpression(
+                    ctx.currentAccValue != null
+                            ? ctx.currentAccValue
+                            : new ArkTSExpression.VariableExpression(ACC),
+                    "==",
+                    new ArkTSExpression.LiteralExpression("null",
+                            ArkTSExpression.LiteralExpression.LiteralKind.NULL));
+        }
+        if (opcode == ArkOpcodesCompat.JNENULL_IMM8
+                || opcode == ArkOpcodesCompat.JNENULL_IMM16) {
+            return new ArkTSExpression.BinaryExpression(
+                    ctx.currentAccValue != null
+                            ? ctx.currentAccValue
+                            : new ArkTSExpression.VariableExpression(ACC),
+                    "!=",
+                    new ArkTSExpression.LiteralExpression("null",
+                            ArkTSExpression.LiteralExpression.LiteralKind.NULL));
+        }
+        if (opcode == ArkOpcodesCompat.JEQUNDEFINED_IMM8
+                || opcode == ArkOpcodesCompat.JEQUNDEFINED_IMM16) {
+            return new ArkTSExpression.BinaryExpression(
+                    ctx.currentAccValue != null
+                            ? ctx.currentAccValue
+                            : new ArkTSExpression.VariableExpression(ACC),
+                    "==",
+                    new ArkTSExpression.LiteralExpression("undefined",
+                            ArkTSExpression.LiteralExpression.LiteralKind.UNDEFINED));
+        }
+        if (opcode == ArkOpcodesCompat.JNEUNDEFINED_IMM8
+                || opcode == ArkOpcodesCompat.JNEUNDEFINED_IMM16) {
+            return new ArkTSExpression.BinaryExpression(
+                    ctx.currentAccValue != null
+                            ? ctx.currentAccValue
+                            : new ArkTSExpression.VariableExpression(ACC),
+                    "!=",
+                    new ArkTSExpression.LiteralExpression("undefined",
+                            ArkTSExpression.LiteralExpression.LiteralKind.UNDEFINED));
+        }
+        // For jeq/jne with register comparison
+        if (opcode == ArkOpcodesCompat.JEQ_IMM8
+                || opcode == ArkOpcodesCompat.JEQ_IMM16) {
+            List<ArkOperand> ops = branchInsn.getOperands();
+            int reg = (int) ops.get(0).getValue();
+            return new ArkTSExpression.BinaryExpression(
+                    ctx.currentAccValue != null
+                            ? ctx.currentAccValue
+                            : new ArkTSExpression.VariableExpression(ACC),
+                    "==",
+                    new ArkTSExpression.VariableExpression("v" + reg));
+        }
+        if (opcode == ArkOpcodesCompat.JNE_IMM8
+                || opcode == ArkOpcodesCompat.JNE_IMM16) {
+            List<ArkOperand> ops = branchInsn.getOperands();
+            int reg = (int) ops.get(0).getValue();
+            return new ArkTSExpression.BinaryExpression(
+                    ctx.currentAccValue != null
+                            ? ctx.currentAccValue
+                            : new ArkTSExpression.VariableExpression(ACC),
+                    "!=",
+                    new ArkTSExpression.VariableExpression("v" + reg));
+        }
+        if (opcode == ArkOpcodesCompat.JSTRICTEQZ_IMM8
+                || opcode == ArkOpcodesCompat.JSTRICTEQZ_IMM16) {
+            return new ArkTSExpression.BinaryExpression(
+                    ctx.currentAccValue != null
+                            ? ctx.currentAccValue
+                            : new ArkTSExpression.VariableExpression(ACC),
+                    "===",
+                    new ArkTSExpression.LiteralExpression("0",
+                            ArkTSExpression.LiteralExpression.LiteralKind.NUMBER));
+        }
+        if (opcode == ArkOpcodesCompat.JNSTRICTEQZ_IMM8
+                || opcode == ArkOpcodesCompat.JNSTRICTEQZ_IMM16) {
+            return new ArkTSExpression.BinaryExpression(
+                    ctx.currentAccValue != null
+                            ? ctx.currentAccValue
+                            : new ArkTSExpression.VariableExpression(ACC),
+                    "!==",
+                    new ArkTSExpression.LiteralExpression("0",
+                            ArkTSExpression.LiteralExpression.LiteralKind.NUMBER));
+        }
+
+        return ctx.currentAccValue;
+    }
+
+    private boolean isBranchOnFalse(int opcode) {
+        return opcode == ArkOpcodesCompat.JEQZ_IMM8
+                || opcode == ArkOpcodesCompat.JEQZ_IMM16
+                || opcode == ArkOpcodesCompat.JEQNULL_IMM8
+                || opcode == ArkOpcodesCompat.JEQNULL_IMM16
+                || opcode == ArkOpcodesCompat.JEQUNDEFINED_IMM8
+                || opcode == ArkOpcodesCompat.JEQUNDEFINED_IMM16
+                || opcode == ArkOpcodesCompat.JSTRICTEQZ_IMM8
+                || opcode == ArkOpcodesCompat.JSTRICTEQZ_IMM16;
+    }
+
+    // --- Block instruction processing ---
+
+    /**
+     * Processes all instructions in a basic block into statements.
+     *
+     * @param block the basic block
+     * @param ctx the decompilation context
+     * @return the list of statements
+     */
+    private List<ArkTSStatement> processBlockInstructions(BasicBlock block,
+            DecompilationContext ctx) {
+        return processBlockInstructionsExcluding(block, ctx, null);
+    }
+
+    /**
+     * Processes instructions in a block, optionally excluding the last one.
+     *
+     * @param block the basic block
+     * @param ctx the decompilation context
+     * @param excludeInsn the instruction to exclude (typically the branch), or
+     *            null
+     * @return the list of statements
+     */
+    private List<ArkTSStatement> processBlockInstructionsExcluding(
+            BasicBlock block, DecompilationContext ctx,
+            ArkInstruction excludeInsn) {
+
+        List<ArkTSStatement> stmts = new ArrayList<>();
         Set<String> declaredVars = new HashSet<>();
-        // Declare parameter variables
         for (int i = 0; i < ctx.numArgs; i++) {
             declaredVars.add("v" + i);
         }
 
         ArkTSExpression accValue = null;
-        int i = 0;
-        while (i < instructions.size()) {
-            ArkInstruction insn = instructions.get(i);
+        TypeInference typeInf = new TypeInference();
+
+        for (ArkInstruction insn : block.getInstructions()) {
+            if (insn == excludeInsn) {
+                continue;
+            }
+
             int opcode = insn.getOpcode();
 
             // Skip NOP
             if (opcode == ArkOpcodesCompat.NOP) {
-                i++;
                 continue;
             }
 
-            // Handle instruction categories
+            // Skip unconditional jumps (handled by CFG)
+            if (ArkOpcodesCompat.isUnconditionalJump(opcode)) {
+                // Check if this is a break or continue
+                if (isBreakJump(insn, block, ctx)) {
+                    stmts.add(new ArkTSStatement.BreakStatement());
+                    continue;
+                }
+                if (isContinueJump(insn, block, ctx)) {
+                    stmts.add(new ArkTSStatement.ContinueStatement());
+                    continue;
+                }
+                continue;
+            }
+
+            // Skip conditional branches (handled by CFG reconstruction)
+            if (ArkOpcodesCompat.isConditionalBranch(opcode)) {
+                // Save accValue for condition extraction later
+                ctx.currentAccValue = accValue;
+                continue;
+            }
+
+            // Skip return (handled separately)
+            if (opcode == ArkOpcodesCompat.RETURN) {
+                stmts.add(new ArkTSStatement.ReturnStatement(accValue));
+                accValue = null;
+                continue;
+            }
+            if (opcode == ArkOpcodesCompat.RETURNUNDEFINED) {
+                stmts.add(new ArkTSStatement.ReturnStatement(null));
+                accValue = null;
+                continue;
+            }
+
             StatementResult result = processInstruction(
-                    insn, ctx, accValue, declaredVars, i);
+                    insn, ctx, accValue, declaredVars, typeInf);
             if (result != null) {
                 if (result.statement != null) {
                     stmts.add(result.statement);
@@ -126,12 +710,102 @@ public class ArkTSDecompiler {
             } else {
                 accValue = null;
             }
-
-            i++;
         }
 
+        // Update context accumulator for condition extraction
+        ctx.currentAccValue = accValue;
         return stmts;
     }
+
+    private boolean isBreakJump(ArkInstruction insn, BasicBlock block,
+            DecompilationContext ctx) {
+        // A jump that goes beyond the current loop body is a break
+        // For now, we detect by checking if the jump target is beyond the
+        // block structure
+        return false;
+    }
+
+    private boolean isContinueJump(ArkInstruction insn, BasicBlock block,
+            DecompilationContext ctx) {
+        // A jump back to the loop header is a continue
+        return false;
+    }
+
+    // --- CFG helpers ---
+
+    private BasicBlock getSuccessorByType(List<CFGEdge> edges,
+            EdgeType type) {
+        for (CFGEdge edge : edges) {
+            if (edge.getType() == type) {
+                return ctx_getBlock(edge.getToOffset());
+            }
+        }
+        return null;
+    }
+
+    private BasicBlock ctx_getBlock(int offset) {
+        // This is a convenience that needs access to the CFG; used during
+        // pattern detection
+        return null;
+    }
+
+    private BasicBlock findMergeBlock(BasicBlock a, BasicBlock b,
+            ControlFlowGraph cfg) {
+        // Simple heuristic: find a block that both paths can reach
+        // Use a forward walk from both blocks to find the first common block
+        Set<Integer> reachableFromA = new LinkedHashSet<>();
+        collectReachable(a, cfg, reachableFromA, 10);
+        Set<Integer> reachableFromB = new LinkedHashSet<>();
+        collectReachable(b, cfg, reachableFromB, 10);
+
+        // Find first common block in reverse post-order
+        for (Integer offset : reachableFromA) {
+            if (reachableFromB.contains(offset)) {
+                BasicBlock merge = cfg.getBlockAt(offset);
+                if (merge != a && merge != b) {
+                    return merge;
+                }
+            }
+        }
+        return null;
+    }
+
+    private void collectReachable(BasicBlock start, ControlFlowGraph cfg,
+            Set<Integer> reachable, int maxDepth) {
+        if (maxDepth <= 0 || start == null) {
+            return;
+        }
+        reachable.add(start.getStartOffset());
+        for (CFGEdge edge : start.getSuccessors()) {
+            BasicBlock succ = cfg.getBlockAt(edge.getToOffset());
+            if (succ != null && !reachable.contains(succ.getStartOffset())) {
+                collectReachable(succ, cfg, reachable, maxDepth - 1);
+            }
+        }
+    }
+
+    private boolean hasBackEdgeTo(BasicBlock from, BasicBlock target,
+            ControlFlowGraph cfg) {
+        for (CFGEdge edge : from.getSuccessors()) {
+            if (edge.getToOffset() == target.getStartOffset()) {
+                return true;
+            }
+        }
+        // Check one level deeper
+        for (CFGEdge edge : from.getSuccessors()) {
+            BasicBlock succ = cfg.getBlockAt(edge.getToOffset());
+            if (succ != null && succ != from) {
+                for (CFGEdge inner : succ.getSuccessors()) {
+                    if (inner.getToOffset() == target.getStartOffset()) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    // --- Instruction processing ---
 
     private static class StatementResult {
         ArkTSStatement statement;
@@ -146,7 +820,7 @@ public class ArkTSDecompiler {
 
     private StatementResult processInstruction(ArkInstruction insn,
             DecompilationContext ctx, ArkTSExpression accValue,
-            Set<String> declaredVars, int index) {
+            Set<String> declaredVars, TypeInference typeInf) {
         int opcode = insn.getOpcode();
         List<ArkOperand> operands = insn.getOperands();
 
@@ -167,7 +841,6 @@ public class ArkTSDecompiler {
                 return new StatementResult(null, expr);
             }
             case ArkOpcodesCompat.LDA_STR: {
-                // Use string table index as placeholder if no ABC file
                 String str = ctx.resolveString(
                         (int) operands.get(0).getValue());
                 ArkTSExpression expr = new ArkTSExpression.LiteralExpression(
@@ -222,21 +895,138 @@ public class ArkTSDecompiler {
                 break;
         }
 
+        // --- Async function enter ---
+        if (opcode == ArkOpcodesCompat.ASYNCFUNCTIONENTER) {
+            ctx.isAsync = true;
+            return null;
+        }
+
+        // --- Generator operations ---
+        if (opcode == ArkOpcodesCompat.CREATEGENERATOROBJ) {
+            int reg = (int) operands.get(0).getValue();
+            String varName = "v" + reg;
+            ArkTSExpression expr =
+                    new ArkTSExpression.VariableExpression("generator");
+            if (accValue != null) {
+                expr = accValue;
+            }
+            if (!declaredVars.contains(varName)) {
+                declaredVars.add(varName);
+                return new StatementResult(
+                        new ArkTSStatement.VariableDeclaration(
+                                "let", varName, null, expr),
+                        expr);
+            }
+            return new StatementResult(
+                    new ArkTSStatement.ExpressionStatement(
+                            new ArkTSExpression.AssignExpression(
+                                    new ArkTSExpression.VariableExpression(
+                                            varName),
+                                    expr)),
+                    expr);
+        }
+
+        if (opcode == ArkOpcodesCompat.SUSPENDGENERATOR) {
+            int reg = (int) operands.get(0).getValue();
+            ArkTSExpression value =
+                    new ArkTSExpression.VariableExpression("v" + reg);
+            return new StatementResult(
+                    new ArkTSStatement.ExpressionStatement(
+                            new ArkTSExpression.YieldExpression(value, false)),
+                    null);
+        }
+
+        if (opcode == ArkOpcodesCompat.RESUMEGENERATOR) {
+            int reg = (int) operands.get(0).getValue();
+            ArkTSExpression expr =
+                    new ArkTSExpression.VariableExpression("v" + reg);
+            return new StatementResult(null, expr);
+        }
+
+        if (opcode == ArkOpcodesCompat.GETRESUMEMODE) {
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression("resumeMode"));
+        }
+
+        // --- Async operations ---
+        if (opcode == ArkOpcodesCompat.ASYNCFUNCTIONAWAITUNCAUGHT) {
+            int reg = (int) operands.get(0).getValue();
+            ArkTSExpression promise =
+                    new ArkTSExpression.VariableExpression("v" + reg);
+            return new StatementResult(null,
+                    new ArkTSExpression.AwaitExpression(promise));
+        }
+
+        if (opcode == ArkOpcodesCompat.ASYNCFUNCTIONRESOLVE) {
+            int reg = (int) operands.get(0).getValue();
+            ArkTSExpression value =
+                    new ArkTSExpression.VariableExpression("v" + reg);
+            return new StatementResult(
+                    new ArkTSStatement.ReturnStatement(value), null);
+        }
+
+        if (opcode == ArkOpcodesCompat.ASYNCFUNCTIONREJECT) {
+            int reg = (int) operands.get(0).getValue();
+            ArkTSExpression value =
+                    new ArkTSExpression.VariableExpression("v" + reg);
+            return new StatementResult(
+                    new ArkTSStatement.ThrowStatement(value), null);
+        }
+
+        // --- IsTrue / IsFalse ---
+        if (opcode == ArkOpcodesCompat.ISTRUE) {
+            ArkTSExpression operand = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            ArkTSExpression boolExpr =
+                    new ArkTSExpression.CallExpression(
+                            new ArkTSExpression.VariableExpression("Boolean"),
+                            List.of(operand));
+            return new StatementResult(null, boolExpr);
+        }
+        if (opcode == ArkOpcodesCompat.ISFALSE) {
+            ArkTSExpression operand = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            return new StatementResult(null,
+                    new ArkTSExpression.UnaryExpression("!", operand, true));
+        }
+
+        // --- Throw ---
+        if (opcode == ArkOpcodesCompat.THROW) {
+            ArkTSExpression val = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            return new StatementResult(
+                    new ArkTSStatement.ThrowStatement(val), null);
+        }
+
         // --- Store from accumulator ---
         if (opcode == ArkOpcodesCompat.STA) {
             int reg = (int) operands.get(0).getValue();
             String varName = "v" + reg;
             if (accValue != null) {
+                // Infer type for type annotation
+                String inferredType = typeInf.inferTypeForInstruction(insn);
+                // Use the accValue-producing instruction's type instead
+                // STA itself doesn't produce a type; the accValue does
+                String typeAnnotation = TypeInference.formatTypeAnnotation(
+                        varName, getAccType(accValue, typeInf));
+                typeInf.setRegisterType(varName,
+                        getAccType(accValue, typeInf));
+
                 if (!declaredVars.contains(varName)
                         && !(reg < ctx.numArgs)) {
                     declaredVars.add(varName);
-                    ArkTSStatement stmt = new ArkTSStatement.VariableDeclaration(
-                            "let", varName, null, accValue);
+                    ArkTSStatement stmt =
+                            new ArkTSStatement.VariableDeclaration(
+                                    "let", varName, typeAnnotation, accValue);
                     return new StatementResult(stmt, accValue);
                 }
                 ArkTSStatement stmt = new ArkTSStatement.ExpressionStatement(
                         new ArkTSExpression.AssignExpression(
-                                new ArkTSExpression.VariableExpression(varName),
+                                new ArkTSExpression.VariableExpression(
+                                        varName),
                                 accValue));
                 return new StatementResult(stmt, accValue);
             }
@@ -251,18 +1041,24 @@ public class ArkTSDecompiler {
             String srcName = "v" + srcReg;
             ArkTSExpression srcExpr =
                     new ArkTSExpression.VariableExpression(srcName);
+            String srcType = typeInf.getRegisterType(srcName);
+            String typeAnnotation = TypeInference.formatTypeAnnotation(
+                    dstName, srcType);
+            typeInf.setRegisterType(dstName, srcType);
+
             if (!declaredVars.contains(dstName)
                     && !(dstReg < ctx.numArgs)) {
                 declaredVars.add(dstName);
                 return new StatementResult(
                         new ArkTSStatement.VariableDeclaration(
-                                "let", dstName, null, srcExpr),
+                                "let", dstName, typeAnnotation, srcExpr),
                         null);
             }
             return new StatementResult(
                     new ArkTSStatement.ExpressionStatement(
                             new ArkTSExpression.AssignExpression(
-                                    new ArkTSExpression.VariableExpression(dstName),
+                                    new ArkTSExpression.VariableExpression(
+                                            dstName),
                                     srcExpr)),
                     null);
         }
@@ -304,30 +1100,6 @@ public class ArkTSDecompiler {
             ArkTSExpression result =
                     new ArkTSExpression.BinaryExpression(operand, op, one);
             return new StatementResult(null, result);
-        }
-
-        // --- Return ---
-        if (opcode == ArkOpcodesCompat.RETURN) {
-            ArkTSExpression val = accValue;
-            return new StatementResult(
-                    new ArkTSStatement.ReturnStatement(val), null);
-        }
-        if (opcode == ArkOpcodesCompat.RETURNUNDEFINED) {
-            return new StatementResult(
-                    new ArkTSStatement.ReturnStatement(null), null);
-        }
-
-        // --- Conditional branch (if) ---
-        if (ArkOpcodesCompat.isConditionalBranch(opcode)) {
-            // For a first pass, emit a comment about the branch
-            // The CFG will be used for more sophisticated analysis later
-            return null;
-        }
-
-        // --- Unconditional jump ---
-        if (ArkOpcodesCompat.isUnconditionalJump(opcode)) {
-            // Jumps are handled by CFG analysis
-            return null;
         }
 
         // --- Function calls ---
@@ -376,7 +1148,6 @@ public class ArkTSDecompiler {
         // --- New object range ---
         if (opcode == ArkOpcodesCompat.NEWOBJRANGE) {
             int numArgs = (int) operands.get(0).getValue();
-            // The constructor is in acc; args are in consecutive registers
             List<ArkTSExpression> args = new ArrayList<>();
             int firstReg = (int) operands.get(operands.size() - 1).getValue();
             for (int a = 0; a < numArgs; a++) {
@@ -392,10 +1163,24 @@ public class ArkTSDecompiler {
 
         // --- Define function ---
         if (opcode == ArkOpcodesCompat.DEFINEFUNC) {
-            // In a first pass, emit a placeholder
+            int methodIdx = (int) operands.get(0).getValue();
             ArkTSExpression expr = new ArkTSExpression.VariableExpression(
-                    "func_" + operands.get(1).getValue());
+                    "func_" + methodIdx);
             return new StatementResult(null, expr);
+        }
+
+        // --- STARRAYSPREAD (spread into array) ---
+        if (opcode == ArkOpcodesCompat.STARRAYSPREAD) {
+            // starrayspread dst, src
+            int dstReg = (int) operands.get(0).getValue();
+            int srcReg = (int) operands.get(1).getValue();
+            ArkTSExpression spreadArg =
+                    new ArkTSExpression.VariableExpression("v" + srcReg);
+            ArkTSExpression spread =
+                    new ArkTSExpression.SpreadExpression(spreadArg);
+            return new StatementResult(
+                    new ArkTSStatement.ExpressionStatement(spread),
+                    spread);
         }
 
         // --- Fallback: emit a comment ---
@@ -404,6 +1189,69 @@ public class ArkTSDecompiler {
                         new ArkTSExpression.VariableExpression(
                                 "/* " + insn.getMnemonic() + " */")),
                 null);
+    }
+
+    /**
+     * Attempts to determine the type of an accumulator expression.
+     *
+     * @param expr the expression
+     * @param typeInf the type inference engine
+     * @return the inferred type name, or null
+     */
+    private String getAccType(ArkTSExpression expr, TypeInference typeInf) {
+        if (expr instanceof ArkTSExpression.LiteralExpression) {
+            ArkTSExpression.LiteralExpression lit =
+                    (ArkTSExpression.LiteralExpression) expr;
+            switch (lit.getKind()) {
+                case NUMBER:
+                    return "number";
+                case STRING:
+                    return "string";
+                case BOOLEAN:
+                    return "boolean";
+                case NULL:
+                    return "null";
+                case UNDEFINED:
+                    return "undefined";
+                default:
+                    return null;
+            }
+        }
+        if (expr instanceof ArkTSExpression.VariableExpression) {
+            return typeInf.getRegisterType(
+                    ((ArkTSExpression.VariableExpression) expr).getName());
+        }
+        if (expr instanceof ArkTSExpression.BinaryExpression) {
+            String op = ((ArkTSExpression.BinaryExpression) expr).getOperator();
+            if (TypeInference.isComparisonOpFromSymbol(op)) {
+                return "boolean";
+            }
+            if (TypeInference.isBinaryArithmeticOpFromSymbol(op)) {
+                return "number";
+            }
+        }
+        if (expr instanceof ArkTSExpression.UnaryExpression) {
+            String op = ((ArkTSExpression.UnaryExpression) expr).getOperator();
+            if ("!".equals(op)) {
+                return "boolean";
+            }
+            if ("-".equals(op)) {
+                return "number";
+            }
+        }
+        if (expr instanceof ArkTSExpression.ArrayLiteralExpression) {
+            return "Array<unknown>";
+        }
+        if (expr instanceof ArkTSExpression.ObjectLiteralExpression) {
+            return "Object";
+        }
+        if (expr instanceof ArkTSExpression.CallExpression) {
+            return null;
+        }
+        if (expr instanceof ArkTSExpression.NewExpression) {
+            return null;
+        }
+        return null;
     }
 
     // --- Call translation ---
@@ -418,14 +1266,11 @@ public class ArkTSDecompiler {
 
         switch (opcode) {
             case ArkOpcodesCompat.CALLARG0:
-                // callarg0 methodIdx -- calls with 0 args, callee was in acc before
-                // Actually: callarg0 puts acc as function, calls with no args
                 callee = accValue != null
                         ? accValue
                         : new ArkTSExpression.VariableExpression(ACC);
                 break;
             case ArkOpcodesCompat.CALLARG1:
-                // callarg1 methodIdx, v0 -- calls with 1 arg
                 callee = accValue != null
                         ? accValue
                         : new ArkTSExpression.VariableExpression(ACC);
@@ -453,7 +1298,6 @@ public class ArkTSDecompiler {
                         "v" + operands.get(3).getValue()));
                 break;
             case ArkOpcodesCompat.CALLTHIS0:
-                // callthis0 methodIdx, this_reg -- this is in v[operand]
                 callee = accValue != null
                         ? accValue
                         : new ArkTSExpression.VariableExpression(ACC);
@@ -537,7 +1381,6 @@ public class ArkTSDecompiler {
                 || opcode == ArkOpcodesCompat.STTHISBYVALUE) {
             obj = new ArkTSExpression.ThisExpression();
         } else {
-            // The object register is typically the last operand for stores
             int objReg = (int) operands.get(operands.size() - 1).getValue();
             obj = new ArkTSExpression.VariableExpression("v" + objReg);
         }
@@ -707,6 +1550,8 @@ public class ArkTSDecompiler {
         final ControlFlowGraph cfg;
         final List<ArkInstruction> instructions;
         final int numArgs;
+        boolean isAsync;
+        ArkTSExpression currentAccValue;
 
         DecompilationContext(AbcMethod method, AbcCode code,
                 AbcProto proto, AbcFile abcFile,
@@ -719,6 +1564,8 @@ public class ArkTSDecompiler {
             this.cfg = cfg;
             this.instructions = instructions;
             this.numArgs = code != null ? (int) code.getNumArgs() : 0;
+            this.isAsync = false;
+            this.currentAccValue = null;
         }
 
         /**

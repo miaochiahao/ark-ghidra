@@ -500,6 +500,46 @@ public abstract class ArkTSStatement {
         }
     }
 
+    // --- Do/While ---
+
+    /**
+     * A do/while loop statement.
+     */
+    public static class DoWhileStatement extends ArkTSStatement {
+        private final ArkTSExpression condition;
+        private final ArkTSStatement body;
+
+        /**
+         * Constructs a do/while statement.
+         *
+         * @param body the loop body
+         * @param condition the loop condition
+         */
+        public DoWhileStatement(ArkTSStatement body,
+                ArkTSExpression condition) {
+            this.body = body;
+            this.condition = condition;
+        }
+
+        public ArkTSExpression getCondition() {
+            return condition;
+        }
+
+        public ArkTSStatement getBody() {
+            return body;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(indent(indent)).append("do {\n");
+            appendBlockBody(sb, body, indent + 1);
+            sb.append(indent(indent)).append("} while (")
+                    .append(condition.toArkTS()).append(");");
+            return sb.toString();
+        }
+    }
+
     // --- Break ---
 
     /**
@@ -521,6 +561,608 @@ public abstract class ArkTSStatement {
         @Override
         public String toArkTS(int indent) {
             return indent(indent) + "continue;";
+        }
+    }
+
+    // --- Class declaration ---
+
+    /**
+     * A class declaration statement.
+     */
+    public static class ClassDeclaration extends ArkTSStatement {
+        private final String name;
+        private final String superClass;
+        private final List<ArkTSStatement> members;
+
+        /**
+         * A class member (field, constructor, or method).
+         */
+        public static class ClassMember {
+            private final String kind;
+            private final String name;
+            private final String typeName;
+            private final List<FunctionDeclaration.FunctionParam> params;
+            private final ArkTSStatement body;
+            private final boolean isStatic;
+            private final String accessModifier;
+
+            /**
+             * Constructs a class member.
+             *
+             * @param kind "field", "constructor", or "method"
+             * @param name the member name
+             * @param typeName the type annotation (may be null)
+             * @param params the method parameters (may be empty)
+             * @param body the method body (may be null for abstract)
+             * @param isStatic true if the member is static
+             * @param accessModifier "public", "private", "protected", or null
+             */
+            public ClassMember(String kind, String name, String typeName,
+                    List<FunctionDeclaration.FunctionParam> params,
+                    ArkTSStatement body, boolean isStatic,
+                    String accessModifier) {
+                this.kind = kind;
+                this.name = name;
+                this.typeName = typeName;
+                this.params = Collections.unmodifiableList(
+                        new ArrayList<>(params));
+                this.body = body;
+                this.isStatic = isStatic;
+                this.accessModifier = accessModifier;
+            }
+
+            public String getKind() {
+                return kind;
+            }
+
+            public String getName() {
+                return name;
+            }
+
+            public String getTypeName() {
+                return typeName;
+            }
+
+            public List<FunctionDeclaration.FunctionParam> getParams() {
+                return params;
+            }
+
+            public ArkTSStatement getBody() {
+                return body;
+            }
+
+            public boolean isStatic() {
+                return isStatic;
+            }
+
+            public String getAccessModifier() {
+                return accessModifier;
+            }
+        }
+
+        /**
+         * Constructs a class declaration.
+         *
+         * @param name the class name
+         * @param superClass the super class name (may be null)
+         * @param members the class members
+         */
+        public ClassDeclaration(String name, String superClass,
+                List<ArkTSStatement> members) {
+            this.name = name;
+            this.superClass = superClass;
+            this.members = Collections.unmodifiableList(
+                    new ArrayList<>(members));
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public String getSuperClass() {
+            return superClass;
+        }
+
+        public List<ArkTSStatement> getMembers() {
+            return members;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(indent(indent)).append("class ").append(name);
+            if (superClass != null) {
+                sb.append(" extends ").append(superClass);
+            }
+            sb.append(" {\n");
+            for (ArkTSStatement member : members) {
+                sb.append(member.toArkTS(indent + 1)).append("\n");
+            }
+            sb.append(indent(indent)).append("}");
+            return sb.toString();
+        }
+    }
+
+    // --- Class field declaration ---
+
+    /**
+     * A class field declaration statement within a class body.
+     */
+    public static class ClassFieldDeclaration extends ArkTSStatement {
+        private final String name;
+        private final String typeName;
+        private final ArkTSExpression initializer;
+        private final boolean isStatic;
+        private final String accessModifier;
+
+        /**
+         * Constructs a class field declaration.
+         *
+         * @param name the field name
+         * @param typeName the type annotation (may be null)
+         * @param initializer the initializer expression (may be null)
+         * @param isStatic true if static
+         * @param accessModifier the access modifier (may be null)
+         */
+        public ClassFieldDeclaration(String name, String typeName,
+                ArkTSExpression initializer, boolean isStatic,
+                String accessModifier) {
+            this.name = name;
+            this.typeName = typeName;
+            this.initializer = initializer;
+            this.isStatic = isStatic;
+            this.accessModifier = accessModifier;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(indent(indent));
+            if (accessModifier != null) {
+                sb.append(accessModifier).append(" ");
+            }
+            if (isStatic) {
+                sb.append("static ");
+            }
+            sb.append(name);
+            if (typeName != null) {
+                sb.append(": ").append(typeName);
+            }
+            if (initializer != null) {
+                sb.append(" = ").append(initializer.toArkTS());
+            }
+            sb.append(";");
+            return sb.toString();
+        }
+    }
+
+    // --- Class method declaration ---
+
+    /**
+     * A class method declaration statement within a class body.
+     */
+    public static class ClassMethodDeclaration extends ArkTSStatement {
+        private final String name;
+        private final List<FunctionDeclaration.FunctionParam> params;
+        private final String returnType;
+        private final ArkTSStatement body;
+        private final boolean isStatic;
+        private final String accessModifier;
+
+        /**
+         * Constructs a class method declaration.
+         *
+         * @param name the method name
+         * @param params the parameters
+         * @param returnType the return type (may be null)
+         * @param body the method body
+         * @param isStatic true if static
+         * @param accessModifier the access modifier (may be null)
+         */
+        public ClassMethodDeclaration(String name,
+                List<FunctionDeclaration.FunctionParam> params,
+                String returnType, ArkTSStatement body, boolean isStatic,
+                String accessModifier) {
+            this.name = name;
+            this.params = Collections.unmodifiableList(
+                    new ArrayList<>(params));
+            this.returnType = returnType;
+            this.body = body;
+            this.isStatic = isStatic;
+            this.accessModifier = accessModifier;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(indent(indent));
+            if (accessModifier != null) {
+                sb.append(accessModifier).append(" ");
+            }
+            if (isStatic) {
+                sb.append("static ");
+            }
+            StringJoiner paramJoiner = new StringJoiner(", ");
+            for (FunctionDeclaration.FunctionParam p : params) {
+                paramJoiner.add(p.toString());
+            }
+            sb.append(name).append("(").append(paramJoiner).append(")");
+            if (returnType != null) {
+                sb.append(": ").append(returnType);
+            }
+            sb.append(" ");
+            if (body instanceof BlockStatement) {
+                sb.append(((BlockStatement) body).toArkTS(indent));
+            } else {
+                sb.append("{\n");
+                sb.append(body.toArkTS(indent + 1)).append("\n");
+                sb.append(indent(indent)).append("}");
+            }
+            return sb.toString();
+        }
+    }
+
+    // --- Import statement ---
+
+    /**
+     * An import statement: import { X, Y } from 'module'.
+     */
+    public static class ImportStatement extends ArkTSStatement {
+        private final List<String> imports;
+        private final String modulePath;
+        private final boolean isDefault;
+        private final String defaultImport;
+        private final String namespaceImport;
+
+        /**
+         * Constructs an import statement.
+         *
+         * @param imports the named imports
+         * @param modulePath the module path
+         * @param isDefault true if this is a default import
+         * @param defaultImport the default import name (may be null)
+         * @param namespaceImport the namespace import name (may be null)
+         */
+        public ImportStatement(List<String> imports, String modulePath,
+                boolean isDefault, String defaultImport,
+                String namespaceImport) {
+            this.imports = Collections.unmodifiableList(
+                    new ArrayList<>(imports));
+            this.modulePath = modulePath;
+            this.isDefault = isDefault;
+            this.defaultImport = defaultImport;
+            this.namespaceImport = namespaceImport;
+        }
+
+        public List<String> getImports() {
+            return imports;
+        }
+
+        public String getModulePath() {
+            return modulePath;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(indent(indent)).append("import ");
+            if (defaultImport != null) {
+                sb.append(defaultImport);
+                if (!imports.isEmpty()) {
+                    sb.append(", ");
+                }
+            }
+            if (namespaceImport != null) {
+                sb.append("* as ").append(namespaceImport);
+            } else if (!imports.isEmpty()) {
+                StringJoiner joiner = new StringJoiner(", ");
+                for (String imp : imports) {
+                    joiner.add(imp);
+                }
+                sb.append("{ ").append(joiner).append(" }");
+            }
+            sb.append(" from '").append(modulePath).append("';");
+            return sb.toString();
+        }
+    }
+
+    // --- Export statement ---
+
+    /**
+     * An export statement: export { X, Y } or export default expr.
+     */
+    public static class ExportStatement extends ArkTSStatement {
+        private final List<String> exports;
+        private final ArkTSStatement declaration;
+        private final boolean isDefault;
+
+        /**
+         * Constructs an export statement.
+         *
+         * @param exports the named exports
+         * @param declaration the declaration being exported (may be null)
+         * @param isDefault true if this is a default export
+         */
+        public ExportStatement(List<String> exports,
+                ArkTSStatement declaration, boolean isDefault) {
+            this.exports = Collections.unmodifiableList(
+                    new ArrayList<>(exports));
+            this.declaration = declaration;
+            this.isDefault = isDefault;
+        }
+
+        public List<String> getExports() {
+            return exports;
+        }
+
+        public ArkTSStatement getDeclaration() {
+            return declaration;
+        }
+
+        public boolean isDefault() {
+            return isDefault;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(indent(indent)).append("export ");
+            if (isDefault) {
+                sb.append("default ");
+                if (declaration != null) {
+                    sb.append(declaration.toArkTS(0));
+                }
+                return sb.toString();
+            }
+            if (declaration != null) {
+                sb.append(declaration.toArkTS(0));
+                return sb.toString();
+            }
+            StringJoiner joiner = new StringJoiner(", ");
+            for (String exp : exports) {
+                joiner.add(exp);
+            }
+            sb.append("{ ").append(joiner).append(" };");
+            return sb.toString();
+        }
+    }
+
+    // --- Enum declaration ---
+
+    /**
+     * An enum declaration statement.
+     */
+    public static class EnumDeclaration extends ArkTSStatement {
+        private final String name;
+        private final List<EnumMember> members;
+
+        /**
+         * A member of an enum.
+         */
+        public static class EnumMember {
+            private final String name;
+            private final ArkTSExpression value;
+
+            /**
+             * Constructs an enum member.
+             *
+             * @param name the member name
+             * @param value the member value (may be null for auto-increment)
+             */
+            public EnumMember(String name, ArkTSExpression value) {
+                this.name = name;
+                this.value = value;
+            }
+
+            public String getName() {
+                return name;
+            }
+
+            public ArkTSExpression getValue() {
+                return value;
+            }
+        }
+
+        /**
+         * Constructs an enum declaration.
+         *
+         * @param name the enum name
+         * @param members the enum members
+         */
+        public EnumDeclaration(String name, List<EnumMember> members) {
+            this.name = name;
+            this.members = Collections.unmodifiableList(
+                    new ArrayList<>(members));
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public List<EnumMember> getMembers() {
+            return members;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(indent(indent)).append("enum ").append(name)
+                    .append(" {\n");
+            for (int i = 0; i < members.size(); i++) {
+                EnumMember m = members.get(i);
+                sb.append(indent(indent + 1)).append(m.name);
+                if (m.value != null) {
+                    sb.append(" = ").append(m.value.toArkTS());
+                }
+                if (i < members.size() - 1) {
+                    sb.append(",");
+                }
+                sb.append("\n");
+            }
+            sb.append(indent(indent)).append("}");
+            return sb.toString();
+        }
+    }
+
+    // --- Interface declaration ---
+
+    /**
+     * An interface declaration statement.
+     */
+    public static class InterfaceDeclaration extends ArkTSStatement {
+        private final String name;
+        private final List<String> extendsInterfaces;
+        private final List<InterfaceMember> members;
+
+        /**
+         * A member of an interface (property or method signature).
+         */
+        public static class InterfaceMember {
+            private final String kind;
+            private final String name;
+            private final String typeName;
+            private final List<FunctionDeclaration.FunctionParam> params;
+            private final boolean isOptional;
+
+            /**
+             * Constructs an interface member.
+             *
+             * @param kind "property" or "method"
+             * @param name the member name
+             * @param typeName the type annotation (may be null)
+             * @param params the method parameters (may be empty)
+             * @param isOptional true if the member is optional
+             */
+            public InterfaceMember(String kind, String name, String typeName,
+                    List<FunctionDeclaration.FunctionParam> params,
+                    boolean isOptional) {
+                this.kind = kind;
+                this.name = name;
+                this.typeName = typeName;
+                this.params = Collections.unmodifiableList(
+                        new ArrayList<>(params));
+                this.isOptional = isOptional;
+            }
+
+            public String getKind() {
+                return kind;
+            }
+
+            public String getName() {
+                return name;
+            }
+        }
+
+        /**
+         * Constructs an interface declaration.
+         *
+         * @param name the interface name
+         * @param extendsInterfaces the extended interfaces (may be empty)
+         * @param members the interface members
+         */
+        public InterfaceDeclaration(String name,
+                List<String> extendsInterfaces,
+                List<InterfaceMember> members) {
+            this.name = name;
+            this.extendsInterfaces = Collections.unmodifiableList(
+                    new ArrayList<>(extendsInterfaces));
+            this.members = Collections.unmodifiableList(
+                    new ArrayList<>(members));
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public List<String> getExtendsInterfaces() {
+            return extendsInterfaces;
+        }
+
+        public List<InterfaceMember> getMembers() {
+            return members;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(indent(indent)).append("interface ").append(name);
+            if (!extendsInterfaces.isEmpty()) {
+                StringJoiner joiner = new StringJoiner(", ");
+                for (String ext : extendsInterfaces) {
+                    joiner.add(ext);
+                }
+                sb.append(" extends ").append(joiner);
+            }
+            sb.append(" {\n");
+            for (InterfaceMember m : members) {
+                sb.append(indent(indent + 1));
+                sb.append(m.name);
+                if (m.isOptional) {
+                    sb.append("?");
+                }
+                if ("method".equals(m.kind)) {
+                    StringJoiner paramJoiner = new StringJoiner(", ");
+                    for (FunctionDeclaration.FunctionParam p : m.params) {
+                        paramJoiner.add(p.toString());
+                    }
+                    sb.append("(").append(paramJoiner).append(")");
+                }
+                if (m.typeName != null) {
+                    sb.append(": ").append(m.typeName);
+                }
+                sb.append(";\n");
+            }
+            sb.append(indent(indent)).append("}");
+            return sb.toString();
+        }
+    }
+
+    // --- Decorator ---
+
+    /**
+     * A decorator expression: @DecoratorName or @DecoratorName(args).
+     */
+    public static class DecoratorStatement extends ArkTSStatement {
+        private final String name;
+        private final List<ArkTSExpression> arguments;
+
+        /**
+         * Constructs a decorator statement.
+         *
+         * @param name the decorator name
+         * @param arguments the decorator arguments (may be empty)
+         */
+        public DecoratorStatement(String name,
+                List<ArkTSExpression> arguments) {
+            this.name = name;
+            this.arguments = Collections.unmodifiableList(
+                    new ArrayList<>(arguments));
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public List<ArkTSExpression> getArguments() {
+            return arguments;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(indent(indent)).append("@").append(name);
+            if (!arguments.isEmpty()) {
+                StringJoiner joiner = new StringJoiner(", ");
+                for (ArkTSExpression arg : arguments) {
+                    joiner.add(arg.toArkTS());
+                }
+                sb.append("(").append(joiner).append(")");
+            }
+            return sb.toString();
         }
     }
 

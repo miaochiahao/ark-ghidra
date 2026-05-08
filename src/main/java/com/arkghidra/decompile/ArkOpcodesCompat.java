@@ -132,6 +132,21 @@ final class ArkOpcodesCompat {
 
     static final int NOP = ArkOpcodes.NOP;
 
+    static final int ASYNCFUNCTIONENTER = ArkOpcodes.ASYNCFUNCTIONENTER;
+    static final int ASYNCFUNCTIONAWAITUNCAUGHT =
+            ArkOpcodes.ASYNCFUNCTIONAWAITUNCAUGHT;
+    static final int ASYNCFUNCTIONRESOLVE = ArkOpcodes.ASYNCFUNCTIONRESOLVE;
+    static final int ASYNCFUNCTIONREJECT = ArkOpcodes.ASYNCFUNCTIONREJECT;
+
+    static final int CREATEGENERATOROBJ = ArkOpcodes.CREATEGENERATOROBJ;
+    static final int SUSPENDGENERATOR = ArkOpcodes.SUSPENDGENERATOR;
+    static final int RESUMEGENERATOR = ArkOpcodes.RESUMEGENERATOR;
+    static final int GETRESUMEMODE = ArkOpcodes.GETRESUMEMODE;
+
+    static final int STARRAYSPREAD = ArkOpcodes.STARRAYSPREAD;
+
+    static final int THROW = ArkOpcodes.PREFIX_THROW;
+
     private ArkOpcodesCompat() {
     }
 

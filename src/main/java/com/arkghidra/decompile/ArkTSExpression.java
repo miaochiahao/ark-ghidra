@@ -508,11 +508,290 @@ public abstract class ArkTSExpression {
             this.alternate = alternate;
         }
 
+        public ArkTSExpression getTest() {
+            return test;
+        }
+
+        public ArkTSExpression getConsequent() {
+            return consequent;
+        }
+
+        public ArkTSExpression getAlternate() {
+            return alternate;
+        }
+
         @Override
         public String toArkTS() {
             return String.format(Locale.ROOT, "(%s ? %s : %s)",
                     test.toArkTS(), consequent.toArkTS(),
                     alternate.toArkTS());
+        }
+    }
+
+    // --- Optional chaining ---
+
+    /**
+     * An optional chaining expression: obj?.property or obj?.[expr].
+     */
+    public static class OptionalChainExpression extends ArkTSExpression {
+        private final ArkTSExpression object;
+        private final ArkTSExpression property;
+        private final boolean computed;
+
+        /**
+         * Constructs an optional chain expression.
+         *
+         * @param object the object expression
+         * @param property the property expression
+         * @param computed true if bracket notation, false if dot notation
+         */
+        public OptionalChainExpression(ArkTSExpression object,
+                ArkTSExpression property, boolean computed) {
+            this.object = object;
+            this.property = property;
+            this.computed = computed;
+        }
+
+        public ArkTSExpression getObject() {
+            return object;
+        }
+
+        public ArkTSExpression getProperty() {
+            return property;
+        }
+
+        public boolean isComputed() {
+            return computed;
+        }
+
+        @Override
+        public String toArkTS() {
+            if (computed) {
+                return object.toArkTS() + "?.[" + property.toArkTS() + "]";
+            }
+            return object.toArkTS() + "?." + property.toArkTS();
+        }
+    }
+
+    // --- Spread ---
+
+    /**
+     * A spread expression: ...argument.
+     */
+    public static class SpreadExpression extends ArkTSExpression {
+        private final ArkTSExpression argument;
+
+        /**
+         * Constructs a spread expression.
+         *
+         * @param argument the expression to spread
+         */
+        public SpreadExpression(ArkTSExpression argument) {
+            this.argument = argument;
+        }
+
+        public ArkTSExpression getArgument() {
+            return argument;
+        }
+
+        @Override
+        public String toArkTS() {
+            return "..." + argument.toArkTS();
+        }
+    }
+
+    // --- Template literal ---
+
+    /**
+     * A template literal expression: `part1${expr}part2`.
+     */
+    public static class TemplateLiteralExpression extends ArkTSExpression {
+        private final List<String> quasis;
+        private final List<ArkTSExpression> expressions;
+
+        /**
+         * Constructs a template literal expression.
+         *
+         * @param quasis the string parts (one more than expressions)
+         * @param expressions the interpolated expressions
+         */
+        public TemplateLiteralExpression(List<String> quasis,
+                List<ArkTSExpression> expressions) {
+            this.quasis = Collections.unmodifiableList(new ArrayList<>(quasis));
+            this.expressions = Collections.unmodifiableList(
+                    new ArrayList<>(expressions));
+        }
+
+        public List<String> getQuasis() {
+            return quasis;
+        }
+
+        public List<ArkTSExpression> getExpressions() {
+            return expressions;
+        }
+
+        @Override
+        public String toArkTS() {
+            StringBuilder sb = new StringBuilder();
+            sb.append("`");
+            for (int i = 0; i < quasis.size(); i++) {
+                sb.append(escapeTemplateQuasi(quasis.get(i)));
+                if (i < expressions.size()) {
+                    sb.append("${").append(expressions.get(i).toArkTS())
+                            .append("}");
+                }
+            }
+            sb.append("`");
+            return sb.toString();
+        }
+
+        private static String escapeTemplateQuasi(String s) {
+            StringBuilder sb = new StringBuilder(s.length());
+            for (int i = 0; i < s.length(); i++) {
+                char c = s.charAt(i);
+                switch (c) {
+                    case '\\':
+                        sb.append("\\\\");
+                        break;
+                    case '`':
+                        sb.append("\\`");
+                        break;
+                    case '$':
+                        sb.append("\\$");
+                        break;
+                    default:
+                        sb.append(c);
+                        break;
+                }
+            }
+            return sb.toString();
+        }
+    }
+
+    // --- Await ---
+
+    /**
+     * An await expression: await promise.
+     */
+    public static class AwaitExpression extends ArkTSExpression {
+        private final ArkTSExpression argument;
+
+        /**
+         * Constructs an await expression.
+         *
+         * @param argument the promise expression
+         */
+        public AwaitExpression(ArkTSExpression argument) {
+            this.argument = argument;
+        }
+
+        public ArkTSExpression getArgument() {
+            return argument;
+        }
+
+        @Override
+        public String toArkTS() {
+            return "await " + argument.toArkTS();
+        }
+    }
+
+    // --- Yield ---
+
+    /**
+     * A yield expression: yield value or yield* iterable.
+     */
+    public static class YieldExpression extends ArkTSExpression {
+        private final ArkTSExpression argument;
+        private final boolean delegate;
+
+        /**
+         * Constructs a yield expression.
+         *
+         * @param argument the yielded value (may be null for bare yield)
+         * @param delegate true if this is yield* (delegate)
+         */
+        public YieldExpression(ArkTSExpression argument, boolean delegate) {
+            this.argument = argument;
+            this.delegate = delegate;
+        }
+
+        public ArkTSExpression getArgument() {
+            return argument;
+        }
+
+        public boolean isDelegate() {
+            return delegate;
+        }
+
+        @Override
+        public String toArkTS() {
+            if (delegate) {
+                if (argument != null) {
+                    return "yield* " + argument.toArkTS();
+                }
+                return "yield*";
+            }
+            if (argument != null) {
+                return "yield " + argument.toArkTS();
+            }
+            return "yield";
+        }
+    }
+
+    // --- Arrow function ---
+
+    /**
+     * An arrow function expression: (params) => body.
+     */
+    public static class ArrowFunctionExpression extends ArkTSExpression {
+        private final List<ArkTSStatement.FunctionDeclaration.FunctionParam> params;
+        private final ArkTSStatement body;
+        private final boolean isAsync;
+
+        /**
+         * Constructs an arrow function expression.
+         *
+         * @param params the parameters
+         * @param body the function body
+         * @param isAsync true if this is an async arrow function
+         */
+        public ArrowFunctionExpression(
+                List<ArkTSStatement.FunctionDeclaration.FunctionParam> params,
+                ArkTSStatement body, boolean isAsync) {
+            this.params = Collections.unmodifiableList(new ArrayList<>(params));
+            this.body = body;
+            this.isAsync = isAsync;
+        }
+
+        public List<ArkTSStatement.FunctionDeclaration.FunctionParam> getParams() {
+            return params;
+        }
+
+        public ArkTSStatement getBody() {
+            return body;
+        }
+
+        public boolean isAsync() {
+            return isAsync;
+        }
+
+        @Override
+        public String toArkTS() {
+            StringBuilder sb = new StringBuilder();
+            if (isAsync) {
+                sb.append("async ");
+            }
+            StringJoiner paramJoiner = new StringJoiner(", ");
+            for (ArkTSStatement.FunctionDeclaration.FunctionParam p : params) {
+                paramJoiner.add(p.toString());
+            }
+            sb.append("(").append(paramJoiner).append(") => ");
+            if (body instanceof ArkTSStatement.BlockStatement) {
+                sb.append(((ArkTSStatement.BlockStatement) body).toArkTS(0));
+            } else {
+                sb.append(body.toArkTS(0));
+            }
+            return sb.toString();
         }
     }
 }

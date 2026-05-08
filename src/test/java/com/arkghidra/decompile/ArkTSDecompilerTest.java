@@ -105,7 +105,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v2 = (v0 + v1)"));
+        assertTrue(result.contains("let v2: number = (v0 + v1)"));
     }
 
     @Test
@@ -118,7 +118,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("v0 = (v0 - v1)"));
+        assertTrue(result.contains("v0: number = (v0 - v1)"));
     }
 
     @Test
@@ -158,7 +158,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v0 = 10"));
+        assertTrue(result.contains("let v0: number = 10"));
     }
 
     @Test
@@ -172,7 +172,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v0 = 5"));
+        assertTrue(result.contains("let v0: number = 5"));
         assertTrue(result.contains("v0 = 10"));
     }
 
@@ -201,8 +201,8 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v0 = true"));
-        assertTrue(result.contains("let v1 = false"));
+        assertTrue(result.contains("let v0: boolean = true"));
+        assertTrue(result.contains("let v1: boolean = false"));
     }
 
     @Test
@@ -613,7 +613,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileMethod(method, code, null);
         assertNotNull(result);
         assertTrue(result.contains("function getAnswer()"));
-        assertTrue(result.contains("let v0 = 42"));
+        assertTrue(result.contains("let v0: number = 42"));
         assertTrue(result.contains("return v0"));
     }
 
@@ -664,7 +664,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v0 = []"));
+        assertTrue(result.contains("let v0: Array<unknown> = []"));
     }
 
     @Test
@@ -692,8 +692,8 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v1 = (v0 + 1)"));
-        assertTrue(result.contains("let v2 = (v1 - 1)"));
+        assertTrue(result.contains("let v1: number = (v0 + 1)"));
+        assertTrue(result.contains("let v2: number = (v1 - 1)"));
     }
 
     // --- BasicBlock tests ---
@@ -796,9 +796,9 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v0 = 2"));
-        assertTrue(result.contains("let v1 = 3"));
-        assertTrue(result.contains("let v2 = (v0 + v1)"));
+        assertTrue(result.contains("let v0: number = 2"));
+        assertTrue(result.contains("let v1: number = 3"));
+        assertTrue(result.contains("let v2: number = (v0 + v1)"));
         assertTrue(result.contains("return v2"));
     }
 

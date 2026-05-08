@@ -65,5 +65,11 @@ tasks.register('buildExtension', Zip) {
         include '*.opinion'
         include '*.slaspec'
         include '*.sinc'
+        include '*.sla'
+    }
+    from('data') {
+        into 'data'
+        include 'buildLanguage.xml'
+        include 'sleighArgs.txt'
     }
 }
