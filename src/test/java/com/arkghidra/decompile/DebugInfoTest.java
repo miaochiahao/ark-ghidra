@@ -13,7 +13,7 @@ class MethodSignatureBuilderTest {
 
     @Test
     void testBuildParamsWithoutDebugNames() {
-        List<ArkTSStatement.FunctionDeclaration.FunctionParam> params =
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
                 MethodSignatureBuilder.buildParams(null, 3);
 
         assertEquals(3, params.size());
@@ -26,7 +26,7 @@ class MethodSignatureBuilderTest {
     void testBuildParamsWithDebugNames() {
         List<String> debugNames = List.of("width", "height", "depth");
 
-        List<ArkTSStatement.FunctionDeclaration.FunctionParam> params =
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
                 MethodSignatureBuilder.buildParams(null, 3, debugNames);
 
         assertEquals(3, params.size());
@@ -43,7 +43,7 @@ class MethodSignatureBuilderTest {
         debugNames.add(null);
         debugNames.add("z");
 
-        List<ArkTSStatement.FunctionDeclaration.FunctionParam> params =
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
                 MethodSignatureBuilder.buildParams(null, 3, debugNames);
 
         assertEquals(3, params.size());
@@ -56,7 +56,7 @@ class MethodSignatureBuilderTest {
     void testBuildParamsWithEmptyDebugName() {
         List<String> debugNames = List.of("first", "", "third");
 
-        List<ArkTSStatement.FunctionDeclaration.FunctionParam> params =
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
                 MethodSignatureBuilder.buildParams(null, 3, debugNames);
 
         assertEquals(3, params.size());
@@ -69,7 +69,7 @@ class MethodSignatureBuilderTest {
     void testBuildParamsWithFewerDebugNamesThanParams() {
         List<String> debugNames = List.of("only_one");
 
-        List<ArkTSStatement.FunctionDeclaration.FunctionParam> params =
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
                 MethodSignatureBuilder.buildParams(null, 3, debugNames);
 
         assertEquals(3, params.size());

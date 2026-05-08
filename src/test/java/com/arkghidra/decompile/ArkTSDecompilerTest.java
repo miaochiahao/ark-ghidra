@@ -492,8 +492,8 @@ class ArkTSDecompilerTest {
                 ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
         ArkTSExpression elem2 = new ArkTSExpression.LiteralExpression("2",
                 ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
-        ArkTSExpression.ArrayLiteralExpression expr =
-                new ArkTSExpression.ArrayLiteralExpression(List.of(elem1, elem2));
+        ArkTSAccessExpressions.ArrayLiteralExpression expr =
+                new ArkTSAccessExpressions.ArrayLiteralExpression(List.of(elem1, elem2));
         assertEquals("[1, 2]", expr.toArkTS());
     }
 
@@ -530,8 +530,8 @@ class ArkTSDecompilerTest {
                         new ArkTSExpression.VariableExpression("y"),
                         new ArkTSExpression.LiteralExpression("2",
                                 ArkTSExpression.LiteralExpression.LiteralKind.NUMBER)));
-        ArkTSStatement.IfStatement ifStmt =
-                new ArkTSStatement.IfStatement(cond,
+        ArkTSControlFlow.IfStatement ifStmt =
+                new ArkTSControlFlow.IfStatement(cond,
                         new ArkTSStatement.BlockStatement(List.of(thenStmt)),
                         new ArkTSStatement.BlockStatement(List.of(elseStmt)));
         String result = ifStmt.toArkTS(0);
@@ -575,8 +575,8 @@ class ArkTSDecompilerTest {
                 new ArkTSStatement.ReturnStatement(
                         new ArkTSExpression.LiteralExpression("42",
                                 ArkTSExpression.LiteralExpression.LiteralKind.NUMBER))));
-        ArkTSStatement.FunctionDeclaration func =
-                new ArkTSStatement.FunctionDeclaration("f",
+        ArkTSDeclarations.FunctionDeclaration func =
+                new ArkTSDeclarations.FunctionDeclaration("f",
                         Collections.emptyList(), "number", body);
         String result = func.toArkTS(0);
         assertTrue(result.contains("function f(): number"));
@@ -585,16 +585,16 @@ class ArkTSDecompilerTest {
 
     @Test
     void testFunctionDeclaration_withParams() {
-        List<ArkTSStatement.FunctionDeclaration.FunctionParam> params =
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
                 List.of(
-                        new ArkTSStatement.FunctionDeclaration.FunctionParam(
+                        new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
                                 "a", "number"),
-                        new ArkTSStatement.FunctionDeclaration.FunctionParam(
+                        new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
                                 "b", "number"));
         ArkTSStatement body = new ArkTSStatement.BlockStatement(
                 Collections.emptyList());
-        ArkTSStatement.FunctionDeclaration func =
-                new ArkTSStatement.FunctionDeclaration("add", params,
+        ArkTSDeclarations.FunctionDeclaration func =
+                new ArkTSDeclarations.FunctionDeclaration("add", params,
                         "number", body);
         String result = func.toArkTS(0);
         assertTrue(result.contains("function add(a: number, b: number): number"));
@@ -836,8 +836,8 @@ class ArkTSDecompilerTest {
         ArkTSStatement catchBody = new ArkTSStatement.BlockStatement(
                 List.of(new ArkTSStatement.ExpressionStatement(
                         new ArkTSExpression.VariableExpression("handleError()"))));
-        ArkTSStatement.TryCatchStatement stmt =
-                new ArkTSStatement.TryCatchStatement(tryBody, "e", catchBody, null);
+        ArkTSControlFlow.TryCatchStatement stmt =
+                new ArkTSControlFlow.TryCatchStatement(tryBody, "e", catchBody, null);
         String result = stmt.toArkTS(0);
         assertTrue(result.startsWith("try {"));
         assertTrue(result.contains("catch (e) {"));
@@ -852,8 +852,8 @@ class ArkTSDecompilerTest {
         ArkTSStatement body = new ArkTSStatement.BlockStatement(
                 List.of(new ArkTSStatement.ExpressionStatement(
                         new ArkTSExpression.VariableExpression("step()"))));
-        ArkTSStatement.WhileStatement stmt =
-                new ArkTSStatement.WhileStatement(cond, body);
+        ArkTSControlFlow.WhileStatement stmt =
+                new ArkTSControlFlow.WhileStatement(cond, body);
         String result = stmt.toArkTS(0);
         assertTrue(result.startsWith("while (x) {"));
         assertTrue(result.contains("step()"));
@@ -891,8 +891,8 @@ class ArkTSDecompilerTest {
                 ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
         ArkTSExpression alt = new ArkTSExpression.LiteralExpression("2",
                 ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
-        ArkTSExpression.ConditionalExpression expr =
-                new ArkTSExpression.ConditionalExpression(test, cons, alt);
+        ArkTSAccessExpressions.ConditionalExpression expr =
+                new ArkTSAccessExpressions.ConditionalExpression(test, cons, alt);
         assertEquals("(x ? 1 : 2)", expr.toArkTS());
     }
 
@@ -900,16 +900,16 @@ class ArkTSDecompilerTest {
 
     @Test
     void testObjectLiteralExpression() {
-        List<ArkTSExpression.ObjectLiteralExpression.ObjectProperty> props =
+        List<ArkTSAccessExpressions.ObjectLiteralExpression.ObjectProperty> props =
                 List.of(
-                        new ArkTSExpression.ObjectLiteralExpression.ObjectProperty(
+                        new ArkTSAccessExpressions.ObjectLiteralExpression.ObjectProperty(
                                 "name", new ArkTSExpression.LiteralExpression("test",
                                         ArkTSExpression.LiteralExpression.LiteralKind.STRING)),
-                        new ArkTSExpression.ObjectLiteralExpression.ObjectProperty(
+                        new ArkTSAccessExpressions.ObjectLiteralExpression.ObjectProperty(
                                 "value", new ArkTSExpression.LiteralExpression("42",
                                         ArkTSExpression.LiteralExpression.LiteralKind.NUMBER)));
-        ArkTSExpression.ObjectLiteralExpression expr =
-                new ArkTSExpression.ObjectLiteralExpression(props);
+        ArkTSAccessExpressions.ObjectLiteralExpression expr =
+                new ArkTSAccessExpressions.ObjectLiteralExpression(props);
         assertEquals("{ name: \"test\", value: 42 }", expr.toArkTS());
     }
 
@@ -947,8 +947,8 @@ class ArkTSDecompilerTest {
                         new ArkTSExpression.CallExpression(
                                 new ArkTSExpression.VariableExpression("process"),
                                 List.of(new ArkTSExpression.VariableExpression("i"))))));
-        ArkTSStatement.ForStatement stmt =
-                new ArkTSStatement.ForStatement(init, cond, update, body);
+        ArkTSControlFlow.ForStatement stmt =
+                new ArkTSControlFlow.ForStatement(init, cond, update, body);
         String result = stmt.toArkTS(0);
         assertTrue(result.startsWith("for (let i = 0; (i < 10); i = (i + 1)) {"));
     }
@@ -1385,8 +1385,8 @@ class ArkTSDecompilerTest {
     void testOptionalChainExpression_dot() {
         ArkTSExpression obj = new ArkTSExpression.VariableExpression("obj");
         ArkTSExpression prop = new ArkTSExpression.VariableExpression("name");
-        ArkTSExpression.OptionalChainExpression expr =
-                new ArkTSExpression.OptionalChainExpression(obj, prop, false);
+        ArkTSAccessExpressions.OptionalChainExpression expr =
+                new ArkTSAccessExpressions.OptionalChainExpression(obj, prop, false);
         assertEquals("obj?.name", expr.toArkTS());
     }
 
@@ -1394,8 +1394,8 @@ class ArkTSDecompilerTest {
     void testOptionalChainExpression_computed() {
         ArkTSExpression obj = new ArkTSExpression.VariableExpression("arr");
         ArkTSExpression prop = new ArkTSExpression.VariableExpression("i");
-        ArkTSExpression.OptionalChainExpression expr =
-                new ArkTSExpression.OptionalChainExpression(obj, prop, true);
+        ArkTSAccessExpressions.OptionalChainExpression expr =
+                new ArkTSAccessExpressions.OptionalChainExpression(obj, prop, true);
         assertEquals("arr?.[i]", expr.toArkTS());
     }
 
@@ -1403,15 +1403,15 @@ class ArkTSDecompilerTest {
     void testSpreadExpression() {
         ArkTSExpression arg =
                 new ArkTSExpression.VariableExpression("args");
-        ArkTSExpression.SpreadExpression expr =
-                new ArkTSExpression.SpreadExpression(arg);
+        ArkTSAccessExpressions.SpreadExpression expr =
+                new ArkTSAccessExpressions.SpreadExpression(arg);
         assertEquals("...args", expr.toArkTS());
     }
 
     @Test
     void testTemplateLiteralExpression_noInterpolation() {
-        ArkTSExpression.TemplateLiteralExpression expr =
-                new ArkTSExpression.TemplateLiteralExpression(
+        ArkTSAccessExpressions.TemplateLiteralExpression expr =
+                new ArkTSAccessExpressions.TemplateLiteralExpression(
                         List.of("hello world"),
                         Collections.emptyList());
         assertEquals("`hello world`", expr.toArkTS());
@@ -1421,8 +1421,8 @@ class ArkTSDecompilerTest {
     void testTemplateLiteralExpression_withInterpolation() {
         ArkTSExpression name =
                 new ArkTSExpression.VariableExpression("name");
-        ArkTSExpression.TemplateLiteralExpression expr =
-                new ArkTSExpression.TemplateLiteralExpression(
+        ArkTSAccessExpressions.TemplateLiteralExpression expr =
+                new ArkTSAccessExpressions.TemplateLiteralExpression(
                         List.of("Hello, ", "!"),
                         List.of(name));
         assertEquals("`Hello, ${name}!`", expr.toArkTS());
@@ -1430,8 +1430,8 @@ class ArkTSDecompilerTest {
 
     @Test
     void testTemplateLiteralExpression_escapesBacktick() {
-        ArkTSExpression.TemplateLiteralExpression expr =
-                new ArkTSExpression.TemplateLiteralExpression(
+        ArkTSAccessExpressions.TemplateLiteralExpression expr =
+                new ArkTSAccessExpressions.TemplateLiteralExpression(
                         List.of("test`string"),
                         Collections.emptyList());
         assertEquals("`test\\`string`", expr.toArkTS());
@@ -1441,8 +1441,8 @@ class ArkTSDecompilerTest {
     void testAwaitExpression() {
         ArkTSExpression promise =
                 new ArkTSExpression.VariableExpression("p");
-        ArkTSExpression.AwaitExpression expr =
-                new ArkTSExpression.AwaitExpression(promise);
+        ArkTSAccessExpressions.AwaitExpression expr =
+                new ArkTSAccessExpressions.AwaitExpression(promise);
         assertEquals("await p", expr.toArkTS());
     }
 
@@ -1450,8 +1450,8 @@ class ArkTSDecompilerTest {
     void testYieldExpression() {
         ArkTSExpression value = new ArkTSExpression.LiteralExpression("42",
                 ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
-        ArkTSExpression.YieldExpression expr =
-                new ArkTSExpression.YieldExpression(value, false);
+        ArkTSAccessExpressions.YieldExpression expr =
+                new ArkTSAccessExpressions.YieldExpression(value, false);
         assertEquals("yield 42", expr.toArkTS());
     }
 
@@ -1459,15 +1459,15 @@ class ArkTSDecompilerTest {
     void testYieldExpression_delegate() {
         ArkTSExpression iterable =
                 new ArkTSExpression.VariableExpression("items");
-        ArkTSExpression.YieldExpression expr =
-                new ArkTSExpression.YieldExpression(iterable, true);
+        ArkTSAccessExpressions.YieldExpression expr =
+                new ArkTSAccessExpressions.YieldExpression(iterable, true);
         assertEquals("yield* items", expr.toArkTS());
     }
 
     @Test
     void testYieldExpression_bare() {
-        ArkTSExpression.YieldExpression expr =
-                new ArkTSExpression.YieldExpression(null, false);
+        ArkTSAccessExpressions.YieldExpression expr =
+                new ArkTSAccessExpressions.YieldExpression(null, false);
         assertEquals("yield", expr.toArkTS());
     }
 
@@ -1477,8 +1477,8 @@ class ArkTSDecompilerTest {
                 List.of(new ArkTSStatement.ReturnStatement(
                         new ArkTSExpression.LiteralExpression("42",
                                 ArkTSExpression.LiteralExpression.LiteralKind.NUMBER))));
-        ArkTSExpression.ArrowFunctionExpression expr =
-                new ArkTSExpression.ArrowFunctionExpression(
+        ArkTSAccessExpressions.ArrowFunctionExpression expr =
+                new ArkTSAccessExpressions.ArrowFunctionExpression(
                         Collections.emptyList(), body, false);
         assertTrue(expr.toArkTS().contains("() => {"));
         assertTrue(expr.toArkTS().contains("return 42;"));
@@ -1488,19 +1488,19 @@ class ArkTSDecompilerTest {
     void testArrowFunctionExpression_async() {
         ArkTSStatement body = new ArkTSStatement.BlockStatement(
                 Collections.emptyList());
-        ArkTSExpression.ArrowFunctionExpression expr =
-                new ArkTSExpression.ArrowFunctionExpression(
+        ArkTSAccessExpressions.ArrowFunctionExpression expr =
+                new ArkTSAccessExpressions.ArrowFunctionExpression(
                         Collections.emptyList(), body, true);
         assertTrue(expr.toArkTS().startsWith("async () =>"));
     }
 
     @Test
     void testArrowFunctionExpression_withParams() {
-        List<ArkTSStatement.FunctionDeclaration.FunctionParam> params =
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
                 List.of(
-                        new ArkTSStatement.FunctionDeclaration.FunctionParam(
+                        new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
                                 "x", "number"),
-                        new ArkTSStatement.FunctionDeclaration.FunctionParam(
+                        new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
                                 "y", "number"));
         ArkTSStatement body = new ArkTSStatement.BlockStatement(
                 List.of(new ArkTSStatement.ReturnStatement(
@@ -1508,8 +1508,8 @@ class ArkTSDecompilerTest {
                                 new ArkTSExpression.VariableExpression("x"),
                                 "+",
                                 new ArkTSExpression.VariableExpression("y")))));
-        ArkTSExpression.ArrowFunctionExpression expr =
-                new ArkTSExpression.ArrowFunctionExpression(params, body,
+        ArkTSAccessExpressions.ArrowFunctionExpression expr =
+                new ArkTSAccessExpressions.ArrowFunctionExpression(params, body,
                         false);
         String result = expr.toArkTS();
         assertTrue(result.contains("(x: number, y: number) =>"));
@@ -1524,8 +1524,8 @@ class ArkTSDecompilerTest {
         ArkTSStatement body = new ArkTSStatement.BlockStatement(
                 List.of(new ArkTSStatement.ExpressionStatement(
                         new ArkTSExpression.VariableExpression("step()"))));
-        ArkTSStatement.DoWhileStatement stmt =
-                new ArkTSStatement.DoWhileStatement(body, cond);
+        ArkTSControlFlow.DoWhileStatement stmt =
+                new ArkTSControlFlow.DoWhileStatement(body, cond);
         String result = stmt.toArkTS(0);
         assertTrue(result.startsWith("do {"));
         assertTrue(result.contains("} while (x);"));
@@ -1536,8 +1536,8 @@ class ArkTSDecompilerTest {
         ArkTSExpression cond = new ArkTSExpression.VariableExpression("ok");
         ArkTSStatement body = new ArkTSStatement.BlockStatement(
                 Collections.emptyList());
-        ArkTSStatement.DoWhileStatement stmt =
-                new ArkTSStatement.DoWhileStatement(body, cond);
+        ArkTSControlFlow.DoWhileStatement stmt =
+                new ArkTSControlFlow.DoWhileStatement(body, cond);
         String result = stmt.toArkTS(1);
         assertTrue(result.startsWith("    do {"));
         assertTrue(result.contains("    } while (ok);"));
@@ -1546,9 +1546,9 @@ class ArkTSDecompilerTest {
     @Test
     void testClassDeclaration_basic() {
         List<ArkTSStatement> members = List.of(
-                new ArkTSStatement.ClassFieldDeclaration("name", "string",
+                new ArkTSDeclarations.ClassFieldDeclaration("name", "string",
                         null, false, null),
-                new ArkTSStatement.ClassMethodDeclaration("greet",
+                new ArkTSDeclarations.ClassMethodDeclaration("greet",
                         Collections.emptyList(), "string",
                         new ArkTSStatement.BlockStatement(
                                 List.of(new ArkTSStatement.ReturnStatement(
@@ -1557,8 +1557,8 @@ class ArkTSDecompilerTest {
                                                 ArkTSExpression.LiteralExpression
                                                         .LiteralKind.STRING)))),
                         false, "public"));
-        ArkTSStatement.ClassDeclaration cls =
-                new ArkTSStatement.ClassDeclaration("MyClass", null, members);
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("MyClass", null, members);
         String result = cls.toArkTS(0);
         assertTrue(result.startsWith("class MyClass {"));
         assertTrue(result.contains("name: string;"));
@@ -1568,8 +1568,8 @@ class ArkTSDecompilerTest {
 
     @Test
     void testClassDeclaration_withExtends() {
-        ArkTSStatement.ClassDeclaration cls =
-                new ArkTSStatement.ClassDeclaration("Child", "Parent",
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("Child", "Parent",
                         Collections.emptyList());
         String result = cls.toArkTS(0);
         assertTrue(result.contains("class Child extends Parent"));
@@ -1577,7 +1577,7 @@ class ArkTSDecompilerTest {
 
     @Test
     void testClassFieldDeclaration_static() {
-        ArkTSStatement stmt = new ArkTSStatement.ClassFieldDeclaration(
+        ArkTSStatement stmt = new ArkTSDeclarations.ClassFieldDeclaration(
                 "instanceCount", "number",
                 new ArkTSExpression.LiteralExpression("0",
                         ArkTSExpression.LiteralExpression.LiteralKind.NUMBER),
@@ -1590,7 +1590,7 @@ class ArkTSDecompilerTest {
     void testClassMethodDeclaration_private() {
         ArkTSStatement body = new ArkTSStatement.BlockStatement(
                 Collections.emptyList());
-        ArkTSStatement stmt = new ArkTSStatement.ClassMethodDeclaration(
+        ArkTSStatement stmt = new ArkTSDeclarations.ClassMethodDeclaration(
                 "helper", Collections.emptyList(), null, body, false,
                 "private");
         String result = stmt.toArkTS(0);
@@ -1599,7 +1599,7 @@ class ArkTSDecompilerTest {
 
     @Test
     void testImportStatement_named() {
-        ArkTSStatement stmt = new ArkTSStatement.ImportStatement(
+        ArkTSStatement stmt = new ArkTSDeclarations.ImportStatement(
                 List.of("foo", "bar"), "./module", false, null, null);
         assertEquals("import { foo, bar } from './module';",
                 stmt.toArkTS(0));
@@ -1607,7 +1607,7 @@ class ArkTSDecompilerTest {
 
     @Test
     void testImportStatement_default() {
-        ArkTSStatement stmt = new ArkTSStatement.ImportStatement(
+        ArkTSStatement stmt = new ArkTSDeclarations.ImportStatement(
                 Collections.emptyList(), "./module", true, "MyClass", null);
         assertEquals("import MyClass from './module';",
                 stmt.toArkTS(0));
@@ -1615,7 +1615,7 @@ class ArkTSDecompilerTest {
 
     @Test
     void testImportStatement_namespace() {
-        ArkTSStatement stmt = new ArkTSStatement.ImportStatement(
+        ArkTSStatement stmt = new ArkTSDeclarations.ImportStatement(
                 Collections.emptyList(), "./module", false, null, "ns");
         assertEquals("import * as ns from './module';",
                 stmt.toArkTS(0));
@@ -1623,7 +1623,7 @@ class ArkTSDecompilerTest {
 
     @Test
     void testImportStatement_defaultAndNamed() {
-        ArkTSStatement stmt = new ArkTSStatement.ImportStatement(
+        ArkTSStatement stmt = new ArkTSDeclarations.ImportStatement(
                 List.of("helper"), "./module", true, "Main", null);
         assertEquals("import Main, { helper } from './module';",
                 stmt.toArkTS(0));
@@ -1631,7 +1631,7 @@ class ArkTSDecompilerTest {
 
     @Test
     void testExportStatement_named() {
-        ArkTSStatement stmt = new ArkTSStatement.ExportStatement(
+        ArkTSStatement stmt = new ArkTSDeclarations.ExportStatement(
                 List.of("foo", "bar"), null, false);
         assertEquals("export { foo, bar };", stmt.toArkTS(0));
     }
@@ -1641,7 +1641,7 @@ class ArkTSDecompilerTest {
         ArkTSStatement decl = new ArkTSStatement.VariableDeclaration("let",
                 "x", null, new ArkTSExpression.LiteralExpression("42",
                         ArkTSExpression.LiteralExpression.LiteralKind.NUMBER));
-        ArkTSStatement stmt = new ArkTSStatement.ExportStatement(
+        ArkTSStatement stmt = new ArkTSDeclarations.ExportStatement(
                 Collections.emptyList(), decl, true);
         String result = stmt.toArkTS(0);
         assertTrue(result.startsWith("export default let x = 42"));
@@ -1649,10 +1649,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testExportStatement_declaration() {
-        ArkTSStatement funcDecl = new ArkTSStatement.FunctionDeclaration(
+        ArkTSStatement funcDecl = new ArkTSDeclarations.FunctionDeclaration(
                 "doStuff", Collections.emptyList(), null,
                 new ArkTSStatement.BlockStatement(Collections.emptyList()));
-        ArkTSStatement stmt = new ArkTSStatement.ExportStatement(
+        ArkTSStatement stmt = new ArkTSDeclarations.ExportStatement(
                 Collections.emptyList(), funcDecl, false);
         String result = stmt.toArkTS(0);
         assertTrue(result.startsWith("export function doStuff"));
@@ -1660,13 +1660,13 @@ class ArkTSDecompilerTest {
 
     @Test
     void testEnumDeclaration_basic() {
-        List<ArkTSStatement.EnumDeclaration.EnumMember> members = List.of(
-                new ArkTSStatement.EnumDeclaration.EnumMember("A", null),
-                new ArkTSStatement.EnumDeclaration.EnumMember("B", null),
-                new ArkTSStatement.EnumDeclaration.EnumMember("C",
+        List<ArkTSTypeDeclarations.EnumDeclaration.EnumMember> members = List.of(
+                new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("A", null),
+                new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("B", null),
+                new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("C",
                         new ArkTSExpression.LiteralExpression("10",
                                 ArkTSExpression.LiteralExpression.LiteralKind.NUMBER)));
-        ArkTSStatement stmt = new ArkTSStatement.EnumDeclaration("Color",
+        ArkTSStatement stmt = new ArkTSTypeDeclarations.EnumDeclaration("Color",
                 members);
         String result = stmt.toArkTS(0);
         assertTrue(result.startsWith("enum Color {"));
@@ -1678,17 +1678,17 @@ class ArkTSDecompilerTest {
 
     @Test
     void testInterfaceDeclaration_basic() {
-        List<ArkTSStatement.InterfaceDeclaration.InterfaceMember> members =
+        List<ArkTSTypeDeclarations.InterfaceDeclaration.InterfaceMember> members =
                 List.of(
-                        new ArkTSStatement.InterfaceDeclaration.InterfaceMember(
+                        new ArkTSTypeDeclarations.InterfaceDeclaration.InterfaceMember(
                                 "property", "name", "string",
                                 Collections.emptyList(), false),
-                        new ArkTSStatement.InterfaceDeclaration.InterfaceMember(
+                        new ArkTSTypeDeclarations.InterfaceDeclaration.InterfaceMember(
                                 "method", "doStuff", "void",
-                                List.of(new ArkTSStatement.FunctionDeclaration
+                                List.of(new ArkTSDeclarations.FunctionDeclaration
                                         .FunctionParam("x", "number")),
                                 false));
-        ArkTSStatement stmt = new ArkTSStatement.InterfaceDeclaration(
+        ArkTSStatement stmt = new ArkTSTypeDeclarations.InterfaceDeclaration(
                 "MyInterface", Collections.emptyList(), members);
         String result = stmt.toArkTS(0);
         assertTrue(result.startsWith("interface MyInterface {"));
@@ -1699,7 +1699,7 @@ class ArkTSDecompilerTest {
 
     @Test
     void testInterfaceDeclaration_extends() {
-        ArkTSStatement stmt = new ArkTSStatement.InterfaceDeclaration(
+        ArkTSStatement stmt = new ArkTSTypeDeclarations.InterfaceDeclaration(
                 "Child", List.of("Parent", "Base"),
                 Collections.emptyList());
         String result = stmt.toArkTS(0);
@@ -1709,12 +1709,12 @@ class ArkTSDecompilerTest {
 
     @Test
     void testInterfaceDeclaration_optionalProperty() {
-        List<ArkTSStatement.InterfaceDeclaration.InterfaceMember> members =
+        List<ArkTSTypeDeclarations.InterfaceDeclaration.InterfaceMember> members =
                 List.of(
-                        new ArkTSStatement.InterfaceDeclaration.InterfaceMember(
+                        new ArkTSTypeDeclarations.InterfaceDeclaration.InterfaceMember(
                                 "property", "name", "string",
                                 Collections.emptyList(), true));
-        ArkTSStatement stmt = new ArkTSStatement.InterfaceDeclaration(
+        ArkTSStatement stmt = new ArkTSTypeDeclarations.InterfaceDeclaration(
                 "Opts", Collections.emptyList(), members);
         String result = stmt.toArkTS(0);
         assertTrue(result.contains("name?: string;"));
@@ -1722,14 +1722,14 @@ class ArkTSDecompilerTest {
 
     @Test
     void testDecoratorStatement_noArgs() {
-        ArkTSStatement stmt = new ArkTSStatement.DecoratorStatement(
+        ArkTSStatement stmt = new ArkTSTypeDeclarations.DecoratorStatement(
                 "Component", Collections.emptyList());
         assertEquals("@Component", stmt.toArkTS(0));
     }
 
     @Test
     void testDecoratorStatement_withArgs() {
-        ArkTSStatement stmt = new ArkTSStatement.DecoratorStatement(
+        ArkTSStatement stmt = new ArkTSTypeDeclarations.DecoratorStatement(
                 "Route",
                 List.of(new ArkTSExpression.LiteralExpression("'/home'",
                         ArkTSExpression.LiteralExpression.LiteralKind.STRING)));
@@ -1738,7 +1738,7 @@ class ArkTSDecompilerTest {
 
     @Test
     void testDecoratorStatement_withIndentation() {
-        ArkTSStatement stmt = new ArkTSStatement.DecoratorStatement(
+        ArkTSStatement stmt = new ArkTSTypeDeclarations.DecoratorStatement(
                 "Injectable", Collections.emptyList());
         assertEquals("    @Injectable", stmt.toArkTS(1));
     }
@@ -1906,23 +1906,23 @@ class ArkTSDecompilerTest {
     @Test
     void testClassDeclaration_withConstructor() {
         ArkTSStatement constructorBody = new ArkTSStatement.BlockStatement(
-                List.of(new ArkTSStatement.SuperCallStatement(
+                List.of(new ArkTSControlFlow.SuperCallStatement(
                         Collections.emptyList())));
         ArkTSStatement constructor =
-                new ArkTSStatement.ConstructorDeclaration(
-                        List.of(new ArkTSStatement.FunctionDeclaration
+                new ArkTSDeclarations.ConstructorDeclaration(
+                        List.of(new ArkTSDeclarations.FunctionDeclaration
                                 .FunctionParam("x", "number")),
                         constructorBody);
         ArkTSStatement methodBody = new ArkTSStatement.BlockStatement(
                 List.of(new ArkTSStatement.ReturnStatement(
                         new ArkTSExpression.VariableExpression("x"))));
-        ArkTSStatement method = new ArkTSStatement.ClassMethodDeclaration(
+        ArkTSStatement method = new ArkTSDeclarations.ClassMethodDeclaration(
                 "getX", Collections.emptyList(), "number",
                 methodBody, false, "public");
-        ArkTSStatement field = new ArkTSStatement.ClassFieldDeclaration(
+        ArkTSStatement field = new ArkTSDeclarations.ClassFieldDeclaration(
                 "x", "number", null, false, "private");
-        ArkTSStatement.ClassDeclaration cls =
-                new ArkTSStatement.ClassDeclaration("Point", "BaseClass",
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("Point", "BaseClass",
                         List.of(field, constructor, method));
         String result = cls.toArkTS(0);
         assertTrue(result.contains("class Point extends BaseClass"));
@@ -1935,9 +1935,9 @@ class ArkTSDecompilerTest {
     @Test
     void testConstructorDeclaration_noParams() {
         ArkTSStatement body = new ArkTSStatement.BlockStatement(
-                List.of(new ArkTSStatement.SuperCallStatement(
+                List.of(new ArkTSControlFlow.SuperCallStatement(
                         Collections.emptyList())));
-        ArkTSStatement stmt = new ArkTSStatement.ConstructorDeclaration(
+        ArkTSStatement stmt = new ArkTSDeclarations.ConstructorDeclaration(
                 Collections.emptyList(), body);
         String result = stmt.toArkTS(0);
         assertTrue(result.contains("constructor()"));
@@ -1948,12 +1948,12 @@ class ArkTSDecompilerTest {
     void testConstructorDeclaration_withParams() {
         ArkTSStatement body = new ArkTSStatement.BlockStatement(
                 Collections.emptyList());
-        List<ArkTSStatement.FunctionDeclaration.FunctionParam> params =
-                List.of(new ArkTSStatement.FunctionDeclaration.FunctionParam(
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                List.of(new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
                                 "a", "number"),
-                        new ArkTSStatement.FunctionDeclaration.FunctionParam(
+                        new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
                                 "b", "string"));
-        ArkTSStatement stmt = new ArkTSStatement.ConstructorDeclaration(
+        ArkTSStatement stmt = new ArkTSDeclarations.ConstructorDeclaration(
                 params, body);
         String result = stmt.toArkTS(0);
         assertTrue(result.contains("constructor(a: number, b: string)"));
@@ -1963,7 +1963,7 @@ class ArkTSDecompilerTest {
 
     @Test
     void testSuperCallStatement_noArgs() {
-        ArkTSStatement stmt = new ArkTSStatement.SuperCallStatement(
+        ArkTSStatement stmt = new ArkTSControlFlow.SuperCallStatement(
                 Collections.emptyList());
         assertEquals("super();", stmt.toArkTS(0));
     }
@@ -1972,7 +1972,7 @@ class ArkTSDecompilerTest {
     void testSuperCallStatement_withArgs() {
         ArkTSExpression arg1 = new ArkTSExpression.VariableExpression("x");
         ArkTSExpression arg2 = new ArkTSExpression.VariableExpression("y");
-        ArkTSStatement stmt = new ArkTSStatement.SuperCallStatement(
+        ArkTSStatement stmt = new ArkTSControlFlow.SuperCallStatement(
                 List.of(arg1, arg2));
         assertEquals("super(x, y);", stmt.toArkTS(0));
     }
@@ -1981,13 +1981,13 @@ class ArkTSDecompilerTest {
 
     @Test
     void testStructDeclaration_basic() {
-        ArkTSStatement field = new ArkTSStatement.ClassFieldDeclaration(
+        ArkTSStatement field = new ArkTSDeclarations.ClassFieldDeclaration(
                 "message", "string",
                 new ArkTSExpression.LiteralExpression("'Hello'",
                         ArkTSExpression.LiteralExpression.LiteralKind.STRING),
                 false, null);
-        ArkTSStatement.StructDeclaration struct =
-                new ArkTSStatement.StructDeclaration("MyPage",
+        ArkTSTypeDeclarations.StructDeclaration struct =
+                new ArkTSTypeDeclarations.StructDeclaration("MyPage",
                         List.of(field),
                         List.of("Entry", "Component"));
         String result = struct.toArkTS(0);
@@ -1999,8 +1999,8 @@ class ArkTSDecompilerTest {
 
     @Test
     void testStructDeclaration_noDecorators() {
-        ArkTSStatement.StructDeclaration struct =
-                new ArkTSStatement.StructDeclaration("SimpleStruct",
+        ArkTSTypeDeclarations.StructDeclaration struct =
+                new ArkTSTypeDeclarations.StructDeclaration("SimpleStruct",
                         Collections.emptyList(), Collections.emptyList());
         String result = struct.toArkTS(0);
         assertTrue(result.contains("struct SimpleStruct"));
@@ -2011,15 +2011,15 @@ class ArkTSDecompilerTest {
 
     @Test
     void testTypeParameter_noConstraint() {
-        ArkTSStatement.TypeParameter tp =
-                new ArkTSStatement.TypeParameter("T", null);
+        ArkTSTypeDeclarations.TypeParameter tp =
+                new ArkTSTypeDeclarations.TypeParameter("T", null);
         assertEquals("T", tp.toString());
     }
 
     @Test
     void testTypeParameter_withConstraint() {
-        ArkTSStatement.TypeParameter tp =
-                new ArkTSStatement.TypeParameter("T", "Base");
+        ArkTSTypeDeclarations.TypeParameter tp =
+                new ArkTSTypeDeclarations.TypeParameter("T", "Base");
         assertEquals("T extends Base", tp.toString());
     }
 
@@ -2027,9 +2027,9 @@ class ArkTSDecompilerTest {
 
     @Test
     void testGenericClassDeclaration_singleTypeParam() {
-        ArkTSStatement.GenericClassDeclaration cls =
-                new ArkTSStatement.GenericClassDeclaration("Container",
-                        List.of(new ArkTSStatement.TypeParameter("T", null)),
+        ArkTSTypeDeclarations.GenericClassDeclaration cls =
+                new ArkTSTypeDeclarations.GenericClassDeclaration("Container",
+                        List.of(new ArkTSTypeDeclarations.TypeParameter("T", null)),
                         null, Collections.emptyList());
         String result = cls.toArkTS(0);
         assertTrue(result.contains("class Container<T>"));
@@ -2037,9 +2037,9 @@ class ArkTSDecompilerTest {
 
     @Test
     void testGenericClassDeclaration_constrainedTypeParam() {
-        ArkTSStatement.GenericClassDeclaration cls =
-                new ArkTSStatement.GenericClassDeclaration("SortedContainer",
-                        List.of(new ArkTSStatement.TypeParameter("T",
+        ArkTSTypeDeclarations.GenericClassDeclaration cls =
+                new ArkTSTypeDeclarations.GenericClassDeclaration("SortedContainer",
+                        List.of(new ArkTSTypeDeclarations.TypeParameter("T",
                                 "Comparable")),
                         "Base", Collections.emptyList());
         String result = cls.toArkTS(0);
@@ -2049,10 +2049,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testGenericClassDeclaration_multipleTypeParams() {
-        ArkTSStatement.GenericClassDeclaration cls =
-                new ArkTSStatement.GenericClassDeclaration("Map",
-                        List.of(new ArkTSStatement.TypeParameter("K", null),
-                                new ArkTSStatement.TypeParameter("V", null)),
+        ArkTSTypeDeclarations.GenericClassDeclaration cls =
+                new ArkTSTypeDeclarations.GenericClassDeclaration("Map",
+                        List.of(new ArkTSTypeDeclarations.TypeParameter("K", null),
+                                new ArkTSTypeDeclarations.TypeParameter("V", null)),
                         null, Collections.emptyList());
         String result = cls.toArkTS(0);
         assertTrue(result.contains("class Map<K, V>"));
@@ -2062,8 +2062,8 @@ class ArkTSDecompilerTest {
 
     @Test
     void testFileModule_empty() {
-        ArkTSStatement.FileModule fileModule =
-                new ArkTSStatement.FileModule(
+        ArkTSTypeDeclarations.FileModule fileModule =
+                new ArkTSTypeDeclarations.FileModule(
                         Collections.emptyList(),
                         Collections.emptyList(),
                         Collections.emptyList());
@@ -2072,12 +2072,12 @@ class ArkTSDecompilerTest {
 
     @Test
     void testFileModule_withImports() {
-        ArkTSStatement imp = new ArkTSStatement.ImportStatement(
+        ArkTSStatement imp = new ArkTSDeclarations.ImportStatement(
                 List.of("Component"), "@ohos/component", false, null, null);
-        ArkTSStatement decl = new ArkTSStatement.ClassDeclaration(
+        ArkTSStatement decl = new ArkTSDeclarations.ClassDeclaration(
                 "MyClass", null, Collections.emptyList());
-        ArkTSStatement.FileModule fileModule =
-                new ArkTSStatement.FileModule(List.of(imp), List.of(decl),
+        ArkTSTypeDeclarations.FileModule fileModule =
+                new ArkTSTypeDeclarations.FileModule(List.of(imp), List.of(decl),
                         Collections.emptyList());
         String result = fileModule.toArkTS(0);
         assertTrue(result.contains("import { Component } from "
@@ -2087,13 +2087,13 @@ class ArkTSDecompilerTest {
 
     @Test
     void testFileModule_withExports() {
-        ArkTSStatement funcDecl = new ArkTSStatement.FunctionDeclaration(
+        ArkTSStatement funcDecl = new ArkTSDeclarations.FunctionDeclaration(
                 "helper", Collections.emptyList(), "void",
                 new ArkTSStatement.BlockStatement(Collections.emptyList()));
-        ArkTSStatement export = new ArkTSStatement.ExportStatement(
+        ArkTSStatement export = new ArkTSDeclarations.ExportStatement(
                 Collections.emptyList(), funcDecl, false);
-        ArkTSStatement.FileModule fileModule =
-                new ArkTSStatement.FileModule(Collections.emptyList(),
+        ArkTSTypeDeclarations.FileModule fileModule =
+                new ArkTSTypeDeclarations.FileModule(Collections.emptyList(),
                         Collections.emptyList(), List.of(export));
         String result = fileModule.toArkTS(0);
         assertTrue(result.contains("export function helper"));
@@ -2101,14 +2101,14 @@ class ArkTSDecompilerTest {
 
     @Test
     void testFileModule_fullFile() {
-        ArkTSStatement imp = new ArkTSStatement.ImportStatement(
+        ArkTSStatement imp = new ArkTSDeclarations.ImportStatement(
                 List.of("BaseModel"), "./model", false, null, null);
-        ArkTSStatement cls = new ArkTSStatement.ClassDeclaration(
+        ArkTSStatement cls = new ArkTSDeclarations.ClassDeclaration(
                 "UserModel", "BaseModel", Collections.emptyList());
-        ArkTSStatement export = new ArkTSStatement.ExportStatement(
+        ArkTSStatement export = new ArkTSDeclarations.ExportStatement(
                 List.of("UserModel"), null, false);
-        ArkTSStatement.FileModule fileModule =
-                new ArkTSStatement.FileModule(List.of(imp), List.of(cls),
+        ArkTSTypeDeclarations.FileModule fileModule =
+                new ArkTSTypeDeclarations.FileModule(List.of(imp), List.of(cls),
                         List.of(export));
         String result = fileModule.toArkTS(0);
         assertTrue(result.startsWith("import"));
@@ -2121,8 +2121,8 @@ class ArkTSDecompilerTest {
     @Test
     void testAsExpression() {
         ArkTSExpression expr = new ArkTSExpression.VariableExpression("obj");
-        ArkTSExpression.AsExpression asExpr =
-                new ArkTSExpression.AsExpression(expr, "string");
+        ArkTSAccessExpressions.AsExpression asExpr =
+                new ArkTSAccessExpressions.AsExpression(expr, "string");
         assertEquals("obj as string", asExpr.toArkTS());
     }
 
@@ -2131,31 +2131,31 @@ class ArkTSDecompilerTest {
         ArkTSExpression expr = new ArkTSExpression.MemberExpression(
                 new ArkTSExpression.VariableExpression("obj"),
                 new ArkTSExpression.VariableExpression("field"), false);
-        ArkTSExpression.NonNullExpression nonNull =
-                new ArkTSExpression.NonNullExpression(expr);
+        ArkTSAccessExpressions.NonNullExpression nonNull =
+                new ArkTSAccessExpressions.NonNullExpression(expr);
         assertEquals("obj.field!", nonNull.toArkTS());
     }
 
     @Test
     void testTypeReferenceExpression_simple() {
-        ArkTSExpression.TypeReferenceExpression typeRef =
-                new ArkTSExpression.TypeReferenceExpression("number",
+        ArkTSAccessExpressions.TypeReferenceExpression typeRef =
+                new ArkTSAccessExpressions.TypeReferenceExpression("number",
                         Collections.emptyList());
         assertEquals("number", typeRef.toArkTS());
     }
 
     @Test
     void testTypeReferenceExpression_generic() {
-        ArkTSExpression.TypeReferenceExpression typeRef =
-                new ArkTSExpression.TypeReferenceExpression("Array",
+        ArkTSAccessExpressions.TypeReferenceExpression typeRef =
+                new ArkTSAccessExpressions.TypeReferenceExpression("Array",
                         List.of("string"));
         assertEquals("Array<string>", typeRef.toArkTS());
     }
 
     @Test
     void testTypeReferenceExpression_multipleTypeArgs() {
-        ArkTSExpression.TypeReferenceExpression typeRef =
-                new ArkTSExpression.TypeReferenceExpression("Map",
+        ArkTSAccessExpressions.TypeReferenceExpression typeRef =
+                new ArkTSAccessExpressions.TypeReferenceExpression("Map",
                         List.of("string", "number"));
         assertEquals("Map<string, number>", typeRef.toArkTS());
     }
@@ -2184,16 +2184,16 @@ class ArkTSDecompilerTest {
 
     @Test
     void testEnumDeclaration_withExplicitValues() {
-        List<ArkTSStatement.EnumDeclaration.EnumMember> members = List.of(
-                new ArkTSStatement.EnumDeclaration.EnumMember("Active",
+        List<ArkTSTypeDeclarations.EnumDeclaration.EnumMember> members = List.of(
+                new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("Active",
                         new ArkTSExpression.LiteralExpression("1",
                                 ArkTSExpression.LiteralExpression
                                         .LiteralKind.NUMBER)),
-                new ArkTSStatement.EnumDeclaration.EnumMember("Inactive",
+                new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("Inactive",
                         new ArkTSExpression.LiteralExpression("0",
                                 ArkTSExpression.LiteralExpression
                                         .LiteralKind.NUMBER)));
-        ArkTSStatement stmt = new ArkTSStatement.EnumDeclaration("Status",
+        ArkTSStatement stmt = new ArkTSTypeDeclarations.EnumDeclaration("Status",
                 members);
         String result = stmt.toArkTS(0);
         assertTrue(result.startsWith("enum Status {"));
@@ -2204,12 +2204,12 @@ class ArkTSDecompilerTest {
 
     @Test
     void testEnumDeclaration_autoIncrement() {
-        List<ArkTSStatement.EnumDeclaration.EnumMember> members = List.of(
-                new ArkTSStatement.EnumDeclaration.EnumMember("North", null),
-                new ArkTSStatement.EnumDeclaration.EnumMember("South", null),
-                new ArkTSStatement.EnumDeclaration.EnumMember("East", null),
-                new ArkTSStatement.EnumDeclaration.EnumMember("West", null));
-        ArkTSStatement stmt = new ArkTSStatement.EnumDeclaration("Direction",
+        List<ArkTSTypeDeclarations.EnumDeclaration.EnumMember> members = List.of(
+                new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("North", null),
+                new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("South", null),
+                new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("East", null),
+                new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("West", null));
+        ArkTSStatement stmt = new ArkTSTypeDeclarations.EnumDeclaration("Direction",
                 members);
         String result = stmt.toArkTS(0);
         assertTrue(result.startsWith("enum Direction {"));
@@ -2223,7 +2223,7 @@ class ArkTSDecompilerTest {
 
     @Test
     void testImportStatement_reExport() {
-        ArkTSStatement stmt = new ArkTSStatement.ImportStatement(
+        ArkTSStatement stmt = new ArkTSDeclarations.ImportStatement(
                 List.of("Logger"), "@ohos/log", false, null, null);
         assertEquals("import { Logger } from '@ohos/log';",
                 stmt.toArkTS(0));
@@ -2231,7 +2231,7 @@ class ArkTSDecompilerTest {
 
     @Test
     void testImportStatement_defaultAndNamespace() {
-        ArkTSStatement stmt = new ArkTSStatement.ImportStatement(
+        ArkTSStatement stmt = new ArkTSDeclarations.ImportStatement(
                 Collections.emptyList(), "./module", true, "default", "ns");
         assertEquals("import default, * as ns from './module';",
                 stmt.toArkTS(0));
@@ -2241,10 +2241,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testExportStatement_defaultFunction() {
-        ArkTSStatement funcDecl = new ArkTSStatement.FunctionDeclaration(
+        ArkTSStatement funcDecl = new ArkTSDeclarations.FunctionDeclaration(
                 "main", Collections.emptyList(), "void",
                 new ArkTSStatement.BlockStatement(Collections.emptyList()));
-        ArkTSStatement stmt = new ArkTSStatement.ExportStatement(
+        ArkTSStatement stmt = new ArkTSDeclarations.ExportStatement(
                 Collections.emptyList(), funcDecl, true);
         String result = stmt.toArkTS(0);
         assertTrue(result.startsWith("export default function main"));
@@ -2252,7 +2252,7 @@ class ArkTSDecompilerTest {
 
     @Test
     void testExportStatement_namedExports() {
-        ArkTSStatement stmt = new ArkTSStatement.ExportStatement(
+        ArkTSStatement stmt = new ArkTSDeclarations.ExportStatement(
                 List.of("foo", "bar", "baz"), null, false);
         assertEquals("export { foo, bar, baz };", stmt.toArkTS(0));
     }
@@ -2299,7 +2299,7 @@ class ArkTSDecompilerTest {
     void testAccessFlags_publicModifier() {
         ArkTSStatement body = new ArkTSStatement.BlockStatement(
                 Collections.emptyList());
-        ArkTSStatement stmt = new ArkTSStatement.ClassMethodDeclaration(
+        ArkTSStatement stmt = new ArkTSDeclarations.ClassMethodDeclaration(
                 "doStuff", Collections.emptyList(), "void", body,
                 false, "public");
         String result = stmt.toArkTS(0);
@@ -2310,7 +2310,7 @@ class ArkTSDecompilerTest {
     void testAccessFlags_privateModifier() {
         ArkTSStatement body = new ArkTSStatement.BlockStatement(
                 Collections.emptyList());
-        ArkTSStatement stmt = new ArkTSStatement.ClassMethodDeclaration(
+        ArkTSStatement stmt = new ArkTSDeclarations.ClassMethodDeclaration(
                 "internal", Collections.emptyList(), null, body,
                 false, "private");
         String result = stmt.toArkTS(0);
@@ -2321,7 +2321,7 @@ class ArkTSDecompilerTest {
     void testAccessFlags_protectedModifier() {
         ArkTSStatement body = new ArkTSStatement.BlockStatement(
                 Collections.emptyList());
-        ArkTSStatement stmt = new ArkTSStatement.ClassMethodDeclaration(
+        ArkTSStatement stmt = new ArkTSDeclarations.ClassMethodDeclaration(
                 "onEvent", Collections.emptyList(), null, body,
                 false, "protected");
         String result = stmt.toArkTS(0);
@@ -2332,7 +2332,7 @@ class ArkTSDecompilerTest {
     void testAccessFlags_staticModifier() {
         ArkTSStatement body = new ArkTSStatement.BlockStatement(
                 Collections.emptyList());
-        ArkTSStatement stmt = new ArkTSStatement.ClassMethodDeclaration(
+        ArkTSStatement stmt = new ArkTSDeclarations.ClassMethodDeclaration(
                 "create", Collections.emptyList(), "Object", body,
                 true, "public");
         String result = stmt.toArkTS(0);
@@ -2343,17 +2343,17 @@ class ArkTSDecompilerTest {
 
     @Test
     void testDecorator_withComponentAndState() {
-        ArkTSStatement stateField = new ArkTSStatement.ClassFieldDeclaration(
+        ArkTSStatement stateField = new ArkTSDeclarations.ClassFieldDeclaration(
                 "count", "number",
                 new ArkTSExpression.LiteralExpression("0",
                         ArkTSExpression.LiteralExpression.LiteralKind.NUMBER),
                 false, null);
         ArkTSStatement decoratedField =
-                new ArkTSStatement.DecoratorStatement("State",
+                new ArkTSTypeDeclarations.DecoratorStatement("State",
                         Collections.emptyList());
         // Build a struct with decorator
-        ArkTSStatement.StructDeclaration struct =
-                new ArkTSStatement.StructDeclaration("CounterPage",
+        ArkTSTypeDeclarations.StructDeclaration struct =
+                new ArkTSTypeDeclarations.StructDeclaration("CounterPage",
                         List.of(decoratedField, stateField),
                         List.of("Component", "Entry"));
         String result = struct.toArkTS(0);
@@ -2424,20 +2424,20 @@ class ArkTSDecompilerTest {
 
     @Test
     void testInterfaceDeclaration_withMethodAndProperty() {
-        List<ArkTSStatement.InterfaceDeclaration.InterfaceMember> members =
+        List<ArkTSTypeDeclarations.InterfaceDeclaration.InterfaceMember> members =
                 List.of(
-                        new ArkTSStatement.InterfaceDeclaration.InterfaceMember(
+                        new ArkTSTypeDeclarations.InterfaceDeclaration.InterfaceMember(
                                 "property", "id", "number",
                                 Collections.emptyList(), false),
-                        new ArkTSStatement.InterfaceDeclaration.InterfaceMember(
+                        new ArkTSTypeDeclarations.InterfaceDeclaration.InterfaceMember(
                                 "method", "toString", "string",
                                 Collections.emptyList(), false),
-                        new ArkTSStatement.InterfaceDeclaration.InterfaceMember(
+                        new ArkTSTypeDeclarations.InterfaceDeclaration.InterfaceMember(
                                 "method", "process", "void",
-                                List.of(new ArkTSStatement.FunctionDeclaration
+                                List.of(new ArkTSDeclarations.FunctionDeclaration
                                         .FunctionParam("data", "Object")),
                                 false));
-        ArkTSStatement stmt = new ArkTSStatement.InterfaceDeclaration(
+        ArkTSStatement stmt = new ArkTSTypeDeclarations.InterfaceDeclaration(
                 "Processor", List.of("BaseProcessor"), members);
         String result = stmt.toArkTS(0);
         assertTrue(result.contains(
@@ -2451,7 +2451,7 @@ class ArkTSDecompilerTest {
 
     @Test
     void testClassFieldDeclaration_allModifiers() {
-        ArkTSStatement stmt = new ArkTSStatement.ClassFieldDeclaration(
+        ArkTSStatement stmt = new ArkTSDeclarations.ClassFieldDeclaration(
                 "instanceCount", "number",
                 new ArkTSExpression.LiteralExpression("0",
                         ArkTSExpression.LiteralExpression.LiteralKind.NUMBER),
@@ -2468,9 +2468,9 @@ class ArkTSDecompilerTest {
         ArkTSStatement body = new ArkTSStatement.BlockStatement(
                 List.of(new ArkTSStatement.ReturnStatement(
                         new ArkTSExpression.VariableExpression("value"))));
-        ArkTSStatement stmt = new ArkTSStatement.ClassMethodDeclaration(
+        ArkTSStatement stmt = new ArkTSDeclarations.ClassMethodDeclaration(
                 "getValue",
-                List.of(new ArkTSStatement.FunctionDeclaration.FunctionParam(
+                List.of(new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
                         "index", "number")),
                 "string", body, false, "public");
         String result = stmt.toArkTS(0);
@@ -2483,10 +2483,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testClassDeclaration_nestedIndentation() {
-        ArkTSStatement field = new ArkTSStatement.ClassFieldDeclaration(
+        ArkTSStatement field = new ArkTSDeclarations.ClassFieldDeclaration(
                 "data", "number", null, false, null);
-        ArkTSStatement.ClassDeclaration cls =
-                new ArkTSStatement.ClassDeclaration("Inner", null,
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("Inner", null,
                         List.of(field));
         String result = cls.toArkTS(1);
         assertTrue(result.startsWith("    class Inner {"));
@@ -2496,10 +2496,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testStructDeclaration_indentation() {
-        ArkTSStatement field = new ArkTSStatement.ClassFieldDeclaration(
+        ArkTSStatement field = new ArkTSDeclarations.ClassFieldDeclaration(
                 "title", "string", null, false, null);
-        ArkTSStatement.StructDeclaration struct =
-                new ArkTSStatement.StructDeclaration("Header",
+        ArkTSTypeDeclarations.StructDeclaration struct =
+                new ArkTSTypeDeclarations.StructDeclaration("Header",
                         List.of(field), List.of("Component"));
         String result = struct.toArkTS(1);
         assertTrue(result.startsWith("    @Component"));
@@ -2511,14 +2511,14 @@ class ArkTSDecompilerTest {
 
     @Test
     void testEnumDeclaration_mixedMembers() {
-        List<ArkTSStatement.EnumDeclaration.EnumMember> members = List.of(
-                new ArkTSStatement.EnumDeclaration.EnumMember("A", null),
-                new ArkTSStatement.EnumDeclaration.EnumMember("B",
+        List<ArkTSTypeDeclarations.EnumDeclaration.EnumMember> members = List.of(
+                new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("A", null),
+                new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("B",
                         new ArkTSExpression.LiteralExpression("10",
                                 ArkTSExpression.LiteralExpression
                                         .LiteralKind.NUMBER)),
-                new ArkTSStatement.EnumDeclaration.EnumMember("C", null));
-        ArkTSStatement stmt = new ArkTSStatement.EnumDeclaration("Mixed",
+                new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("C", null));
+        ArkTSStatement stmt = new ArkTSTypeDeclarations.EnumDeclaration("Mixed",
                 members);
         String result = stmt.toArkTS(0);
         assertTrue(result.contains("A,"));
@@ -2538,8 +2538,8 @@ class ArkTSDecompilerTest {
 
     @Test
     void testInterfaceMember_propertyKind() {
-        ArkTSStatement.InterfaceDeclaration.InterfaceMember member =
-                new ArkTSStatement.InterfaceDeclaration.InterfaceMember(
+        ArkTSTypeDeclarations.InterfaceDeclaration.InterfaceMember member =
+                new ArkTSTypeDeclarations.InterfaceDeclaration.InterfaceMember(
                         "property", "name", "string",
                         Collections.emptyList(), true);
         assertEquals("property", member.getKind());
@@ -2552,8 +2552,8 @@ class ArkTSDecompilerTest {
     void testClassFieldDeclaration_accessors() {
         ArkTSExpression init = new ArkTSExpression.LiteralExpression("42",
                 ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
-        ArkTSStatement.ClassFieldDeclaration field =
-                new ArkTSStatement.ClassFieldDeclaration(
+        ArkTSDeclarations.ClassFieldDeclaration field =
+                new ArkTSDeclarations.ClassFieldDeclaration(
                         "count", "number", init, true, "public");
         assertEquals("count", field.getName());
     }
@@ -2562,8 +2562,8 @@ class ArkTSDecompilerTest {
     void testClassMethodDeclaration_accessors() {
         ArkTSStatement body = new ArkTSStatement.BlockStatement(
                 Collections.emptyList());
-        ArkTSStatement.ClassMethodDeclaration method =
-                new ArkTSStatement.ClassMethodDeclaration(
+        ArkTSDeclarations.ClassMethodDeclaration method =
+                new ArkTSDeclarations.ClassMethodDeclaration(
                         "test", Collections.emptyList(), "void",
                         body, false, "private");
         assertEquals("test", method.getName());
@@ -2577,7 +2577,7 @@ class ArkTSDecompilerTest {
                 ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
         ArkTSExpression arg2 = new ArkTSExpression.LiteralExpression(
                 "hello", ArkTSExpression.LiteralExpression.LiteralKind.STRING);
-        ArkTSStatement stmt = new ArkTSStatement.SuperCallStatement(
+        ArkTSStatement stmt = new ArkTSControlFlow.SuperCallStatement(
                 List.of(arg1, arg2));
         assertEquals("super(42, \"hello\");", stmt.toArkTS(0));
     }
@@ -2589,8 +2589,8 @@ class ArkTSDecompilerTest {
         ArkTSExpression obj = new ArkTSExpression.MemberExpression(
                 new ArkTSExpression.VariableExpression("response"),
                 new ArkTSExpression.VariableExpression("data"), false);
-        ArkTSExpression.AsExpression asExpr =
-                new ArkTSExpression.AsExpression(obj, "string");
+        ArkTSAccessExpressions.AsExpression asExpr =
+                new ArkTSAccessExpressions.AsExpression(obj, "string");
         assertEquals("response.data as string", asExpr.toArkTS());
     }
 
@@ -2601,8 +2601,8 @@ class ArkTSDecompilerTest {
         ArkTSExpression inner = new ArkTSExpression.MemberExpression(
                 new ArkTSExpression.VariableExpression("config"),
                 new ArkTSExpression.VariableExpression("value"), false);
-        ArkTSExpression.NonNullExpression nonNull =
-                new ArkTSExpression.NonNullExpression(inner);
+        ArkTSAccessExpressions.NonNullExpression nonNull =
+                new ArkTSAccessExpressions.NonNullExpression(inner);
         assertEquals("config.value!", nonNull.toArkTS());
     }
 
@@ -2610,8 +2610,8 @@ class ArkTSDecompilerTest {
 
     @Test
     void testTypeReferenceExpression_nestedGeneric() {
-        ArkTSExpression.TypeReferenceExpression typeRef =
-                new ArkTSExpression.TypeReferenceExpression("Map",
+        ArkTSAccessExpressions.TypeReferenceExpression typeRef =
+                new ArkTSAccessExpressions.TypeReferenceExpression("Map",
                         List.of("string", "Array<number>"));
         assertEquals("Map<string, Array<number>>", typeRef.toArkTS());
     }
@@ -2620,15 +2620,15 @@ class ArkTSDecompilerTest {
 
     @Test
     void testFileModule_withMultipleDeclarations() {
-        ArkTSStatement enumDecl = new ArkTSStatement.EnumDeclaration("Color",
-                List.of(new ArkTSStatement.EnumDeclaration.EnumMember("Red",
+        ArkTSStatement enumDecl = new ArkTSTypeDeclarations.EnumDeclaration("Color",
+                List.of(new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("Red",
                                 null),
-                        new ArkTSStatement.EnumDeclaration.EnumMember("Blue",
+                        new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("Blue",
                                 null)));
-        ArkTSStatement classDecl = new ArkTSStatement.ClassDeclaration(
+        ArkTSStatement classDecl = new ArkTSDeclarations.ClassDeclaration(
                 "Painter", null, Collections.emptyList());
-        ArkTSStatement.FileModule fileModule =
-                new ArkTSStatement.FileModule(Collections.emptyList(),
+        ArkTSTypeDeclarations.FileModule fileModule =
+                new ArkTSTypeDeclarations.FileModule(Collections.emptyList(),
                         List.of(enumDecl, classDecl),
                         Collections.emptyList());
         String result = fileModule.toArkTS(0);
@@ -2642,17 +2642,17 @@ class ArkTSDecompilerTest {
 
     @Test
     void testGenericClassDeclaration_withFieldAndMethod() {
-        ArkTSStatement field = new ArkTSStatement.ClassFieldDeclaration(
+        ArkTSStatement field = new ArkTSDeclarations.ClassFieldDeclaration(
                 "value", "T", null, false, "private");
         ArkTSStatement methodBody = new ArkTSStatement.BlockStatement(
                 List.of(new ArkTSStatement.ReturnStatement(
                         new ArkTSExpression.VariableExpression("value"))));
-        ArkTSStatement method = new ArkTSStatement.ClassMethodDeclaration(
+        ArkTSStatement method = new ArkTSDeclarations.ClassMethodDeclaration(
                 "getValue", Collections.emptyList(), "T",
                 methodBody, false, "public");
-        ArkTSStatement.GenericClassDeclaration cls =
-                new ArkTSStatement.GenericClassDeclaration("Box",
-                        List.of(new ArkTSStatement.TypeParameter("T", null)),
+        ArkTSTypeDeclarations.GenericClassDeclaration cls =
+                new ArkTSTypeDeclarations.GenericClassDeclaration("Box",
+                        List.of(new ArkTSTypeDeclarations.TypeParameter("T", null)),
                         null, List.of(field, method));
         String result = cls.toArkTS(0);
         assertTrue(result.contains("class Box<T>"));
@@ -2691,8 +2691,8 @@ class ArkTSDecompilerTest {
         ArkTSStatement finallyBody = new ArkTSStatement.BlockStatement(
                 List.of(new ArkTSStatement.ExpressionStatement(
                         new ArkTSExpression.VariableExpression("cleanup()"))));
-        ArkTSStatement.TryCatchStatement stmt =
-                new ArkTSStatement.TryCatchStatement(tryBody, "e",
+        ArkTSControlFlow.TryCatchStatement stmt =
+                new ArkTSControlFlow.TryCatchStatement(tryBody, "e",
                         catchBody, finallyBody);
         String result = stmt.toArkTS(0);
         assertTrue(result.startsWith("try {"));
@@ -2710,8 +2710,8 @@ class ArkTSDecompilerTest {
                         new ArkTSExpression.CallExpression(
                                 new ArkTSExpression.VariableExpression("console.log"),
                                 List.of(new ArkTSExpression.VariableExpression("e"))))));
-        ArkTSStatement.TryCatchStatement stmt =
-                new ArkTSStatement.TryCatchStatement(tryBody, "e",
+        ArkTSControlFlow.TryCatchStatement stmt =
+                new ArkTSControlFlow.TryCatchStatement(tryBody, "e",
                         catchBody, null);
         String result = stmt.toArkTS(0);
         assertTrue(result.contains("catch (e)"));
@@ -2722,20 +2722,20 @@ class ArkTSDecompilerTest {
     @Test
     void testSwitchStatement_basic() {
         ArkTSExpression disc = new ArkTSExpression.VariableExpression("x");
-        ArkTSStatement.SwitchStatement.SwitchCase case1 =
-                new ArkTSStatement.SwitchStatement.SwitchCase(
+        ArkTSControlFlow.SwitchStatement.SwitchCase case1 =
+                new ArkTSControlFlow.SwitchStatement.SwitchCase(
                         new ArkTSExpression.LiteralExpression("1",
                                 ArkTSExpression.LiteralExpression.LiteralKind.NUMBER),
                         List.of(new ArkTSStatement.BreakStatement()));
-        ArkTSStatement.SwitchStatement.SwitchCase case2 =
-                new ArkTSStatement.SwitchStatement.SwitchCase(
+        ArkTSControlFlow.SwitchStatement.SwitchCase case2 =
+                new ArkTSControlFlow.SwitchStatement.SwitchCase(
                         new ArkTSExpression.LiteralExpression("2",
                                 ArkTSExpression.LiteralExpression.LiteralKind.NUMBER),
                         List.of(new ArkTSStatement.BreakStatement()));
         ArkTSStatement defaultBlock = new ArkTSStatement.BlockStatement(
                 List.of(new ArkTSStatement.BreakStatement()));
-        ArkTSStatement.SwitchStatement stmt =
-                new ArkTSStatement.SwitchStatement(disc,
+        ArkTSControlFlow.SwitchStatement stmt =
+                new ArkTSControlFlow.SwitchStatement(disc,
                         List.of(case1, case2), defaultBlock);
         String result = stmt.toArkTS(0);
         assertTrue(result.startsWith("switch (x) {"));
@@ -2748,13 +2748,13 @@ class ArkTSDecompilerTest {
     @Test
     void testSwitchStatement_withIndentation() {
         ArkTSExpression disc = new ArkTSExpression.VariableExpression("color");
-        ArkTSStatement.SwitchStatement.SwitchCase case1 =
-                new ArkTSStatement.SwitchStatement.SwitchCase(
+        ArkTSControlFlow.SwitchStatement.SwitchCase case1 =
+                new ArkTSControlFlow.SwitchStatement.SwitchCase(
                         new ArkTSExpression.LiteralExpression("red",
                                 ArkTSExpression.LiteralExpression.LiteralKind.STRING),
                         List.of(new ArkTSStatement.BreakStatement()));
-        ArkTSStatement.SwitchStatement stmt =
-                new ArkTSStatement.SwitchStatement(disc,
+        ArkTSControlFlow.SwitchStatement stmt =
+                new ArkTSControlFlow.SwitchStatement(disc,
                         List.of(case1), null);
         String result = stmt.toArkTS(1);
         assertTrue(result.startsWith("    switch (color) {"));
@@ -2849,15 +2849,15 @@ class ArkTSDecompilerTest {
 
     @Test
     void testClassDeclaration_blankLinesBetweenMembers() {
-        ArkTSStatement field = new ArkTSStatement.ClassFieldDeclaration(
+        ArkTSStatement field = new ArkTSDeclarations.ClassFieldDeclaration(
                 "data", "number", null, false, null);
         ArkTSStatement methodBody = new ArkTSStatement.BlockStatement(
                 Collections.emptyList());
-        ArkTSStatement method = new ArkTSStatement.ClassMethodDeclaration(
+        ArkTSStatement method = new ArkTSDeclarations.ClassMethodDeclaration(
                 "getValue", Collections.emptyList(), "number",
                 methodBody, false, "public");
-        ArkTSStatement.ClassDeclaration cls =
-                new ArkTSStatement.ClassDeclaration("MyClass", null,
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("MyClass", null,
                         List.of(field, method));
         String result = cls.toArkTS(0);
         // Verify blank line separates field from method
@@ -2869,17 +2869,17 @@ class ArkTSDecompilerTest {
     @Test
     void testClassDeclaration_memberGrouping() {
         // Verify fields come before methods in the output
-        ArkTSStatement field1 = new ArkTSStatement.ClassFieldDeclaration(
+        ArkTSStatement field1 = new ArkTSDeclarations.ClassFieldDeclaration(
                 "x", "number", null, false, null);
-        ArkTSStatement field2 = new ArkTSStatement.ClassFieldDeclaration(
+        ArkTSStatement field2 = new ArkTSDeclarations.ClassFieldDeclaration(
                 "y", "number", null, false, null);
         ArkTSStatement methodBody = new ArkTSStatement.BlockStatement(
                 Collections.emptyList());
-        ArkTSStatement method = new ArkTSStatement.ClassMethodDeclaration(
+        ArkTSStatement method = new ArkTSDeclarations.ClassMethodDeclaration(
                 "calc", Collections.emptyList(), null,
                 methodBody, false, null);
-        ArkTSStatement.ClassDeclaration cls =
-                new ArkTSStatement.ClassDeclaration("Point", null,
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("Point", null,
                         List.of(field1, field2, method));
         String result = cls.toArkTS(0);
         int field1Idx = result.indexOf("x: number;");
@@ -3026,12 +3026,12 @@ class ArkTSDecompilerTest {
 
     @Test
     void testFileModule_blankLinesBetweenDeclarations() {
-        ArkTSStatement cls1 = new ArkTSStatement.ClassDeclaration("First",
+        ArkTSStatement cls1 = new ArkTSDeclarations.ClassDeclaration("First",
                 null, Collections.emptyList());
-        ArkTSStatement cls2 = new ArkTSStatement.ClassDeclaration("Second",
+        ArkTSStatement cls2 = new ArkTSDeclarations.ClassDeclaration("Second",
                 null, Collections.emptyList());
-        ArkTSStatement.FileModule fileModule =
-                new ArkTSStatement.FileModule(Collections.emptyList(),
+        ArkTSTypeDeclarations.FileModule fileModule =
+                new ArkTSTypeDeclarations.FileModule(Collections.emptyList(),
                         List.of(cls1, cls2),
                         Collections.emptyList());
         String result = fileModule.toArkTS(0);
@@ -3042,12 +3042,12 @@ class ArkTSDecompilerTest {
 
     @Test
     void testFileModule_importsBeforeDeclarations() {
-        ArkTSStatement imp = new ArkTSStatement.ImportStatement(
+        ArkTSStatement imp = new ArkTSDeclarations.ImportStatement(
                 List.of("Base"), "./base", false, null, null);
-        ArkTSStatement cls = new ArkTSStatement.ClassDeclaration("Child",
+        ArkTSStatement cls = new ArkTSDeclarations.ClassDeclaration("Child",
                 "Base", Collections.emptyList());
-        ArkTSStatement.FileModule fileModule =
-                new ArkTSStatement.FileModule(List.of(imp), List.of(cls),
+        ArkTSTypeDeclarations.FileModule fileModule =
+                new ArkTSTypeDeclarations.FileModule(List.of(imp), List.of(cls),
                         Collections.emptyList());
         String result = fileModule.toArkTS(0);
         int importIdx = result.indexOf("import");
@@ -3415,7 +3415,7 @@ class ArkTSDecompilerTest {
         ArkTSExpression alt = new ArkTSExpression.LiteralExpression("2",
                 ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
         ArkTSExpression ternary =
-                new ArkTSExpression.ConditionalExpression(test, cons, alt);
+                new ArkTSAccessExpressions.ConditionalExpression(test, cons, alt);
         ArkTSStatement stmt = new ArkTSStatement.VariableDeclaration(
                 "let", "result", null, ternary);
         assertEquals("let result = (x ? 1 : 2);", stmt.toArkTS(0));
@@ -3461,8 +3461,8 @@ class ArkTSDecompilerTest {
                 List.of(breakStmt));
         ArkTSExpression cond = new ArkTSExpression.LiteralExpression("true",
                 ArkTSExpression.LiteralExpression.LiteralKind.BOOLEAN);
-        ArkTSStatement.WhileStatement whileStmt =
-                new ArkTSStatement.WhileStatement(cond, body);
+        ArkTSControlFlow.WhileStatement whileStmt =
+                new ArkTSControlFlow.WhileStatement(cond, body);
         String result = whileStmt.toArkTS(0);
         assertTrue(result.contains("while (true)"));
         assertTrue(result.contains("break;"));
@@ -3476,8 +3476,8 @@ class ArkTSDecompilerTest {
                 List.of(continueStmt));
         ArkTSExpression cond = new ArkTSExpression.LiteralExpression("true",
                 ArkTSExpression.LiteralExpression.LiteralKind.BOOLEAN);
-        ArkTSStatement.WhileStatement whileStmt =
-                new ArkTSStatement.WhileStatement(cond, body);
+        ArkTSControlFlow.WhileStatement whileStmt =
+                new ArkTSControlFlow.WhileStatement(cond, body);
         String result = whileStmt.toArkTS(0);
         assertTrue(result.contains("while (true)"));
         assertTrue(result.contains("continue;"));
@@ -3485,7 +3485,7 @@ class ArkTSDecompilerTest {
 
     @Test
     void testNestedTryCatchStatement_formatting() {
-        ArkTSStatement innerTry = new ArkTSStatement.TryCatchStatement(
+        ArkTSStatement innerTry = new ArkTSControlFlow.TryCatchStatement(
                 new ArkTSStatement.BlockStatement(List.of(
                         new ArkTSStatement.ExpressionStatement(
                                 new ArkTSExpression.VariableExpression(
@@ -3496,7 +3496,7 @@ class ArkTSDecompilerTest {
                                 new ArkTSExpression.VariableExpression(
                                         "handleInner")))),
                 null);
-        ArkTSStatement outerTry = new ArkTSStatement.TryCatchStatement(
+        ArkTSStatement outerTry = new ArkTSControlFlow.TryCatchStatement(
                 new ArkTSStatement.BlockStatement(List.of(innerTry)),
                 "e2",
                 new ArkTSStatement.BlockStatement(List.of(
@@ -3531,7 +3531,7 @@ class ArkTSDecompilerTest {
                 "negative",
                 ArkTSExpression.LiteralExpression.LiteralKind.STRING);
         ArkTSExpression ternary =
-                new ArkTSExpression.ConditionalExpression(test, cons, alt);
+                new ArkTSAccessExpressions.ConditionalExpression(test, cons, alt);
         assertEquals("((x > 0) ? \"positive\" : \"negative\")",
                 ternary.toArkTS());
     }
@@ -3875,17 +3875,17 @@ class ArkTSDecompilerTest {
     void testSwitchStatement_toArkTS() {
         ArkTSExpression discriminant =
                 new ArkTSExpression.VariableExpression("x");
-        List<ArkTSStatement.SwitchStatement.SwitchCase> cases =
+        List<ArkTSControlFlow.SwitchStatement.SwitchCase> cases =
                 new ArrayList<>();
 
         // case 1: break;
-        cases.add(new ArkTSStatement.SwitchStatement.SwitchCase(
+        cases.add(new ArkTSControlFlow.SwitchStatement.SwitchCase(
                 new ArkTSExpression.LiteralExpression("1",
                         ArkTSExpression.LiteralExpression.LiteralKind.NUMBER),
                 List.of(new ArkTSStatement.BreakStatement())));
 
         // case 2: y = 20; break;
-        cases.add(new ArkTSStatement.SwitchStatement.SwitchCase(
+        cases.add(new ArkTSControlFlow.SwitchStatement.SwitchCase(
                 new ArkTSExpression.LiteralExpression("2",
                         ArkTSExpression.LiteralExpression.LiteralKind.NUMBER),
                 List.of(
@@ -3914,8 +3914,8 @@ class ArkTSDecompilerTest {
                                                         .LiteralKind.NUMBER))),
                         new ArkTSStatement.BreakStatement()));
 
-        ArkTSStatement.SwitchStatement switchStmt =
-                new ArkTSStatement.SwitchStatement(discriminant, cases,
+        ArkTSControlFlow.SwitchStatement switchStmt =
+                new ArkTSControlFlow.SwitchStatement(discriminant, cases,
                         defaultBlock);
         String output = switchStmt.toArkTS(0);
         assertTrue(output.startsWith("switch (x) {"));
@@ -4019,15 +4019,15 @@ class ArkTSDecompilerTest {
      */
     @Test
     void testSwitchCaseAstNode() {
-        List<ArkTSStatement.SwitchStatement.SwitchCase> cases =
+        List<ArkTSControlFlow.SwitchStatement.SwitchCase> cases =
                 new ArrayList<>();
-        cases.add(new ArkTSStatement.SwitchStatement.SwitchCase(
+        cases.add(new ArkTSControlFlow.SwitchStatement.SwitchCase(
                 new ArkTSExpression.LiteralExpression("1",
                         ArkTSExpression.LiteralExpression.LiteralKind.NUMBER),
                 List.of(new ArkTSStatement.BreakStatement())));
 
-        ArkTSStatement.SwitchStatement stmt =
-                new ArkTSStatement.SwitchStatement(
+        ArkTSControlFlow.SwitchStatement stmt =
+                new ArkTSControlFlow.SwitchStatement(
                         new ArkTSExpression.VariableExpression("x"),
                         cases, null);
         String output = stmt.toArkTS(0);
@@ -4042,9 +4042,9 @@ class ArkTSDecompilerTest {
      */
     @Test
     void testSwitchStatementNoDefault() {
-        List<ArkTSStatement.SwitchStatement.SwitchCase> cases =
+        List<ArkTSControlFlow.SwitchStatement.SwitchCase> cases =
                 new ArrayList<>();
-        cases.add(new ArkTSStatement.SwitchStatement.SwitchCase(
+        cases.add(new ArkTSControlFlow.SwitchStatement.SwitchCase(
                 new ArkTSExpression.LiteralExpression("5",
                         ArkTSExpression.LiteralExpression.LiteralKind.NUMBER),
                 List.of(
@@ -4059,8 +4059,8 @@ class ArkTSDecompilerTest {
                                                         .LiteralKind.NUMBER))),
                         new ArkTSStatement.BreakStatement())));
 
-        ArkTSStatement.SwitchStatement stmt =
-                new ArkTSStatement.SwitchStatement(
+        ArkTSControlFlow.SwitchStatement stmt =
+                new ArkTSControlFlow.SwitchStatement(
                         new ArkTSExpression.VariableExpression("val"),
                         cases, null);
         String output = stmt.toArkTS(0);
@@ -4258,8 +4258,8 @@ class ArkTSDecompilerTest {
     @Test
     void testDecompile_privateMemberExpression_toArkTS() {
         ArkTSExpression obj = new ArkTSExpression.VariableExpression("obj");
-        ArkTSExpression.PrivateMemberExpression expr =
-                new ArkTSExpression.PrivateMemberExpression(obj, "secret");
+        ArkTSPropertyExpressions.PrivateMemberExpression expr =
+                new ArkTSPropertyExpressions.PrivateMemberExpression(obj, "secret");
         assertEquals("obj.#secret", expr.toArkTS());
     }
 
@@ -4268,8 +4268,8 @@ class ArkTSDecompilerTest {
         ArkTSExpression prop =
                 new ArkTSExpression.VariableExpression("name");
         ArkTSExpression obj = new ArkTSExpression.VariableExpression("obj");
-        ArkTSExpression.InExpression expr =
-                new ArkTSExpression.InExpression(prop, obj);
+        ArkTSPropertyExpressions.InExpression expr =
+                new ArkTSPropertyExpressions.InExpression(prop, obj);
         assertEquals("name in obj", expr.toArkTS());
     }
 
@@ -4279,8 +4279,8 @@ class ArkTSDecompilerTest {
                 new ArkTSExpression.VariableExpression("value");
         ArkTSExpression expr2 =
                 new ArkTSExpression.VariableExpression("MyClass");
-        ArkTSExpression.InstanceofExpression expr =
-                new ArkTSExpression.InstanceofExpression(expr1, expr2);
+        ArkTSPropertyExpressions.InstanceofExpression expr =
+                new ArkTSPropertyExpressions.InstanceofExpression(expr1, expr2);
         assertEquals("value instanceof MyClass", expr.toArkTS());
     }
 
@@ -4292,8 +4292,8 @@ class ArkTSDecompilerTest {
                 new ArkTSExpression.VariableExpression("prop");
         ArkTSExpression target =
                 new ArkTSExpression.MemberExpression(obj, prop, false);
-        ArkTSExpression.DeleteExpression expr =
-                new ArkTSExpression.DeleteExpression(target);
+        ArkTSPropertyExpressions.DeleteExpression expr =
+                new ArkTSPropertyExpressions.DeleteExpression(target);
         assertEquals("delete obj.prop", expr.toArkTS());
     }
 
@@ -4303,8 +4303,8 @@ class ArkTSDecompilerTest {
                 new ArkTSExpression.VariableExpression("target");
         ArkTSExpression source =
                 new ArkTSExpression.VariableExpression("source");
-        ArkTSExpression.CopyDataPropertiesExpression expr =
-                new ArkTSExpression.CopyDataPropertiesExpression(target, source);
+        ArkTSPropertyExpressions.CopyDataPropertiesExpression expr =
+                new ArkTSPropertyExpressions.CopyDataPropertiesExpression(target, source);
         assertEquals("Object.assign(target, source)", expr.toArkTS());
     }
 
@@ -4313,13 +4313,13 @@ class ArkTSDecompilerTest {
         ArkTSExpression source =
                 new ArkTSExpression.VariableExpression("other");
         ArkTSExpression spread =
-                new ArkTSExpression.SpreadExpression(source);
-        List<ArkTSExpression.ObjectLiteralExpression.ObjectProperty> props =
+                new ArkTSAccessExpressions.SpreadExpression(source);
+        List<ArkTSAccessExpressions.ObjectLiteralExpression.ObjectProperty> props =
                 new ArrayList<>();
-        props.add(new ArkTSExpression.ObjectLiteralExpression.ObjectProperty(
+        props.add(new ArkTSAccessExpressions.ObjectLiteralExpression.ObjectProperty(
                 null, spread));
-        ArkTSExpression.ObjectLiteralExpression expr =
-                new ArkTSExpression.ObjectLiteralExpression(props);
+        ArkTSAccessExpressions.ObjectLiteralExpression expr =
+                new ArkTSAccessExpressions.ObjectLiteralExpression(props);
         assertEquals("{ ...other }", expr.toArkTS());
     }
 
@@ -4329,8 +4329,8 @@ class ArkTSDecompilerTest {
     void testArrayDestructuringExpression_basic() {
         ArkTSExpression source =
                 new ArkTSExpression.VariableExpression("arr");
-        ArkTSExpression.ArrayDestructuringExpression expr =
-                new ArkTSExpression.ArrayDestructuringExpression(
+        ArkTSPropertyExpressions.ArrayDestructuringExpression expr =
+                new ArkTSPropertyExpressions.ArrayDestructuringExpression(
                         List.of("a", "b", "c"), null, source);
         assertEquals("[a, b, c] = arr", expr.toArkTS());
     }
@@ -4339,40 +4339,40 @@ class ArkTSDecompilerTest {
     void testArrayDestructuringExpression_withRest() {
         ArkTSExpression source =
                 new ArkTSExpression.VariableExpression("arr");
-        ArkTSExpression.ArrayDestructuringExpression expr =
-                new ArkTSExpression.ArrayDestructuringExpression(
+        ArkTSPropertyExpressions.ArrayDestructuringExpression expr =
+                new ArkTSPropertyExpressions.ArrayDestructuringExpression(
                         List.of("first", "second"), "rest", source);
         assertEquals("[first, second, ...rest] = arr", expr.toArkTS());
     }
 
     @Test
     void testObjectDestructuringExpression_basic() {
-        List<ArkTSExpression.ObjectDestructuringExpression.DestructuringBinding>
+        List<ArkTSPropertyExpressions.ObjectDestructuringExpression.DestructuringBinding>
                 bindings = List.of(
-                        new ArkTSExpression.ObjectDestructuringExpression
+                        new ArkTSPropertyExpressions.ObjectDestructuringExpression
                                 .DestructuringBinding("x", null),
-                        new ArkTSExpression.ObjectDestructuringExpression
+                        new ArkTSPropertyExpressions.ObjectDestructuringExpression
                                 .DestructuringBinding("y", null));
         ArkTSExpression source =
                 new ArkTSExpression.VariableExpression("obj");
-        ArkTSExpression.ObjectDestructuringExpression expr =
-                new ArkTSExpression.ObjectDestructuringExpression(
+        ArkTSPropertyExpressions.ObjectDestructuringExpression expr =
+                new ArkTSPropertyExpressions.ObjectDestructuringExpression(
                         bindings, source);
         assertEquals("{ x, y } = obj", expr.toArkTS());
     }
 
     @Test
     void testObjectDestructuringExpression_withRename() {
-        List<ArkTSExpression.ObjectDestructuringExpression.DestructuringBinding>
+        List<ArkTSPropertyExpressions.ObjectDestructuringExpression.DestructuringBinding>
                 bindings = List.of(
-                        new ArkTSExpression.ObjectDestructuringExpression
+                        new ArkTSPropertyExpressions.ObjectDestructuringExpression
                                 .DestructuringBinding("x", "a"),
-                        new ArkTSExpression.ObjectDestructuringExpression
+                        new ArkTSPropertyExpressions.ObjectDestructuringExpression
                                 .DestructuringBinding("y", "b"));
         ArkTSExpression source =
                 new ArkTSExpression.VariableExpression("obj");
-        ArkTSExpression.ObjectDestructuringExpression expr =
-                new ArkTSExpression.ObjectDestructuringExpression(
+        ArkTSPropertyExpressions.ObjectDestructuringExpression expr =
+                new ArkTSPropertyExpressions.ObjectDestructuringExpression(
                         bindings, source);
         assertEquals("{ x: a, y: b } = obj", expr.toArkTS());
     }
@@ -4382,28 +4382,28 @@ class ArkTSDecompilerTest {
         ArkTSExpression source =
                 new ArkTSExpression.VariableExpression("arr");
         ArkTSExpression pattern =
-                new ArkTSExpression.ArrayDestructuringExpression(
+                new ArkTSPropertyExpressions.ArrayDestructuringExpression(
                         List.of("a", "b"), null, source);
         ArkTSStatement stmt =
-                new ArkTSStatement.DestructuringDeclaration("const", pattern);
+                new ArkTSTypeDeclarations.DestructuringDeclaration("const", pattern);
         assertEquals("const [a, b] = arr;", stmt.toArkTS(0));
     }
 
     @Test
     void testDestructuringDeclaration_object() {
-        List<ArkTSExpression.ObjectDestructuringExpression.DestructuringBinding>
+        List<ArkTSPropertyExpressions.ObjectDestructuringExpression.DestructuringBinding>
                 bindings = List.of(
-                        new ArkTSExpression.ObjectDestructuringExpression
+                        new ArkTSPropertyExpressions.ObjectDestructuringExpression
                                 .DestructuringBinding("name", null),
-                        new ArkTSExpression.ObjectDestructuringExpression
+                        new ArkTSPropertyExpressions.ObjectDestructuringExpression
                                 .DestructuringBinding("value", null));
         ArkTSExpression source =
                 new ArkTSExpression.VariableExpression("obj");
         ArkTSExpression pattern =
-                new ArkTSExpression.ObjectDestructuringExpression(
+                new ArkTSPropertyExpressions.ObjectDestructuringExpression(
                         bindings, source);
         ArkTSStatement stmt =
-                new ArkTSStatement.DestructuringDeclaration("let", pattern);
+                new ArkTSTypeDeclarations.DestructuringDeclaration("let", pattern);
         assertEquals("let { name, value } = obj;", stmt.toArkTS(0));
     }
 
@@ -4412,12 +4412,12 @@ class ArkTSDecompilerTest {
         ArkTSExpression spreadArg =
                 new ArkTSExpression.VariableExpression("arr");
         ArkTSExpression spread =
-                new ArkTSExpression.SpreadExpression(spreadArg);
+                new ArkTSAccessExpressions.SpreadExpression(spreadArg);
         ArkTSExpression elem =
                 new ArkTSExpression.LiteralExpression("1",
                         ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
-        ArkTSExpression.ArrayLiteralExpression expr =
-                new ArkTSExpression.ArrayLiteralExpression(
+        ArkTSAccessExpressions.ArrayLiteralExpression expr =
+                new ArkTSAccessExpressions.ArrayLiteralExpression(
                         List.of(spread, elem));
         assertEquals("[...arr, 1]", expr.toArkTS());
     }
@@ -4427,18 +4427,18 @@ class ArkTSDecompilerTest {
         ArkTSExpression spreadArg =
                 new ArkTSExpression.VariableExpression("defaults");
         ArkTSExpression spread =
-                new ArkTSExpression.SpreadExpression(spreadArg);
+                new ArkTSAccessExpressions.SpreadExpression(spreadArg);
         ArkTSExpression value =
                 new ArkTSExpression.LiteralExpression("42",
                         ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
-        List<ArkTSExpression.ObjectLiteralExpression.ObjectProperty> props =
+        List<ArkTSAccessExpressions.ObjectLiteralExpression.ObjectProperty> props =
                 new ArrayList<>();
-        props.add(new ArkTSExpression.ObjectLiteralExpression.ObjectProperty(
+        props.add(new ArkTSAccessExpressions.ObjectLiteralExpression.ObjectProperty(
                 null, spread));
-        props.add(new ArkTSExpression.ObjectLiteralExpression.ObjectProperty(
+        props.add(new ArkTSAccessExpressions.ObjectLiteralExpression.ObjectProperty(
                 "x", value));
-        ArkTSExpression.ObjectLiteralExpression expr =
-                new ArkTSExpression.ObjectLiteralExpression(props);
+        ArkTSAccessExpressions.ObjectLiteralExpression expr =
+                new ArkTSAccessExpressions.ObjectLiteralExpression(props);
         assertEquals("{ ...defaults, x: 42 }", expr.toArkTS());
     }
 
@@ -4446,8 +4446,8 @@ class ArkTSDecompilerTest {
     void testTemplateLiteralExpression_basic() {
         ArkTSExpression nameExpr =
                 new ArkTSExpression.VariableExpression("name");
-        ArkTSExpression.TemplateLiteralExpression expr =
-                new ArkTSExpression.TemplateLiteralExpression(
+        ArkTSAccessExpressions.TemplateLiteralExpression expr =
+                new ArkTSAccessExpressions.TemplateLiteralExpression(
                         List.of("Hello ", "!"), List.of(nameExpr));
         assertEquals("`Hello ${name}!`", expr.toArkTS());
     }
@@ -4458,8 +4458,8 @@ class ArkTSDecompilerTest {
                 new ArkTSExpression.VariableExpression("first");
         ArkTSExpression last =
                 new ArkTSExpression.VariableExpression("last");
-        ArkTSExpression.TemplateLiteralExpression expr =
-                new ArkTSExpression.TemplateLiteralExpression(
+        ArkTSAccessExpressions.TemplateLiteralExpression expr =
+                new ArkTSAccessExpressions.TemplateLiteralExpression(
                         List.of("Hello ", " ", "!"),
                         List.of(first, last));
         assertEquals("`Hello ${first} ${last}!`", expr.toArkTS());
@@ -4467,16 +4467,16 @@ class ArkTSDecompilerTest {
 
     @Test
     void testTemplateLiteralExpression_plainText() {
-        ArkTSExpression.TemplateLiteralExpression expr =
-                new ArkTSExpression.TemplateLiteralExpression(
+        ArkTSAccessExpressions.TemplateLiteralExpression expr =
+                new ArkTSAccessExpressions.TemplateLiteralExpression(
                         List.of("plain text"), Collections.emptyList());
         assertEquals("`plain text`", expr.toArkTS());
     }
 
     @Test
     void testTemplateLiteralExpression_escapeBacktick() {
-        ArkTSExpression.TemplateLiteralExpression expr =
-                new ArkTSExpression.TemplateLiteralExpression(
+        ArkTSAccessExpressions.TemplateLiteralExpression expr =
+                new ArkTSAccessExpressions.TemplateLiteralExpression(
                         List.of("contains `backtick`"),
                         Collections.emptyList());
         assertEquals("`contains \\`backtick\\``", expr.toArkTS());
@@ -4484,8 +4484,8 @@ class ArkTSDecompilerTest {
 
     @Test
     void testTemplateLiteralExpression_escapeDollar() {
-        ArkTSExpression.TemplateLiteralExpression expr =
-                new ArkTSExpression.TemplateLiteralExpression(
+        ArkTSAccessExpressions.TemplateLiteralExpression expr =
+                new ArkTSAccessExpressions.TemplateLiteralExpression(
                         List.of("cost: $5"), Collections.emptyList());
         assertEquals("`cost: \\$5`", expr.toArkTS());
     }
@@ -4496,8 +4496,8 @@ class ArkTSDecompilerTest {
                 new ArkTSExpression.VariableExpression("obj");
         ArkTSExpression prop =
                 new ArkTSExpression.VariableExpression("name");
-        ArkTSExpression.OptionalChainExpression expr =
-                new ArkTSExpression.OptionalChainExpression(obj, prop, false);
+        ArkTSAccessExpressions.OptionalChainExpression expr =
+                new ArkTSAccessExpressions.OptionalChainExpression(obj, prop, false);
         assertEquals("obj?.name", expr.toArkTS());
     }
 
@@ -4507,8 +4507,8 @@ class ArkTSDecompilerTest {
                 new ArkTSExpression.VariableExpression("obj");
         ArkTSExpression prop =
                 new ArkTSExpression.VariableExpression("key");
-        ArkTSExpression.OptionalChainExpression expr =
-                new ArkTSExpression.OptionalChainExpression(obj, prop, true);
+        ArkTSAccessExpressions.OptionalChainExpression expr =
+                new ArkTSAccessExpressions.OptionalChainExpression(obj, prop, true);
         assertEquals("obj?.[key]", expr.toArkTS());
     }
 
@@ -4519,8 +4519,8 @@ class ArkTSDecompilerTest {
         ArkTSExpression right =
                 new ArkTSExpression.LiteralExpression("default",
                         ArkTSExpression.LiteralExpression.LiteralKind.STRING);
-        ArkTSExpression.NullishCoalescingExpression expr =
-                new ArkTSExpression.NullishCoalescingExpression(left, right);
+        ArkTSPropertyExpressions.NullishCoalescingExpression expr =
+                new ArkTSPropertyExpressions.NullishCoalescingExpression(left, right);
         assertEquals("(value ?? \"default\")", expr.toArkTS());
     }
 
@@ -4531,8 +4531,8 @@ class ArkTSDecompilerTest {
         ArkTSExpression right =
                 new ArkTSExpression.LiteralExpression("0",
                         ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
-        ArkTSExpression.NullishCoalescingExpression expr =
-                new ArkTSExpression.NullishCoalescingExpression(left, right);
+        ArkTSPropertyExpressions.NullishCoalescingExpression expr =
+                new ArkTSPropertyExpressions.NullishCoalescingExpression(left, right);
         assertEquals("(x ?? 0)", expr.toArkTS());
     }
 
@@ -4547,7 +4547,7 @@ class ArkTSDecompilerTest {
         ArkTSDecompiler decomp = new ArkTSDecompiler();
         ArkTSExpression result =
                 decomp.tryReconstructTemplateLiteral(binary);
-        assertTrue(result instanceof ArkTSExpression.TemplateLiteralExpression);
+        assertTrue(result instanceof ArkTSAccessExpressions.TemplateLiteralExpression);
         assertEquals("`Hello ${name}`", result.toArkTS());
     }
 
@@ -4566,7 +4566,7 @@ class ArkTSDecompilerTest {
         ArkTSDecompiler decomp = new ArkTSDecompiler();
         ArkTSExpression result =
                 decomp.tryReconstructTemplateLiteral(outer);
-        assertTrue(result instanceof ArkTSExpression.TemplateLiteralExpression);
+        assertTrue(result instanceof ArkTSAccessExpressions.TemplateLiteralExpression);
         assertEquals("`Hello ${name}!`", result.toArkTS());
     }
 
@@ -4580,7 +4580,7 @@ class ArkTSDecompilerTest {
         ArkTSDecompiler decomp = new ArkTSDecompiler();
         ArkTSExpression result =
                 decomp.tryReconstructTemplateLiteral(binary);
-        assertFalse(result instanceof ArkTSExpression.TemplateLiteralExpression);
+        assertFalse(result instanceof ArkTSAccessExpressions.TemplateLiteralExpression);
     }
 
     @Test
@@ -4603,7 +4603,7 @@ class ArkTSDecompilerTest {
         ArkTSDecompiler decomp = new ArkTSDecompiler();
         ArkTSExpression result = decomp.tryDetectNullishCoalescing(
                 condition, defaultVal, x);
-        assertTrue(result instanceof ArkTSExpression.NullishCoalescingExpression);
+        assertTrue(result instanceof ArkTSPropertyExpressions.NullishCoalescingExpression);
         assertEquals("(x ?? \"default\")", result.toArkTS());
     }
 
@@ -4631,8 +4631,8 @@ class ArkTSDecompilerTest {
                 new ArkTSExpression.VariableExpression("arr");
         ArkTSStatement body = new ArkTSStatement.BlockStatement(
                 Collections.emptyList());
-        ArkTSStatement.ForOfStatement stmt =
-                new ArkTSStatement.ForOfStatement("const", "item",
+        ArkTSControlFlow.ForOfStatement stmt =
+                new ArkTSControlFlow.ForOfStatement("const", "item",
                         iterable, body);
         String result = stmt.toArkTS(0);
         assertTrue(result.startsWith("for (const item of arr)"));
@@ -4652,8 +4652,8 @@ class ArkTSDecompilerTest {
                                 List.of(value))));
         ArkTSStatement body =
                 new ArkTSStatement.BlockStatement(bodyStmts);
-        ArkTSStatement.ForOfStatement stmt =
-                new ArkTSStatement.ForOfStatement("const", "item",
+        ArkTSControlFlow.ForOfStatement stmt =
+                new ArkTSControlFlow.ForOfStatement("const", "item",
                         iterable, body);
         String result = stmt.toArkTS(0);
         assertTrue(result.contains("for (const item of arr)"));
@@ -4666,8 +4666,8 @@ class ArkTSDecompilerTest {
                 new ArkTSExpression.VariableExpression("data");
         ArkTSStatement body =
                 new ArkTSStatement.BlockStatement(Collections.emptyList());
-        ArkTSStatement.ForOfStatement stmt =
-                new ArkTSStatement.ForOfStatement("const", "x",
+        ArkTSControlFlow.ForOfStatement stmt =
+                new ArkTSControlFlow.ForOfStatement("const", "x",
                         iterable, body);
         String result = stmt.toArkTS(1);
         assertTrue(result.startsWith("    for (const x of data)"));
@@ -4679,8 +4679,8 @@ class ArkTSDecompilerTest {
                 new ArkTSExpression.VariableExpression("obj");
         ArkTSStatement body =
                 new ArkTSStatement.BlockStatement(Collections.emptyList());
-        ArkTSStatement.ForInStatement stmt =
-                new ArkTSStatement.ForInStatement("const", "key",
+        ArkTSControlFlow.ForInStatement stmt =
+                new ArkTSControlFlow.ForInStatement("const", "key",
                         object, body);
         String result = stmt.toArkTS(0);
         assertTrue(result.startsWith("for (const key in obj)"));
@@ -4700,8 +4700,8 @@ class ArkTSDecompilerTest {
                                 List.of(key))));
         ArkTSStatement body =
                 new ArkTSStatement.BlockStatement(bodyStmts);
-        ArkTSStatement.ForInStatement stmt =
-                new ArkTSStatement.ForInStatement("const", "key",
+        ArkTSControlFlow.ForInStatement stmt =
+                new ArkTSControlFlow.ForInStatement("const", "key",
                         object, body);
         String result = stmt.toArkTS(0);
         assertTrue(result.contains("for (const key in obj)"));
@@ -4714,8 +4714,8 @@ class ArkTSDecompilerTest {
                 new ArkTSExpression.VariableExpression("data");
         ArkTSStatement body =
                 new ArkTSStatement.BlockStatement(Collections.emptyList());
-        ArkTSStatement.ForInStatement stmt =
-                new ArkTSStatement.ForInStatement("const", "k",
+        ArkTSControlFlow.ForInStatement stmt =
+                new ArkTSControlFlow.ForInStatement("const", "k",
                         object, body);
         String result = stmt.toArkTS(2);
         assertTrue(result.startsWith("        for (const k in data)"));
@@ -4727,8 +4727,8 @@ class ArkTSDecompilerTest {
                 new ArkTSExpression.VariableExpression("items");
         ArkTSStatement body =
                 new ArkTSStatement.BlockStatement(Collections.emptyList());
-        ArkTSStatement.ForOfStatement stmt =
-                new ArkTSStatement.ForOfStatement("let", "elem",
+        ArkTSControlFlow.ForOfStatement stmt =
+                new ArkTSControlFlow.ForOfStatement("let", "elem",
                         iterable, body);
         assertEquals("let", stmt.getVariableKind());
         assertEquals("elem", stmt.getVariableName());
@@ -4741,8 +4741,8 @@ class ArkTSDecompilerTest {
                 new ArkTSExpression.VariableExpression("target");
         ArkTSStatement body =
                 new ArkTSStatement.BlockStatement(Collections.emptyList());
-        ArkTSStatement.ForInStatement stmt =
-                new ArkTSStatement.ForInStatement("let", "prop",
+        ArkTSControlFlow.ForInStatement stmt =
+                new ArkTSControlFlow.ForInStatement("let", "prop",
                         object, body);
         assertEquals("let", stmt.getVariableKind());
         assertEquals("prop", stmt.getVariableName());
@@ -5107,12 +5107,12 @@ class ArkTSDecompilerTest {
         ArkTSStatement innerBody =
                 new ArkTSStatement.BlockStatement(Collections.emptyList());
         ArkTSStatement innerForOf =
-                new ArkTSStatement.ForOfStatement("const", "cell",
+                new ArkTSControlFlow.ForOfStatement("const", "cell",
                         innerIterable, innerBody);
         ArkTSStatement outerBody =
                 new ArkTSStatement.BlockStatement(List.of(innerForOf));
         ArkTSStatement outerForOf =
-                new ArkTSStatement.ForOfStatement("const", "row",
+                new ArkTSControlFlow.ForOfStatement("const", "row",
                         outerIterable, outerBody);
         String result = outerForOf.toArkTS(0);
         assertTrue(result.contains("for (const row of matrix)"));
@@ -5136,7 +5136,7 @@ class ArkTSDecompilerTest {
                         ArkTSExpression.LiteralExpression.LiteralKind.NUMBER));
         ArkTSStatement body =
                 new ArkTSStatement.BlockStatement(Collections.emptyList());
-        ArkTSStatement forStmt = new ArkTSStatement.ForStatement(
+        ArkTSStatement forStmt = new ArkTSControlFlow.ForStatement(
                 initStmt, condition, update, body);
         String result = forStmt.toArkTS(0);
         assertTrue(result.startsWith("for ("));
@@ -5288,19 +5288,19 @@ class ArkTSDecompilerTest {
 
     @Test
     void testConstEnumDeclaration_basic() {
-        List<ArkTSStatement.EnumDeclaration.EnumMember> members =
+        List<ArkTSTypeDeclarations.EnumDeclaration.EnumMember> members =
                 new ArrayList<>();
-        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("RED",
+        members.add(new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("RED",
                 new ArkTSExpression.LiteralExpression("0",
                         ArkTSExpression.LiteralExpression.LiteralKind.NUMBER)));
-        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("GREEN",
+        members.add(new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("GREEN",
                 new ArkTSExpression.LiteralExpression("1",
                         ArkTSExpression.LiteralExpression.LiteralKind.NUMBER)));
-        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("BLUE",
+        members.add(new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("BLUE",
                 new ArkTSExpression.LiteralExpression("2",
                         ArkTSExpression.LiteralExpression.LiteralKind.NUMBER)));
-        ArkTSStatement.ConstEnumDeclaration constEnum =
-                new ArkTSStatement.ConstEnumDeclaration("Color", members);
+        ArkTSTypeDeclarations.ConstEnumDeclaration constEnum =
+                new ArkTSTypeDeclarations.ConstEnumDeclaration("Color", members);
         String result = constEnum.toArkTS(0);
         assertTrue(result.startsWith("const enum Color {"));
         assertTrue(result.contains("RED = 0"));
@@ -5311,16 +5311,16 @@ class ArkTSDecompilerTest {
 
     @Test
     void testConstEnumDeclaration_stringValues() {
-        List<ArkTSStatement.EnumDeclaration.EnumMember> members =
+        List<ArkTSTypeDeclarations.EnumDeclaration.EnumMember> members =
                 new ArrayList<>();
-        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("North",
+        members.add(new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("North",
                 new ArkTSExpression.LiteralExpression("N",
                         ArkTSExpression.LiteralExpression.LiteralKind.STRING)));
-        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("South",
+        members.add(new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("South",
                 new ArkTSExpression.LiteralExpression("S",
                         ArkTSExpression.LiteralExpression.LiteralKind.STRING)));
-        ArkTSStatement.ConstEnumDeclaration constEnum =
-                new ArkTSStatement.ConstEnumDeclaration("Direction", members);
+        ArkTSTypeDeclarations.ConstEnumDeclaration constEnum =
+                new ArkTSTypeDeclarations.ConstEnumDeclaration("Direction", members);
         String result = constEnum.toArkTS(0);
         assertTrue(result.startsWith("const enum Direction {"));
         assertTrue(result.contains("North = \"N\""));
@@ -5329,17 +5329,17 @@ class ArkTSDecompilerTest {
 
     @Test
     void testEnumDeclaration_mixedStringAndNumberValues() {
-        List<ArkTSStatement.EnumDeclaration.EnumMember> members =
+        List<ArkTSTypeDeclarations.EnumDeclaration.EnumMember> members =
                 new ArrayList<>();
-        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("A",
+        members.add(new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("A",
                 new ArkTSExpression.LiteralExpression("1",
                         ArkTSExpression.LiteralExpression.LiteralKind.NUMBER)));
-        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("B",
+        members.add(new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("B",
                 new ArkTSExpression.LiteralExpression("hello",
                         ArkTSExpression.LiteralExpression.LiteralKind.STRING)));
-        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("C", null));
-        ArkTSStatement.EnumDeclaration enumDecl =
-                new ArkTSStatement.EnumDeclaration("Mixed", members);
+        members.add(new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("C", null));
+        ArkTSTypeDeclarations.EnumDeclaration enumDecl =
+                new ArkTSTypeDeclarations.EnumDeclaration("Mixed", members);
         String result = enumDecl.toArkTS(0);
         assertTrue(result.startsWith("enum Mixed {"));
         assertTrue(result.contains("A = 1"));
@@ -5350,16 +5350,16 @@ class ArkTSDecompilerTest {
 
     @Test
     void testConstEnumDeclaration_autoIncrement() {
-        List<ArkTSStatement.EnumDeclaration.EnumMember> members =
+        List<ArkTSTypeDeclarations.EnumDeclaration.EnumMember> members =
                 new ArrayList<>();
-        members.add(new ArkTSStatement.EnumDeclaration.EnumMember(
+        members.add(new ArkTSTypeDeclarations.EnumDeclaration.EnumMember(
                 "First", null));
-        members.add(new ArkTSStatement.EnumDeclaration.EnumMember(
+        members.add(new ArkTSTypeDeclarations.EnumDeclaration.EnumMember(
                 "Second", null));
-        members.add(new ArkTSStatement.EnumDeclaration.EnumMember(
+        members.add(new ArkTSTypeDeclarations.EnumDeclaration.EnumMember(
                 "Third", null));
-        ArkTSStatement.ConstEnumDeclaration constEnum =
-                new ArkTSStatement.ConstEnumDeclaration("Auto", members);
+        ArkTSTypeDeclarations.ConstEnumDeclaration constEnum =
+                new ArkTSTypeDeclarations.ConstEnumDeclaration("Auto", members);
         String result = constEnum.toArkTS(0);
         assertTrue(result.startsWith("const enum Auto {"));
         assertTrue(result.contains("First"));
@@ -5370,13 +5370,13 @@ class ArkTSDecompilerTest {
 
     @Test
     void testConstEnumDeclaration_singleMember() {
-        List<ArkTSStatement.EnumDeclaration.EnumMember> members =
+        List<ArkTSTypeDeclarations.EnumDeclaration.EnumMember> members =
                 new ArrayList<>();
-        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("Only",
+        members.add(new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("Only",
                 new ArkTSExpression.LiteralExpression("42",
                         ArkTSExpression.LiteralExpression.LiteralKind.NUMBER)));
-        ArkTSStatement.ConstEnumDeclaration constEnum =
-                new ArkTSStatement.ConstEnumDeclaration("Single", members);
+        ArkTSTypeDeclarations.ConstEnumDeclaration constEnum =
+                new ArkTSTypeDeclarations.ConstEnumDeclaration("Single", members);
         String result = constEnum.toArkTS(0);
         assertTrue(result.startsWith("const enum Single {"));
         assertTrue(result.contains("Only = 42"));
@@ -5385,29 +5385,29 @@ class ArkTSDecompilerTest {
 
     @Test
     void testConstEnumDeclaration_withIndent() {
-        List<ArkTSStatement.EnumDeclaration.EnumMember> members =
+        List<ArkTSTypeDeclarations.EnumDeclaration.EnumMember> members =
                 new ArrayList<>();
-        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("X",
+        members.add(new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("X",
                 new ArkTSExpression.LiteralExpression("1",
                         ArkTSExpression.LiteralExpression.LiteralKind.NUMBER)));
-        ArkTSStatement.ConstEnumDeclaration constEnum =
-                new ArkTSStatement.ConstEnumDeclaration("Inner", members);
+        ArkTSTypeDeclarations.ConstEnumDeclaration constEnum =
+                new ArkTSTypeDeclarations.ConstEnumDeclaration("Inner", members);
         String result = constEnum.toArkTS(1);
         assertTrue(result.startsWith("    const enum Inner {"));
     }
 
     @Test
     void testEnumDeclaration_computedNumberValues() {
-        List<ArkTSStatement.EnumDeclaration.EnumMember> members =
+        List<ArkTSTypeDeclarations.EnumDeclaration.EnumMember> members =
                 new ArrayList<>();
-        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("HUNDRED",
+        members.add(new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("HUNDRED",
                 new ArkTSExpression.LiteralExpression("100",
                         ArkTSExpression.LiteralExpression.LiteralKind.NUMBER)));
-        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("TWO_HUNDRED",
+        members.add(new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("TWO_HUNDRED",
                 new ArkTSExpression.LiteralExpression("200",
                         ArkTSExpression.LiteralExpression.LiteralKind.NUMBER)));
-        ArkTSStatement.EnumDeclaration enumDecl =
-                new ArkTSStatement.EnumDeclaration("HttpStatus", members);
+        ArkTSTypeDeclarations.EnumDeclaration enumDecl =
+                new ArkTSTypeDeclarations.EnumDeclaration("HttpStatus", members);
         String result = enumDecl.toArkTS(0);
         assertTrue(result.contains("HUNDRED = 100"));
         assertTrue(result.contains("TWO_HUNDRED = 200"));
@@ -5415,16 +5415,16 @@ class ArkTSDecompilerTest {
 
     @Test
     void testEnumDeclaration_stringEnum() {
-        List<ArkTSStatement.EnumDeclaration.EnumMember> members =
+        List<ArkTSTypeDeclarations.EnumDeclaration.EnumMember> members =
                 new ArrayList<>();
-        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("Up",
+        members.add(new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("Up",
                 new ArkTSExpression.LiteralExpression("UP",
                         ArkTSExpression.LiteralExpression.LiteralKind.STRING)));
-        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("Down",
+        members.add(new ArkTSTypeDeclarations.EnumDeclaration.EnumMember("Down",
                 new ArkTSExpression.LiteralExpression("DOWN",
                         ArkTSExpression.LiteralExpression.LiteralKind.STRING)));
-        ArkTSStatement.EnumDeclaration enumDecl =
-                new ArkTSStatement.EnumDeclaration("Vertical", members);
+        ArkTSTypeDeclarations.EnumDeclaration enumDecl =
+                new ArkTSTypeDeclarations.EnumDeclaration("Vertical", members);
         String result = enumDecl.toArkTS(0);
         assertTrue(result.startsWith("enum Vertical {"));
         assertTrue(result.contains("Up = \"UP\""));

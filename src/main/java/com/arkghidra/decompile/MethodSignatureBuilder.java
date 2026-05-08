@@ -38,7 +38,7 @@ public class MethodSignatureBuilder {
      * @param numArgs the number of arguments from the code section
      * @return the list of parameter strings like "param_0: number"
      */
-    public static List<ArkTSStatement.FunctionDeclaration.FunctionParam> buildParams(
+    public static List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> buildParams(
             AbcProto proto, long numArgs) {
         return buildParams(proto, numArgs, null);
     }
@@ -55,14 +55,14 @@ public class MethodSignatureBuilder {
      * @param debugNames the debug parameter names (may be null or contain nulls)
      * @return the list of parameter strings
      */
-    public static List<ArkTSStatement.FunctionDeclaration.FunctionParam> buildParams(
+    public static List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> buildParams(
             AbcProto proto, long numArgs, List<String> debugNames) {
-        List<ArkTSStatement.FunctionDeclaration.FunctionParam> params =
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
                 new ArrayList<>();
         if (proto == null) {
             for (int i = 0; i < numArgs; i++) {
                 String name = resolveParamName(i, debugNames);
-                params.add(new ArkTSStatement.FunctionDeclaration.FunctionParam(
+                params.add(new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
                         name, null));
             }
             return params;
@@ -74,14 +74,14 @@ public class MethodSignatureBuilder {
         for (int i = 0; i < paramCount; i++) {
             String typeName = shortyToArkType(shorty.get(i + 1));
             String name = resolveParamName(i, debugNames);
-            params.add(new ArkTSStatement.FunctionDeclaration.FunctionParam(
+            params.add(new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
                     name, typeName));
         }
 
         // If there are more args than shorty entries, add untyped params
         for (int i = paramCount; i < numArgs; i++) {
             String name = resolveParamName(i, debugNames);
-            params.add(new ArkTSStatement.FunctionDeclaration.FunctionParam(
+            params.add(new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
                     name, null));
         }
 
@@ -125,7 +125,7 @@ public class MethodSignatureBuilder {
      */
     public static String buildSignature(AbcMethod method, AbcProto proto,
             long numArgs, List<String> debugNames) {
-        List<ArkTSStatement.FunctionDeclaration.FunctionParam> params =
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
                 buildParams(proto, numArgs, debugNames);
         StringBuilder sb = new StringBuilder();
         sb.append("function ").append(method.getName()).append("(");
