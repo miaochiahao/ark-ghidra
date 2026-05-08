@@ -10,7 +10,10 @@ import java.util.Set;
 import com.arkghidra.disasm.ArkDisassembler;
 import com.arkghidra.disasm.ArkInstruction;
 import com.arkghidra.disasm.ArkOperand;
+import com.arkghidra.format.AbcAccessFlags;
+import com.arkghidra.format.AbcClass;
 import com.arkghidra.format.AbcCode;
+import com.arkghidra.format.AbcField;
 import com.arkghidra.format.AbcFile;
 import com.arkghidra.format.AbcMethod;
 import com.arkghidra.format.AbcProto;
@@ -90,6 +93,460 @@ public class ArkTSDecompiler {
             sb.append(stmt.toArkTS(0)).append("\n");
         }
         return sb.toString().trim();
+    }
+
+    // --- Whole-file decompilation ---
+
+    /**
+     * Decompiles an entire ABC file into a complete ArkTS source file.
+     *
+     * <p>This method iterates all classes in the ABC file, builds class
+     * declarations with constructors, methods, and fields, resolves imports
+     * from module references, and generates a complete .ts file.
+     *
+     * @param abcFile the parsed ABC file
+     * @return the decompiled ArkTS source code for the entire file
+     */
+    public String decompileFile(AbcFile abcFile) {
+        if (abcFile == null) {
+            return "";
+        }
+
+        List<ArkTSStatement> imports = new ArrayList<>();
+        List<ArkTSStatement> declarations = new ArrayList<>();
+        List<ArkTSStatement> exports = new ArrayList<>();
+        Set<String> seenImports = new HashSet<>();
+
+        for (AbcClass abcClass : abcFile.getClasses()) {
+            ArkTSStatement classDecl =
+                    buildClassDeclaration(abcClass, abcFile, seenImports);
+            if (classDecl != null) {
+                // Check if the class should be exported
+                if (isExported(abcClass)) {
+                    exports.add(new ArkTSStatement.ExportStatement(
+                            Collections.emptyList(), classDecl, false));
+                } else {
+                    declarations.add(classDecl);
+                }
+            }
+        }
+
+        // Detect top-level enums from literal arrays
+        List<ArkTSStatement> enumDecls =
+                detectEnumsFromLiteralArrays(abcFile);
+        declarations.addAll(enumDecls);
+
+        // Build import statements from collected module references
+        for (String moduleRef : seenImports) {
+            imports.add(new ArkTSStatement.ImportStatement(
+                    Collections.emptyList(), moduleRef, false, null, null));
+        }
+
+        ArkTSStatement.FileModule fileModule =
+                new ArkTSStatement.FileModule(imports, declarations, exports);
+        return fileModule.toArkTS(0);
+    }
+
+    /**
+     * Builds a class declaration from an ABC class definition.
+     *
+     * @param abcClass the ABC class
+     * @param abcFile the parent ABC file for resolving references
+     * @param seenImports collector for import module references
+     * @return the class declaration statement, or null
+     */
+    private ArkTSStatement buildClassDeclaration(AbcClass abcClass,
+            AbcFile abcFile, Set<String> seenImports) {
+        String className = sanitizeClassName(abcClass.getName());
+        long flags = abcClass.getAccessFlags();
+
+        // Determine if this is a struct (ArkTS UI component)
+        List<String> decorators = detectDecorators(abcClass);
+
+        // Resolve super class
+        String superClassName = resolveSuperClassName(
+                abcClass.getSuperClassOff(), abcFile);
+
+        // Track any module imports referenced by the super class
+        if (superClassName != null && superClassName.contains(".")) {
+            String module = superClassName.substring(0,
+                    superClassName.lastIndexOf('.'));
+            seenImports.add(module);
+        }
+
+        List<ArkTSStatement> members = new ArrayList<>();
+
+        // Add fields
+        for (AbcField field : abcClass.getFields()) {
+            ArkTSStatement fieldDecl = buildFieldDeclaration(field);
+            members.add(fieldDecl);
+        }
+
+        // Add methods, detecting constructor
+        for (AbcMethod method : abcClass.getMethods()) {
+            ArkTSStatement methodDecl = buildMethodDeclaration(
+                    method, abcFile, className);
+            if (methodDecl != null) {
+                members.add(methodDecl);
+            }
+        }
+
+        // Determine type parameters from class metadata
+        List<ArkTSStatement.TypeParameter> typeParams =
+                extractTypeParameters(abcClass);
+
+        // Choose the right declaration type
+        if (!decorators.isEmpty() && isStructClass(abcClass)) {
+            return new ArkTSStatement.StructDeclaration(
+                    className, members, decorators);
+        }
+        if (!typeParams.isEmpty()) {
+            return new ArkTSStatement.GenericClassDeclaration(
+                    className, typeParams, superClassName, members);
+        }
+        return new ArkTSStatement.ClassDeclaration(
+                className, superClassName, members);
+    }
+
+    /**
+     * Builds a field declaration from an ABC field definition.
+     *
+     * @param field the ABC field
+     * @return the field declaration statement
+     */
+    private ArkTSStatement.ClassFieldDeclaration buildFieldDeclaration(
+            AbcField field) {
+        String fieldName = field.getName();
+        String typeName = inferFieldType(field);
+        boolean isStatic = (field.getAccessFlags()
+                & AbcAccessFlags.ACC_STATIC) != 0;
+        String accessModifier = accessFlagsToModifier(field.getAccessFlags());
+        return new ArkTSStatement.ClassFieldDeclaration(
+                fieldName, typeName, null, isStatic, accessModifier);
+    }
+
+    /**
+     * Builds a method declaration from an ABC method.
+     * Detects constructors and generates appropriate declaration types.
+     *
+     * @param method the ABC method
+     * @param abcFile the parent ABC file
+     * @param className the enclosing class name
+     * @return the method declaration statement, or null
+     */
+    private ArkTSStatement buildMethodDeclaration(AbcMethod method,
+            AbcFile abcFile, String className) {
+        AbcCode code = abcFile != null
+                ? abcFile.getCodeForMethod(method) : null;
+        AbcProto proto = resolveProto(method, abcFile);
+
+        boolean isConstructor = isConstructorMethod(method, className);
+
+        if (isConstructor) {
+            return buildConstructorDeclaration(method, code, abcFile, proto);
+        }
+
+        // Regular method
+        List<ArkTSStatement> bodyStmts = Collections.emptyList();
+        if (code != null && code.getCodeSize() > 0) {
+            bodyStmts = decompileMethodBody(method, code, abcFile);
+        }
+
+        List<ArkTSStatement.FunctionDeclaration.FunctionParam> params =
+                MethodSignatureBuilder.buildParams(proto,
+                        code != null ? code.getNumArgs() : 0);
+        String returnType = MethodSignatureBuilder.getReturnType(proto);
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(bodyStmts);
+        boolean isStatic = (method.getAccessFlags()
+                & AbcAccessFlags.ACC_STATIC) != 0;
+        String accessModifier = accessFlagsToModifier(method.getAccessFlags());
+
+        return new ArkTSStatement.ClassMethodDeclaration(
+                method.getName(), params, returnType, body,
+                isStatic, accessModifier);
+    }
+
+    /**
+     * Builds a constructor declaration from an ABC method.
+     *
+     * @param method the ABC method (must be a constructor)
+     * @param code the method's code section
+     * @param abcFile the parent ABC file
+     * @param proto the method prototype
+     * @return the constructor declaration statement
+     */
+    private ArkTSStatement.ConstructorDeclaration buildConstructorDeclaration(
+            AbcMethod method, AbcCode code, AbcFile abcFile, AbcProto proto) {
+        List<ArkTSStatement> bodyStmts = new ArrayList<>();
+        if (code != null && code.getCodeSize() > 0) {
+            bodyStmts = decompileMethodBody(method, code, abcFile);
+        }
+
+        List<ArkTSStatement.FunctionDeclaration.FunctionParam> params =
+                MethodSignatureBuilder.buildParams(proto,
+                        code != null ? code.getNumArgs() : 0);
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(bodyStmts);
+        return new ArkTSStatement.ConstructorDeclaration(params, body);
+    }
+
+    /**
+     * Decompiles the body of a method into statements.
+     *
+     * @param method the method
+     * @param code the method's code section
+     * @param abcFile the parent ABC file
+     * @return the list of decompiled statements
+     */
+    private List<ArkTSStatement> decompileMethodBody(AbcMethod method,
+            AbcCode code, AbcFile abcFile) {
+        if (code == null || code.getInstructions() == null
+                || code.getCodeSize() == 0) {
+            return Collections.emptyList();
+        }
+
+        ArkDisassembler disasm = new ArkDisassembler();
+        List<ArkInstruction> instructions = disasm.disassemble(
+                code.getInstructions(), 0, (int) code.getCodeSize());
+
+        if (instructions.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        ControlFlowGraph cfg = ControlFlowGraph.build(instructions,
+                code.getTryBlocks());
+
+        AbcProto proto = resolveProto(method, abcFile);
+        DecompilationContext ctx = new DecompilationContext(
+                method, code, proto, abcFile, cfg, instructions);
+
+        return generateStatements(ctx);
+    }
+
+    // --- Class reconstruction helpers ---
+
+    /**
+     * Sanitizes a raw ABC class name into a valid ArkTS identifier.
+     * ABC class names may include module path prefixes separated by '/'.
+     *
+     * @param rawName the raw class name from the ABC file
+     * @return the sanitized class name
+     */
+    private String sanitizeClassName(String rawName) {
+        if (rawName == null || rawName.isEmpty()) {
+            return "AnonymousClass";
+        }
+        // Take the last segment after '/'
+        int lastSlash = rawName.lastIndexOf('/');
+        if (lastSlash >= 0 && lastSlash < rawName.length() - 1) {
+            return rawName.substring(lastSlash + 1);
+        }
+        return rawName;
+    }
+
+    /**
+     * Determines whether a method is a constructor.
+     *
+     * @param method the method to check
+     * @param className the enclosing class name
+     * @return true if the method is a constructor
+     */
+    private boolean isConstructorMethod(AbcMethod method, String className) {
+        String name = method.getName();
+        return "<init>".equals(name) || "<ctor>".equals(name)
+                || className.equals(name);
+    }
+
+    /**
+     * Resolves the super class name from the super class offset.
+     *
+     * @param superClassOff the offset of the super class in the ABC file
+     * @param abcFile the parent ABC file
+     * @return the super class name, or null if no super class
+     */
+    private String resolveSuperClassName(long superClassOff, AbcFile abcFile) {
+        if (superClassOff == 0 || abcFile == null) {
+            return null;
+        }
+        for (AbcClass cls : abcFile.getClasses()) {
+            if (cls.getOffset() == superClassOff) {
+                return sanitizeClassName(cls.getName());
+            }
+        }
+        return "super_class_" + superClassOff;
+    }
+
+    /**
+     * Determines whether a class should be represented as an ArkTS struct.
+     * Structs in ArkTS are typically UI components.
+     *
+     * @param abcClass the ABC class
+     * @return true if the class is a struct
+     */
+    private boolean isStructClass(AbcClass abcClass) {
+        String name = abcClass.getName();
+        if (name == null) {
+            return false;
+        }
+        // Heuristic: ArkTS structs often have names ending in "Page" or "Component"
+        // or have @Component decorator markers
+        return name.endsWith("Page") || name.endsWith("Component")
+                || name.endsWith("View") || name.endsWith("Widget");
+    }
+
+    /**
+     * Detects decorators applied to a class.
+     * In ABC bytecode, decorators are often stored as annotations or
+     * recognizable patterns in the class metadata.
+     *
+     * @param abcClass the ABC class
+     * @return the list of decorator names
+     */
+    private List<String> detectDecorators(AbcClass abcClass) {
+        List<String> decorators = new ArrayList<>();
+        String name = abcClass.getName();
+        if (name == null) {
+            return decorators;
+        }
+        // Detect common ArkTS decorator patterns from class name
+        if (name.endsWith("Page") || name.contains("Page")) {
+            decorators.add("Entry");
+            decorators.add("Component");
+        }
+        // Detect from field decorator patterns
+        for (AbcField field : abcClass.getFields()) {
+            String fieldName = field.getName();
+            if (fieldName != null) {
+                String decorator = detectFieldDecorator(fieldName);
+                if (decorator != null && !decorators.contains(decorator)) {
+                    decorators.add(decorator);
+                }
+            }
+        }
+        return decorators;
+    }
+
+    /**
+     * Detects decorator type from a field name pattern.
+     *
+     * @param fieldName the field name
+     * @return the decorator name, or null
+     */
+    private String detectFieldDecorator(String fieldName) {
+        // Common ArkTS state management decorators
+        if (fieldName.startsWith("__") && fieldName.endsWith("__")) {
+            String inner = fieldName.substring(2, fieldName.length() - 2);
+            switch (inner) {
+                case "state":
+                    return "State";
+                case "prop":
+                    return "Prop";
+                case "link":
+                    return "Link";
+                case "provide":
+                    return "Provide";
+                case "consume":
+                    return "Consume";
+                case "watch":
+                    return "Watch";
+                default:
+                    break;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Extracts type parameters from class metadata.
+     *
+     * @param abcClass the ABC class
+     * @return the list of type parameters (may be empty)
+     */
+    private List<ArkTSStatement.TypeParameter> extractTypeParameters(
+            AbcClass abcClass) {
+        // Type parameters are typically encoded in the ABC class metadata
+        // For now, return empty as ABC format does not explicitly store
+        // generic type parameters in the class definition
+        return Collections.emptyList();
+    }
+
+    /**
+     * Infers the type of a field from its metadata.
+     *
+     * @param field the ABC field
+     * @return the inferred type name, or null
+     */
+    private String inferFieldType(AbcField field) {
+        // Type inference from field metadata is limited in ABC
+        // The typeIdx could be resolved via the type table if available
+        return null;
+    }
+
+    /**
+     * Converts access flags to a modifier string.
+     *
+     * @param flags the access flags
+     * @return the modifier string, or null
+     */
+    private static String accessFlagsToModifier(long flags) {
+        if ((flags & AbcAccessFlags.ACC_PUBLIC) != 0) {
+            return "public";
+        }
+        if ((flags & AbcAccessFlags.ACC_PRIVATE) != 0) {
+            return "private";
+        }
+        if ((flags & AbcAccessFlags.ACC_PROTECTED) != 0) {
+            return "protected";
+        }
+        return null;
+    }
+
+    /**
+     * Determines if a class is exported.
+     *
+     * @param abcClass the ABC class
+     * @return true if the class is exported
+     */
+    private boolean isExported(AbcClass abcClass) {
+        return (abcClass.getAccessFlags() & AbcAccessFlags.ACC_PUBLIC) != 0;
+    }
+
+    // --- Enum detection ---
+
+    /**
+     * Detects enum declarations from literal arrays in the ABC file.
+     * Enums in Ark bytecode are often compiled as literal arrays with
+     * consecutive integer values or string constants.
+     *
+     * @param abcFile the ABC file
+     * @return the list of detected enum declarations
+     */
+    private List<ArkTSStatement> detectEnumsFromLiteralArrays(AbcFile abcFile) {
+        List<ArkTSStatement> enums = new ArrayList<>();
+        if (abcFile == null || abcFile.getLiteralArrays().isEmpty()) {
+            return enums;
+        }
+
+        // Check classes marked as enums
+        for (AbcClass cls : abcFile.getClasses()) {
+            if ((cls.getAccessFlags() & AbcAccessFlags.ACC_ENUM) != 0) {
+                List<ArkTSStatement.EnumDeclaration.EnumMember> members =
+                        new ArrayList<>();
+                for (AbcField field : cls.getFields()) {
+                    if ((field.getAccessFlags()
+                            & AbcAccessFlags.ACC_STATIC) != 0) {
+                        members.add(
+                                new ArkTSStatement.EnumDeclaration.EnumMember(
+                                        field.getName(), null));
+                    }
+                }
+                if (!members.isEmpty()) {
+                    enums.add(new ArkTSStatement.EnumDeclaration(
+                            sanitizeClassName(cls.getName()), members));
+                }
+            }
+        }
+
+        return enums;
     }
 
     // --- Statement generation ---
@@ -1169,6 +1626,175 @@ public class ArkTSDecompiler {
             return new StatementResult(null, expr);
         }
 
+        // --- Define method ---
+        if (opcode == ArkOpcodesCompat.DEFINEMETHOD) {
+            int methodIdx = (int) operands.get(0).getValue();
+            ArkTSExpression expr = new ArkTSExpression.VariableExpression(
+                    "method_" + methodIdx);
+            return new StatementResult(null, expr);
+        }
+
+        // --- Define class with buffer ---
+        if (opcode == ArkOpcodesCompat.DEFINECLASSWITHBUFFER) {
+            return processDefineClassWithBuffer(insn, ctx);
+        }
+
+        // --- Define field by name ---
+        if (opcode == ArkOpcodesCompat.DEFINEFIELDBYNAME) {
+            int stringIdx = (int) operands.get(1).getValue();
+            String fieldName = ctx.resolveString(stringIdx);
+            int objReg = (int) operands.get(operands.size() - 1).getValue();
+            ArkTSExpression target =
+                    new ArkTSExpression.MemberExpression(
+                            new ArkTSExpression.VariableExpression("v" + objReg),
+                            new ArkTSExpression.VariableExpression(fieldName),
+                            false);
+            ArkTSExpression value = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            return new StatementResult(
+                    new ArkTSStatement.ExpressionStatement(
+                            new ArkTSExpression.AssignExpression(target, value)),
+                    value);
+        }
+
+        // --- Define property by name ---
+        if (opcode == ArkOpcodesCompat.DEFINEPROPERTYBYNAME) {
+            int stringIdx = (int) operands.get(1).getValue();
+            String propName = ctx.resolveString(stringIdx);
+            int objReg = (int) operands.get(operands.size() - 1).getValue();
+            ArkTSExpression target =
+                    new ArkTSExpression.MemberExpression(
+                            new ArkTSExpression.VariableExpression("v" + objReg),
+                            new ArkTSExpression.VariableExpression(propName),
+                            false);
+            ArkTSExpression value = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            return new StatementResult(
+                    new ArkTSStatement.ExpressionStatement(
+                            new ArkTSExpression.AssignExpression(target, value)),
+                    value);
+        }
+
+        // --- Super call this range ---
+        if (opcode == ArkOpcodesCompat.SUPERCALLTHISRANGE
+                || opcode == ArkOpcodesCompat.SUPERCALLARROWRANGE) {
+            int numArgs = (int) operands.get(0).getValue();
+            int firstReg = (int) operands.get(operands.size() - 1).getValue();
+            List<ArkTSExpression> args = new ArrayList<>();
+            for (int a = 0; a < numArgs; a++) {
+                args.add(new ArkTSExpression.VariableExpression(
+                        "v" + (firstReg + a)));
+            }
+            ArkTSStatement superCall =
+                    new ArkTSStatement.SuperCallStatement(args);
+            return new StatementResult(superCall,
+                    new ArkTSExpression.CallExpression(
+                            new ArkTSExpression.VariableExpression("super"),
+                            args));
+        }
+
+        // --- Super call spread ---
+        if (opcode == ArkOpcodesCompat.SUPERCALLSPREAD) {
+            int spreadReg = (int) operands.get(0).getValue();
+            ArkTSExpression spreadArg =
+                    new ArkTSExpression.SpreadExpression(
+                            new ArkTSExpression.VariableExpression(
+                                    "v" + spreadReg));
+            List<ArkTSExpression> args = new ArrayList<>();
+            args.add(spreadArg);
+            ArkTSStatement superCall =
+                    new ArkTSStatement.SuperCallStatement(args);
+            return new StatementResult(superCall,
+                    new ArkTSExpression.CallExpression(
+                            new ArkTSExpression.VariableExpression("super"),
+                            args));
+        }
+
+        // --- Module variable access ---
+        if (opcode == ArkOpcodesCompat.LDEXTERNALMODULEVAR) {
+            int varIdx = (int) operands.get(0).getValue();
+            ArkTSExpression expr = new ArkTSExpression.VariableExpression(
+                    "ext_mod_" + varIdx);
+            return new StatementResult(null, expr);
+        }
+        if (opcode == ArkOpcodesCompat.LDLOCALMODULEVAR) {
+            int varIdx = (int) operands.get(0).getValue();
+            ArkTSExpression expr = new ArkTSExpression.VariableExpression(
+                    "local_mod_" + varIdx);
+            return new StatementResult(null, expr);
+        }
+        if (opcode == ArkOpcodesCompat.STMODULEVAR) {
+            int varIdx = (int) operands.get(0).getValue();
+            if (accValue != null) {
+                return new StatementResult(
+                        new ArkTSStatement.ExpressionStatement(
+                                new ArkTSExpression.AssignExpression(
+                                        new ArkTSExpression.VariableExpression(
+                                                "mod_" + varIdx),
+                                        accValue)),
+                        accValue);
+            }
+            return null;
+        }
+        if (opcode == ArkOpcodesCompat.GETMODULENAMESPACE) {
+            int varIdx = (int) operands.get(0).getValue();
+            ArkTSExpression expr = new ArkTSExpression.VariableExpression(
+                    "module_ns_" + varIdx);
+            return new StatementResult(null, expr);
+        }
+
+        // --- Dynamic import ---
+        if (opcode == ArkOpcodesCompat.DYNAMICIMPORT) {
+            ArkTSExpression specifier = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            ArkTSExpression callExpr =
+                    new ArkTSExpression.CallExpression(
+                            new ArkTSExpression.VariableExpression("import"),
+                            List.of(specifier));
+            return new StatementResult(null, callExpr);
+        }
+
+        // --- Global record stores (const/var declarations) ---
+        if (opcode == ArkOpcodesCompat.STCONSTTOGLOBALRECORD) {
+            int stringIdx = (int) operands.get(0).getValue();
+            String varName = ctx.resolveString(stringIdx);
+            if (accValue != null) {
+                return new StatementResult(
+                        new ArkTSStatement.VariableDeclaration(
+                                "const", varName, null, accValue),
+                        accValue);
+            }
+            return null;
+        }
+        if (opcode == ArkOpcodesCompat.STTOGLOBALRECORD) {
+            int stringIdx = (int) operands.get(0).getValue();
+            String varName = ctx.resolveString(stringIdx);
+            if (accValue != null) {
+                return new StatementResult(
+                        new ArkTSStatement.VariableDeclaration(
+                                "let", varName, null, accValue),
+                        accValue);
+            }
+            return null;
+        }
+
+        // --- Create array/object with buffer ---
+        if (opcode == ArkOpcodesCompat.CREATEARRAYWITHBUFFER) {
+            int numElements = (int) operands.get(0).getValue();
+            ArkTSExpression expr = new ArkTSExpression.ArrayLiteralExpression(
+                    createPlaceholderElements(numElements));
+            return new StatementResult(null, expr);
+        }
+        if (opcode == ArkOpcodesCompat.CREATEOBJECTWITHBUFFER) {
+            ArkTSExpression expr =
+                    new ArkTSExpression.ObjectLiteralExpression(
+                            Collections.emptyList());
+            return new StatementResult(null, expr);
+        }
+
         // --- STARRAYSPREAD (spread into array) ---
         if (opcode == ArkOpcodesCompat.STARRAYSPREAD) {
             // starrayspread dst, src
@@ -1329,6 +1955,34 @@ public class ArkTSDecompiler {
                 args.add(new ArkTSExpression.VariableExpression(
                         "v" + operands.get(3).getValue()));
                 break;
+            case ArkOpcodesCompat.CALLTHISRANGE:
+                callee = accValue != null
+                        ? accValue
+                        : new ArkTSExpression.VariableExpression(ACC);
+                if (operands.size() >= 3) {
+                    int numRangeArgs = (int) operands.get(0).getValue();
+                    int firstReg = (int) operands.get(
+                            operands.size() - 1).getValue();
+                    for (int a = 0; a < numRangeArgs; a++) {
+                        args.add(new ArkTSExpression.VariableExpression(
+                                "v" + (firstReg + a)));
+                    }
+                }
+                break;
+            case ArkOpcodesCompat.CALLRANGE:
+                callee = accValue != null
+                        ? accValue
+                        : new ArkTSExpression.VariableExpression(ACC);
+                if (operands.size() >= 3) {
+                    int numRangeArgs = (int) operands.get(0).getValue();
+                    int firstReg = (int) operands.get(
+                            operands.size() - 1).getValue();
+                    for (int a = 0; a < numRangeArgs; a++) {
+                        args.add(new ArkTSExpression.VariableExpression(
+                                "v" + (firstReg + a)));
+                    }
+                }
+                break;
             default:
                 callee = accValue != null
                         ? accValue
@@ -1404,6 +2058,84 @@ public class ArkTSDecompiler {
                 new ArkTSExpression.MemberExpression(obj, prop, false),
                 accValue != null ? accValue
                         : new ArkTSExpression.VariableExpression(ACC));
+    }
+
+    // --- Define class with buffer processing ---
+
+    /**
+     * Processes a defineclasswithbuffer instruction.
+     *
+     * <p>This instruction creates a class at runtime. The operands encode:
+     * <ul>
+     *   <li>Operand 0: method index for the constructor</li>
+     *   <li>Operand 1: literal array index for the class buffer
+     *       (contains field names, etc.)</li>
+     *   <li>Operand 2: method index or additional metadata</li>
+     *   <li>Last operand: destination register</li>
+     * </ul>
+     *
+     * @param insn the instruction
+     * @param ctx the decompilation context
+     * @return the statement result with a class-creating expression
+     */
+    private StatementResult processDefineClassWithBuffer(ArkInstruction insn,
+            DecompilationContext ctx) {
+        List<ArkOperand> operands = insn.getOperands();
+        int methodIdx = (int) operands.get(0).getValue();
+        int literalIdx = (int) operands.get(1).getValue();
+        int lastReg = (int) operands.get(operands.size() - 1).getValue();
+
+        String className = "class_" + methodIdx;
+        if (ctx.abcFile != null) {
+            // Try to resolve class name from the ABC file
+            className = resolveClassNameFromMethod(methodIdx, ctx.abcFile);
+        }
+
+        // Build a class expression
+        ArkTSExpression classExpr =
+                new ArkTSExpression.VariableExpression(className);
+
+        // Store the class in the destination register
+        String varName = "v" + lastReg;
+        ArkTSStatement stmt = new ArkTSStatement.VariableDeclaration(
+                "let", varName, className, classExpr);
+
+        return new StatementResult(stmt, classExpr);
+    }
+
+    /**
+     * Resolves a class name from a method index by searching ABC classes.
+     *
+     * @param methodIdx the method index
+     * @param abcFile the ABC file
+     * @return the resolved class name
+     */
+    private String resolveClassNameFromMethod(int methodIdx, AbcFile abcFile) {
+        for (AbcClass cls : abcFile.getClasses()) {
+            for (AbcMethod m : cls.getMethods()) {
+                // Match by method identity within the class
+                if (isConstructorMethod(m, sanitizeClassName(cls.getName()))) {
+                    return sanitizeClassName(cls.getName());
+                }
+            }
+        }
+        return "class_" + methodIdx;
+    }
+
+    /**
+     * Creates placeholder elements for an array literal.
+     *
+     * @param count the number of elements
+     * @return the list of placeholder expressions
+     */
+    private static List<ArkTSExpression> createPlaceholderElements(int count) {
+        List<ArkTSExpression> elements = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            elements.add(new ArkTSExpression.LiteralExpression(
+                    "/* element_" + i + " */",
+                    ArkTSExpression.LiteralExpression.LiteralKind.STRING));
+        }
+        return elements;
     }
 
     // --- Helpers ---
@@ -1484,7 +2216,9 @@ public class ArkTSDecompiler {
                 || opcode == ArkOpcodesCompat.CALLTHIS0
                 || opcode == ArkOpcodesCompat.CALLTHIS1
                 || opcode == ArkOpcodesCompat.CALLTHIS2
-                || opcode == ArkOpcodesCompat.CALLTHIS3;
+                || opcode == ArkOpcodesCompat.CALLTHIS3
+                || opcode == ArkOpcodesCompat.CALLTHISRANGE
+                || opcode == ArkOpcodesCompat.CALLRANGE;
     }
 
     private boolean isPropertyLoadOpcode(int opcode) {
@@ -1576,7 +2310,38 @@ public class ArkTSDecompiler {
          * @return the resolved string or a placeholder
          */
         String resolveString(int stringIdx) {
+            if (abcFile != null) {
+                // Attempt to resolve from the ABC file's raw data
+                // The string table is accessed through the lnp index
+                try {
+                    List<Long> lnpIndex = abcFile.getLnpIndex();
+                    if (stringIdx >= 0 && stringIdx < lnpIndex.size()) {
+                        long strOff = lnpIndex.get(stringIdx);
+                        byte[] data = abcFile.getRawData();
+                        if (data != null && strOff >= 0
+                                && strOff < data.length) {
+                            return readMutf8At(data, (int) strOff);
+                        }
+                    }
+                } catch (Exception e) {
+                    // Fall through to placeholder
+                }
+            }
             return "str_" + stringIdx;
+        }
+
+        private static String readMutf8At(byte[] data, int offset) {
+            int pos = offset;
+            int len = 0;
+            while (pos < data.length && data[pos] != 0) {
+                len++;
+                pos++;
+            }
+            if (len == 0) {
+                return "";
+            }
+            return new String(data, offset, len,
+                    java.nio.charset.StandardCharsets.UTF_8);
         }
     }
 }

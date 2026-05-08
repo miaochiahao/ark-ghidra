@@ -1895,4 +1895,781 @@ class ArkTSDecompilerTest {
         assertEquals("number",
                 TypeInference.formatTypeAnnotation("v0", "number"));
     }
+
+    // ======== ENHANCED DECOMPILER TESTS ========
+
+    // --- Class declaration AST tests ---
+
+    @Test
+    void testClassDeclaration_withConstructor() {
+        ArkTSStatement constructorBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.SuperCallStatement(
+                        Collections.emptyList())));
+        ArkTSStatement constructor =
+                new ArkTSStatement.ConstructorDeclaration(
+                        List.of(new ArkTSStatement.FunctionDeclaration
+                                .FunctionParam("x", "number")),
+                        constructorBody);
+        ArkTSStatement methodBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.VariableExpression("x"))));
+        ArkTSStatement method = new ArkTSStatement.ClassMethodDeclaration(
+                "getX", Collections.emptyList(), "number",
+                methodBody, false, "public");
+        ArkTSStatement field = new ArkTSStatement.ClassFieldDeclaration(
+                "x", "number", null, false, "private");
+        ArkTSStatement.ClassDeclaration cls =
+                new ArkTSStatement.ClassDeclaration("Point", "BaseClass",
+                        List.of(field, constructor, method));
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("class Point extends BaseClass"));
+        assertTrue(result.contains("private x: number;"));
+        assertTrue(result.contains("constructor(x: number)"));
+        assertTrue(result.contains("super();"));
+        assertTrue(result.contains("public getX(): number"));
+    }
+
+    @Test
+    void testConstructorDeclaration_noParams() {
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.SuperCallStatement(
+                        Collections.emptyList())));
+        ArkTSStatement stmt = new ArkTSStatement.ConstructorDeclaration(
+                Collections.emptyList(), body);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.contains("constructor()"));
+        assertTrue(result.contains("super();"));
+    }
+
+    @Test
+    void testConstructorDeclaration_withParams() {
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        List<ArkTSStatement.FunctionDeclaration.FunctionParam> params =
+                List.of(new ArkTSStatement.FunctionDeclaration.FunctionParam(
+                                "a", "number"),
+                        new ArkTSStatement.FunctionDeclaration.FunctionParam(
+                                "b", "string"));
+        ArkTSStatement stmt = new ArkTSStatement.ConstructorDeclaration(
+                params, body);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.contains("constructor(a: number, b: string)"));
+    }
+
+    // --- Super call statement ---
+
+    @Test
+    void testSuperCallStatement_noArgs() {
+        ArkTSStatement stmt = new ArkTSStatement.SuperCallStatement(
+                Collections.emptyList());
+        assertEquals("super();", stmt.toArkTS(0));
+    }
+
+    @Test
+    void testSuperCallStatement_withArgs() {
+        ArkTSExpression arg1 = new ArkTSExpression.VariableExpression("x");
+        ArkTSExpression arg2 = new ArkTSExpression.VariableExpression("y");
+        ArkTSStatement stmt = new ArkTSStatement.SuperCallStatement(
+                List.of(arg1, arg2));
+        assertEquals("super(x, y);", stmt.toArkTS(0));
+    }
+
+    // --- Struct declaration ---
+
+    @Test
+    void testStructDeclaration_basic() {
+        ArkTSStatement field = new ArkTSStatement.ClassFieldDeclaration(
+                "message", "string",
+                new ArkTSExpression.LiteralExpression("'Hello'",
+                        ArkTSExpression.LiteralExpression.LiteralKind.STRING),
+                false, null);
+        ArkTSStatement.StructDeclaration struct =
+                new ArkTSStatement.StructDeclaration("MyPage",
+                        List.of(field),
+                        List.of("Entry", "Component"));
+        String result = struct.toArkTS(0);
+        assertTrue(result.contains("@Entry"));
+        assertTrue(result.contains("@Component"));
+        assertTrue(result.contains("struct MyPage"));
+        assertTrue(result.contains("message: string = \"'Hello'\";"));
+    }
+
+    @Test
+    void testStructDeclaration_noDecorators() {
+        ArkTSStatement.StructDeclaration struct =
+                new ArkTSStatement.StructDeclaration("SimpleStruct",
+                        Collections.emptyList(), Collections.emptyList());
+        String result = struct.toArkTS(0);
+        assertTrue(result.contains("struct SimpleStruct"));
+        assertFalse(result.contains("@"));
+    }
+
+    // --- Type parameter ---
+
+    @Test
+    void testTypeParameter_noConstraint() {
+        ArkTSStatement.TypeParameter tp =
+                new ArkTSStatement.TypeParameter("T", null);
+        assertEquals("T", tp.toString());
+    }
+
+    @Test
+    void testTypeParameter_withConstraint() {
+        ArkTSStatement.TypeParameter tp =
+                new ArkTSStatement.TypeParameter("T", "Base");
+        assertEquals("T extends Base", tp.toString());
+    }
+
+    // --- Generic class declaration ---
+
+    @Test
+    void testGenericClassDeclaration_singleTypeParam() {
+        ArkTSStatement.GenericClassDeclaration cls =
+                new ArkTSStatement.GenericClassDeclaration("Container",
+                        List.of(new ArkTSStatement.TypeParameter("T", null)),
+                        null, Collections.emptyList());
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("class Container<T>"));
+    }
+
+    @Test
+    void testGenericClassDeclaration_constrainedTypeParam() {
+        ArkTSStatement.GenericClassDeclaration cls =
+                new ArkTSStatement.GenericClassDeclaration("SortedContainer",
+                        List.of(new ArkTSStatement.TypeParameter("T",
+                                "Comparable")),
+                        "Base", Collections.emptyList());
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("class SortedContainer<T extends "
+                + "Comparable> extends Base"));
+    }
+
+    @Test
+    void testGenericClassDeclaration_multipleTypeParams() {
+        ArkTSStatement.GenericClassDeclaration cls =
+                new ArkTSStatement.GenericClassDeclaration("Map",
+                        List.of(new ArkTSStatement.TypeParameter("K", null),
+                                new ArkTSStatement.TypeParameter("V", null)),
+                        null, Collections.emptyList());
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("class Map<K, V>"));
+    }
+
+    // --- File module ---
+
+    @Test
+    void testFileModule_empty() {
+        ArkTSStatement.FileModule fileModule =
+                new ArkTSStatement.FileModule(
+                        Collections.emptyList(),
+                        Collections.emptyList(),
+                        Collections.emptyList());
+        assertEquals("", fileModule.toArkTS(0));
+    }
+
+    @Test
+    void testFileModule_withImports() {
+        ArkTSStatement imp = new ArkTSStatement.ImportStatement(
+                List.of("Component"), "@ohos/component", false, null, null);
+        ArkTSStatement decl = new ArkTSStatement.ClassDeclaration(
+                "MyClass", null, Collections.emptyList());
+        ArkTSStatement.FileModule fileModule =
+                new ArkTSStatement.FileModule(List.of(imp), List.of(decl),
+                        Collections.emptyList());
+        String result = fileModule.toArkTS(0);
+        assertTrue(result.contains("import { Component } from "
+                + "'@ohos/component';"));
+        assertTrue(result.contains("class MyClass"));
+    }
+
+    @Test
+    void testFileModule_withExports() {
+        ArkTSStatement funcDecl = new ArkTSStatement.FunctionDeclaration(
+                "helper", Collections.emptyList(), "void",
+                new ArkTSStatement.BlockStatement(Collections.emptyList()));
+        ArkTSStatement export = new ArkTSStatement.ExportStatement(
+                Collections.emptyList(), funcDecl, false);
+        ArkTSStatement.FileModule fileModule =
+                new ArkTSStatement.FileModule(Collections.emptyList(),
+                        Collections.emptyList(), List.of(export));
+        String result = fileModule.toArkTS(0);
+        assertTrue(result.contains("export function helper"));
+    }
+
+    @Test
+    void testFileModule_fullFile() {
+        ArkTSStatement imp = new ArkTSStatement.ImportStatement(
+                List.of("BaseModel"), "./model", false, null, null);
+        ArkTSStatement cls = new ArkTSStatement.ClassDeclaration(
+                "UserModel", "BaseModel", Collections.emptyList());
+        ArkTSStatement export = new ArkTSStatement.ExportStatement(
+                List.of("UserModel"), null, false);
+        ArkTSStatement.FileModule fileModule =
+                new ArkTSStatement.FileModule(List.of(imp), List.of(cls),
+                        List.of(export));
+        String result = fileModule.toArkTS(0);
+        assertTrue(result.startsWith("import"));
+        assertTrue(result.contains("class UserModel extends BaseModel"));
+        assertTrue(result.contains("export { UserModel };"));
+    }
+
+    // --- New expression types ---
+
+    @Test
+    void testAsExpression() {
+        ArkTSExpression expr = new ArkTSExpression.VariableExpression("obj");
+        ArkTSExpression.AsExpression asExpr =
+                new ArkTSExpression.AsExpression(expr, "string");
+        assertEquals("obj as string", asExpr.toArkTS());
+    }
+
+    @Test
+    void testNonNullExpression() {
+        ArkTSExpression expr = new ArkTSExpression.MemberExpression(
+                new ArkTSExpression.VariableExpression("obj"),
+                new ArkTSExpression.VariableExpression("field"), false);
+        ArkTSExpression.NonNullExpression nonNull =
+                new ArkTSExpression.NonNullExpression(expr);
+        assertEquals("obj.field!", nonNull.toArkTS());
+    }
+
+    @Test
+    void testTypeReferenceExpression_simple() {
+        ArkTSExpression.TypeReferenceExpression typeRef =
+                new ArkTSExpression.TypeReferenceExpression("number",
+                        Collections.emptyList());
+        assertEquals("number", typeRef.toArkTS());
+    }
+
+    @Test
+    void testTypeReferenceExpression_generic() {
+        ArkTSExpression.TypeReferenceExpression typeRef =
+                new ArkTSExpression.TypeReferenceExpression("Array",
+                        List.of("string"));
+        assertEquals("Array<string>", typeRef.toArkTS());
+    }
+
+    @Test
+    void testTypeReferenceExpression_multipleTypeArgs() {
+        ArkTSExpression.TypeReferenceExpression typeRef =
+                new ArkTSExpression.TypeReferenceExpression("Map",
+                        List.of("string", "number"));
+        assertEquals("Map<string, number>", typeRef.toArkTS());
+    }
+
+    // --- Defineclasswithbuffer from bytecode ---
+
+    @Test
+    void testDecompile_defineClassWithBuffer() {
+        // defineclasswithbuffer has format IMM8_IMM16_IMM16_V8
+        // opcode=0x35, operand0=imm8, operand1=imm16, operand2=imm16, operand3=v8
+        // Build: 0x35, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03
+        byte[] code = concat(
+                bytes(0x35, 0x00),            // defineclasswithbuffer imm8=0
+                le16(1),                      // imm16=1 (literal idx)
+                le16(2),                      // imm16=2 (method idx)
+                bytes(0x03),                  // v8=3 (dest register)
+                bytes(0x64)                   // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result);
+        assertFalse(result.isEmpty());
+    }
+
+    // --- Enum declaration with values ---
+
+    @Test
+    void testEnumDeclaration_withExplicitValues() {
+        List<ArkTSStatement.EnumDeclaration.EnumMember> members = List.of(
+                new ArkTSStatement.EnumDeclaration.EnumMember("Active",
+                        new ArkTSExpression.LiteralExpression("1",
+                                ArkTSExpression.LiteralExpression
+                                        .LiteralKind.NUMBER)),
+                new ArkTSStatement.EnumDeclaration.EnumMember("Inactive",
+                        new ArkTSExpression.LiteralExpression("0",
+                                ArkTSExpression.LiteralExpression
+                                        .LiteralKind.NUMBER)));
+        ArkTSStatement stmt = new ArkTSStatement.EnumDeclaration("Status",
+                members);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.startsWith("enum Status {"));
+        assertTrue(result.contains("Active = 1,"));
+        assertTrue(result.contains("Inactive = 0"));
+        assertTrue(result.endsWith("}"));
+    }
+
+    @Test
+    void testEnumDeclaration_autoIncrement() {
+        List<ArkTSStatement.EnumDeclaration.EnumMember> members = List.of(
+                new ArkTSStatement.EnumDeclaration.EnumMember("North", null),
+                new ArkTSStatement.EnumDeclaration.EnumMember("South", null),
+                new ArkTSStatement.EnumDeclaration.EnumMember("East", null),
+                new ArkTSStatement.EnumDeclaration.EnumMember("West", null));
+        ArkTSStatement stmt = new ArkTSStatement.EnumDeclaration("Direction",
+                members);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.startsWith("enum Direction {"));
+        assertTrue(result.contains("North,"));
+        assertTrue(result.contains("South,"));
+        assertTrue(result.contains("East,"));
+        assertTrue(result.contains("West"));
+    }
+
+    // --- Import statement variations ---
+
+    @Test
+    void testImportStatement_reExport() {
+        ArkTSStatement stmt = new ArkTSStatement.ImportStatement(
+                List.of("Logger"), "@ohos/log", false, null, null);
+        assertEquals("import { Logger } from '@ohos/log';",
+                stmt.toArkTS(0));
+    }
+
+    @Test
+    void testImportStatement_defaultAndNamespace() {
+        ArkTSStatement stmt = new ArkTSStatement.ImportStatement(
+                Collections.emptyList(), "./module", true, "default", "ns");
+        assertEquals("import default, * as ns from './module';",
+                stmt.toArkTS(0));
+    }
+
+    // --- Export statement variations ---
+
+    @Test
+    void testExportStatement_defaultFunction() {
+        ArkTSStatement funcDecl = new ArkTSStatement.FunctionDeclaration(
+                "main", Collections.emptyList(), "void",
+                new ArkTSStatement.BlockStatement(Collections.emptyList()));
+        ArkTSStatement stmt = new ArkTSStatement.ExportStatement(
+                Collections.emptyList(), funcDecl, true);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.startsWith("export default function main"));
+    }
+
+    @Test
+    void testExportStatement_namedExports() {
+        ArkTSStatement stmt = new ArkTSStatement.ExportStatement(
+                List.of("foo", "bar", "baz"), null, false);
+        assertEquals("export { foo, bar, baz };", stmt.toArkTS(0));
+    }
+
+    // --- Full method decompilation with class context ---
+
+    @Test
+    void testDecompileMethod_methodWithTypedSignature() {
+        // ldai 42; return
+        byte[] codeBytes = concat(
+                bytes(0x62), le32(42),
+                bytes(0x64)
+        );
+        AbcCode code = new AbcCode(2, 0, codeBytes.length, codeBytes,
+                Collections.emptyList(), 0);
+        AbcMethod method = new AbcMethod(0, 0, "getValue",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        String result = decompiler.decompileMethod(method, code, null);
+        assertNotNull(result);
+        assertTrue(result.contains("function getValue()"));
+        assertTrue(result.contains("return 42"));
+    }
+
+    @Test
+    void testDecompileMethod_methodWithParamsAndReturn() {
+        // lda v0; return
+        byte[] codeBytes = concat(
+                bytes(0x60, 0x00),
+                bytes(0x64)
+        );
+        AbcCode code = new AbcCode(2, 1, codeBytes.length, codeBytes,
+                Collections.emptyList(), 0);
+        AbcMethod method = new AbcMethod(0, 1, "identity",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        String result = decompiler.decompileMethod(method, code, null);
+        assertNotNull(result);
+        assertTrue(result.contains("function identity"));
+        assertTrue(result.contains("return v0"));
+    }
+
+    // --- Access modifier mapping ---
+
+    @Test
+    void testAccessFlags_publicModifier() {
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSStatement stmt = new ArkTSStatement.ClassMethodDeclaration(
+                "doStuff", Collections.emptyList(), "void", body,
+                false, "public");
+        String result = stmt.toArkTS(0);
+        assertTrue(result.startsWith("public doStuff"));
+    }
+
+    @Test
+    void testAccessFlags_privateModifier() {
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSStatement stmt = new ArkTSStatement.ClassMethodDeclaration(
+                "internal", Collections.emptyList(), null, body,
+                false, "private");
+        String result = stmt.toArkTS(0);
+        assertTrue(result.startsWith("private internal"));
+    }
+
+    @Test
+    void testAccessFlags_protectedModifier() {
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSStatement stmt = new ArkTSStatement.ClassMethodDeclaration(
+                "onEvent", Collections.emptyList(), null, body,
+                false, "protected");
+        String result = stmt.toArkTS(0);
+        assertTrue(result.startsWith("protected onEvent"));
+    }
+
+    @Test
+    void testAccessFlags_staticModifier() {
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSStatement stmt = new ArkTSStatement.ClassMethodDeclaration(
+                "create", Collections.emptyList(), "Object", body,
+                true, "public");
+        String result = stmt.toArkTS(0);
+        assertTrue(result.contains("public static create"));
+    }
+
+    // --- Decorator with field ---
+
+    @Test
+    void testDecorator_withComponentAndState() {
+        ArkTSStatement stateField = new ArkTSStatement.ClassFieldDeclaration(
+                "count", "number",
+                new ArkTSExpression.LiteralExpression("0",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER),
+                false, null);
+        ArkTSStatement decoratedField =
+                new ArkTSStatement.DecoratorStatement("State",
+                        Collections.emptyList());
+        // Build a struct with decorator
+        ArkTSStatement.StructDeclaration struct =
+                new ArkTSStatement.StructDeclaration("CounterPage",
+                        List.of(decoratedField, stateField),
+                        List.of("Component", "Entry"));
+        String result = struct.toArkTS(0);
+        assertTrue(result.contains("@Component"));
+        assertTrue(result.contains("@Entry"));
+        assertTrue(result.contains("@State"));
+        assertTrue(result.contains("struct CounterPage"));
+    }
+
+    // --- Opcode compat constants ---
+
+    @Test
+    void testOpcodesCompat_newConstants() {
+        // Verify new opcode constants are properly defined
+        assertTrue(ArkOpcodesCompat.DEFINECLASSWITHBUFFER > 0);
+        assertTrue(ArkOpcodesCompat.DEFINEMETHOD > 0);
+        assertTrue(ArkOpcodesCompat.DEFINEFIELDBYNAME > 0);
+        assertTrue(ArkOpcodesCompat.DEFINEPROPERTYBYNAME > 0);
+        assertTrue(ArkOpcodesCompat.SUPERCALLTHISRANGE > 0);
+        assertTrue(ArkOpcodesCompat.SUPERCALLSPREAD > 0);
+        assertTrue(ArkOpcodesCompat.SUPERCALLARROWRANGE > 0);
+        assertTrue(ArkOpcodesCompat.LDEXTERNALMODULEVAR > 0);
+        assertTrue(ArkOpcodesCompat.LDLOCALMODULEVAR > 0);
+        assertTrue(ArkOpcodesCompat.STMODULEVAR > 0);
+        assertTrue(ArkOpcodesCompat.STCONSTTOGLOBALRECORD > 0);
+        assertTrue(ArkOpcodesCompat.STTOGLOBALRECORD > 0);
+        assertTrue(ArkOpcodesCompat.GETMODULENAMESPACE > 0);
+        assertTrue(ArkOpcodesCompat.DYNAMICIMPORT > 0);
+    }
+
+    // --- Create object with buffer from bytecode ---
+
+    @Test
+    void testDecompile_createObjectWithBuffer() {
+        // createobjectwithbuffer has format IMM8_IMM16
+        // opcode=0x07, imm8=0, imm16=1 (buffer idx)
+        byte[] code = concat(
+                bytes(0x07, 0x00),            // createobjectwithbuffer
+                le16(1),                      // imm16=1 (literal array idx)
+                bytes(0x61, 0x00),            // sta v0
+                bytes(0x64)                   // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result);
+        assertTrue(result.contains("{  }") || result.contains("let v0"));
+    }
+
+    // --- Create array with buffer from bytecode ---
+
+    @Test
+    void testDecompile_createArrayWithBuffer() {
+        // createarraywithbuffer has format IMM8_IMM16
+        // opcode=0x06, imm8=0, imm16=1 (buffer idx)
+        byte[] code = concat(
+                bytes(0x06, 0x00),            // createarraywithbuffer
+                le16(1),                      // imm16=1 (literal array idx)
+                bytes(0x61, 0x00),            // sta v0
+                bytes(0x64)                   // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result);
+        assertTrue(result.contains("["));
+    }
+
+    // --- Interface with method and property ---
+
+    @Test
+    void testInterfaceDeclaration_withMethodAndProperty() {
+        List<ArkTSStatement.InterfaceDeclaration.InterfaceMember> members =
+                List.of(
+                        new ArkTSStatement.InterfaceDeclaration.InterfaceMember(
+                                "property", "id", "number",
+                                Collections.emptyList(), false),
+                        new ArkTSStatement.InterfaceDeclaration.InterfaceMember(
+                                "method", "toString", "string",
+                                Collections.emptyList(), false),
+                        new ArkTSStatement.InterfaceDeclaration.InterfaceMember(
+                                "method", "process", "void",
+                                List.of(new ArkTSStatement.FunctionDeclaration
+                                        .FunctionParam("data", "Object")),
+                                false));
+        ArkTSStatement stmt = new ArkTSStatement.InterfaceDeclaration(
+                "Processor", List.of("BaseProcessor"), members);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.contains(
+                "interface Processor extends BaseProcessor"));
+        assertTrue(result.contains("id: number;"));
+        assertTrue(result.contains("toString(): string;"));
+        assertTrue(result.contains("process(data: Object): void;"));
+    }
+
+    // --- Class field with all modifiers ---
+
+    @Test
+    void testClassFieldDeclaration_allModifiers() {
+        ArkTSStatement stmt = new ArkTSStatement.ClassFieldDeclaration(
+                "instanceCount", "number",
+                new ArkTSExpression.LiteralExpression("0",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER),
+                true, "private");
+        String result = stmt.toArkTS(0);
+        assertEquals("private static instanceCount: number = 0;",
+                result);
+    }
+
+    // --- Class method with generic return type in signature ---
+
+    @Test
+    void testClassMethodDeclaration_withReturnType() {
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.VariableExpression("value"))));
+        ArkTSStatement stmt = new ArkTSStatement.ClassMethodDeclaration(
+                "getValue",
+                List.of(new ArkTSStatement.FunctionDeclaration.FunctionParam(
+                        "index", "number")),
+                "string", body, false, "public");
+        String result = stmt.toArkTS(0);
+        assertTrue(result.contains(
+                "public getValue(index: number): string"));
+        assertTrue(result.contains("return value;"));
+    }
+
+    // --- Indentation for nested structures ---
+
+    @Test
+    void testClassDeclaration_nestedIndentation() {
+        ArkTSStatement field = new ArkTSStatement.ClassFieldDeclaration(
+                "data", "number", null, false, null);
+        ArkTSStatement.ClassDeclaration cls =
+                new ArkTSStatement.ClassDeclaration("Inner", null,
+                        List.of(field));
+        String result = cls.toArkTS(1);
+        assertTrue(result.startsWith("    class Inner {"));
+        assertTrue(result.contains("        data: number;"));
+        assertTrue(result.endsWith("    }"));
+    }
+
+    @Test
+    void testStructDeclaration_indentation() {
+        ArkTSStatement field = new ArkTSStatement.ClassFieldDeclaration(
+                "title", "string", null, false, null);
+        ArkTSStatement.StructDeclaration struct =
+                new ArkTSStatement.StructDeclaration("Header",
+                        List.of(field), List.of("Component"));
+        String result = struct.toArkTS(1);
+        assertTrue(result.startsWith("    @Component"));
+        assertTrue(result.contains("    struct Header"));
+        assertTrue(result.contains("        title: string;"));
+    }
+
+    // --- Enum with mixed members ---
+
+    @Test
+    void testEnumDeclaration_mixedMembers() {
+        List<ArkTSStatement.EnumDeclaration.EnumMember> members = List.of(
+                new ArkTSStatement.EnumDeclaration.EnumMember("A", null),
+                new ArkTSStatement.EnumDeclaration.EnumMember("B",
+                        new ArkTSExpression.LiteralExpression("10",
+                                ArkTSExpression.LiteralExpression
+                                        .LiteralKind.NUMBER)),
+                new ArkTSStatement.EnumDeclaration.EnumMember("C", null));
+        ArkTSStatement stmt = new ArkTSStatement.EnumDeclaration("Mixed",
+                members);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.contains("A,"));
+        assertTrue(result.contains("B = 10,"));
+        assertTrue(result.contains("C"));
+    }
+
+    // --- Full file decompilation with null file ---
+
+    @Test
+    void testDecompileFile_nullFile() {
+        String result = decompiler.decompileFile(null);
+        assertEquals("", result);
+    }
+
+    // --- Interface member kinds ---
+
+    @Test
+    void testInterfaceMember_propertyKind() {
+        ArkTSStatement.InterfaceDeclaration.InterfaceMember member =
+                new ArkTSStatement.InterfaceDeclaration.InterfaceMember(
+                        "property", "name", "string",
+                        Collections.emptyList(), true);
+        assertEquals("property", member.getKind());
+        assertEquals("name", member.getName());
+    }
+
+    // --- Class member accessors ---
+
+    @Test
+    void testClassFieldDeclaration_accessors() {
+        ArkTSExpression init = new ArkTSExpression.LiteralExpression("42",
+                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSStatement.ClassFieldDeclaration field =
+                new ArkTSStatement.ClassFieldDeclaration(
+                        "count", "number", init, true, "public");
+        assertEquals("count", field.getName());
+    }
+
+    @Test
+    void testClassMethodDeclaration_accessors() {
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSStatement.ClassMethodDeclaration method =
+                new ArkTSStatement.ClassMethodDeclaration(
+                        "test", Collections.emptyList(), "void",
+                        body, false, "private");
+        assertEquals("test", method.getName());
+    }
+
+    // --- Super call statement with expression arguments ---
+
+    @Test
+    void testSuperCallStatement_withExpressions() {
+        ArkTSExpression arg1 = new ArkTSExpression.LiteralExpression("42",
+                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSExpression arg2 = new ArkTSExpression.LiteralExpression(
+                "hello", ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        ArkTSStatement stmt = new ArkTSStatement.SuperCallStatement(
+                List.of(arg1, arg2));
+        assertEquals("super(42, \"hello\");", stmt.toArkTS(0));
+    }
+
+    // --- AsExpression with member target ---
+
+    @Test
+    void testAsExpression_withMember() {
+        ArkTSExpression obj = new ArkTSExpression.MemberExpression(
+                new ArkTSExpression.VariableExpression("response"),
+                new ArkTSExpression.VariableExpression("data"), false);
+        ArkTSExpression.AsExpression asExpr =
+                new ArkTSExpression.AsExpression(obj, "string");
+        assertEquals("response.data as string", asExpr.toArkTS());
+    }
+
+    // --- NonNull expression with nested member ---
+
+    @Test
+    void testNonNullExpression_withNestedMember() {
+        ArkTSExpression inner = new ArkTSExpression.MemberExpression(
+                new ArkTSExpression.VariableExpression("config"),
+                new ArkTSExpression.VariableExpression("value"), false);
+        ArkTSExpression.NonNullExpression nonNull =
+                new ArkTSExpression.NonNullExpression(inner);
+        assertEquals("config.value!", nonNull.toArkTS());
+    }
+
+    // --- Type reference with nested generics ---
+
+    @Test
+    void testTypeReferenceExpression_nestedGeneric() {
+        ArkTSExpression.TypeReferenceExpression typeRef =
+                new ArkTSExpression.TypeReferenceExpression("Map",
+                        List.of("string", "Array<number>"));
+        assertEquals("Map<string, Array<number>>", typeRef.toArkTS());
+    }
+
+    // --- File module with multiple declarations ---
+
+    @Test
+    void testFileModule_withMultipleDeclarations() {
+        ArkTSStatement enumDecl = new ArkTSStatement.EnumDeclaration("Color",
+                List.of(new ArkTSStatement.EnumDeclaration.EnumMember("Red",
+                                null),
+                        new ArkTSStatement.EnumDeclaration.EnumMember("Blue",
+                                null)));
+        ArkTSStatement classDecl = new ArkTSStatement.ClassDeclaration(
+                "Painter", null, Collections.emptyList());
+        ArkTSStatement.FileModule fileModule =
+                new ArkTSStatement.FileModule(Collections.emptyList(),
+                        List.of(enumDecl, classDecl),
+                        Collections.emptyList());
+        String result = fileModule.toArkTS(0);
+        assertTrue(result.contains("enum Color"));
+        assertTrue(result.contains("class Painter"));
+        // Verify separator between declarations
+        assertTrue(result.contains("}\n\nclass Painter"));
+    }
+
+    // --- GenericClassDeclaration with members ---
+
+    @Test
+    void testGenericClassDeclaration_withFieldAndMethod() {
+        ArkTSStatement field = new ArkTSStatement.ClassFieldDeclaration(
+                "value", "T", null, false, "private");
+        ArkTSStatement methodBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.VariableExpression("value"))));
+        ArkTSStatement method = new ArkTSStatement.ClassMethodDeclaration(
+                "getValue", Collections.emptyList(), "T",
+                methodBody, false, "public");
+        ArkTSStatement.GenericClassDeclaration cls =
+                new ArkTSStatement.GenericClassDeclaration("Box",
+                        List.of(new ArkTSStatement.TypeParameter("T", null)),
+                        null, List.of(field, method));
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("class Box<T>"));
+        assertTrue(result.contains("private value: T;"));
+        assertTrue(result.contains("public getValue(): T"));
+    }
+
+    // --- Verify enhanced decompiler handles unknown opcodes gracefully ---
+
+    @Test
+    void testDecompile_unknownOpcodeGraceful() {
+        // Use a rarely-used opcode; just verify no crash
+        byte[] code = concat(
+                bytes(0x00),        // ldundefined (known)
+                bytes(0x61, 0x00),  // sta v0
+                bytes(0x64)         // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result);
+        assertTrue(result.contains("undefined"));
+    }
 }

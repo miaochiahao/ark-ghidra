@@ -714,6 +714,26 @@ public abstract class ArkTSStatement {
             this.accessModifier = accessModifier;
         }
 
+        public String getName() {
+            return name;
+        }
+
+        public String getTypeName() {
+            return typeName;
+        }
+
+        public ArkTSExpression getInitializer() {
+            return initializer;
+        }
+
+        public boolean isStatic() {
+            return isStatic;
+        }
+
+        public String getAccessModifier() {
+            return accessModifier;
+        }
+
         @Override
         public String toArkTS(int indent) {
             StringBuilder sb = new StringBuilder();
@@ -852,7 +872,7 @@ public abstract class ArkTSStatement {
             sb.append(indent(indent)).append("import ");
             if (defaultImport != null) {
                 sb.append(defaultImport);
-                if (!imports.isEmpty()) {
+                if (!imports.isEmpty() || namespaceImport != null) {
                     sb.append(", ");
                 }
             }
@@ -1161,6 +1181,315 @@ public abstract class ArkTSStatement {
                     joiner.add(arg.toArkTS());
                 }
                 sb.append("(").append(joiner).append(")");
+            }
+            return sb.toString();
+        }
+    }
+
+    // --- Struct declaration ---
+
+    /**
+     * A struct declaration statement (ArkTS-specific).
+     * In ArkTS, structs are declared with the {@code struct} keyword and are used
+     * for UI components decorated with @Component.
+     */
+    public static class StructDeclaration extends ArkTSStatement {
+        private final String name;
+        private final List<ArkTSStatement> members;
+        private final List<String> decorators;
+
+        /**
+         * Constructs a struct declaration.
+         *
+         * @param name the struct name
+         * @param members the struct members (fields and methods)
+         * @param decorators the decorator names applied to this struct (may be empty)
+         */
+        public StructDeclaration(String name, List<ArkTSStatement> members,
+                List<String> decorators) {
+            this.name = name;
+            this.members = Collections.unmodifiableList(new ArrayList<>(members));
+            this.decorators = Collections.unmodifiableList(new ArrayList<>(decorators));
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public List<ArkTSStatement> getMembers() {
+            return members;
+        }
+
+        public List<String> getDecorators() {
+            return decorators;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringBuilder sb = new StringBuilder();
+            for (String dec : decorators) {
+                sb.append(indent(indent)).append("@").append(dec).append("\n");
+            }
+            sb.append(indent(indent)).append("struct ").append(name)
+                    .append(" {\n");
+            for (ArkTSStatement member : members) {
+                sb.append(member.toArkTS(indent + 1)).append("\n");
+            }
+            sb.append(indent(indent)).append("}");
+            return sb.toString();
+        }
+    }
+
+    // --- Constructor declaration ---
+
+    /**
+     * A constructor declaration statement within a class body.
+     */
+    public static class ConstructorDeclaration extends ArkTSStatement {
+        private final List<FunctionDeclaration.FunctionParam> params;
+        private final ArkTSStatement body;
+
+        /**
+         * Constructs a constructor declaration.
+         *
+         * @param params the constructor parameters
+         * @param body the constructor body
+         */
+        public ConstructorDeclaration(
+                List<FunctionDeclaration.FunctionParam> params,
+                ArkTSStatement body) {
+            this.params = Collections.unmodifiableList(new ArrayList<>(params));
+            this.body = body;
+        }
+
+        public List<FunctionDeclaration.FunctionParam> getParams() {
+            return params;
+        }
+
+        public ArkTSStatement getBody() {
+            return body;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringJoiner paramJoiner = new StringJoiner(", ");
+            for (FunctionDeclaration.FunctionParam p : params) {
+                paramJoiner.add(p.toString());
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.append(indent(indent)).append("constructor(")
+                    .append(paramJoiner).append(") ");
+            if (body instanceof BlockStatement) {
+                sb.append(((BlockStatement) body).toArkTS(indent));
+            } else {
+                sb.append("{\n");
+                sb.append(body.toArkTS(indent + 1)).append("\n");
+                sb.append(indent(indent)).append("}");
+            }
+            return sb.toString();
+        }
+    }
+
+    // --- Type parameter declaration ---
+
+    /**
+     * A type parameter for generic classes or methods: &lt;T&gt; or &lt;T extends Base&gt;.
+     */
+    public static class TypeParameter {
+        private final String name;
+        private final String constraint;
+
+        /**
+         * Constructs a type parameter.
+         *
+         * @param name the type parameter name (e.g. "T")
+         * @param constraint the constraint type (e.g. "Base"), or null
+         */
+        public TypeParameter(String name, String constraint) {
+            this.name = name;
+            this.constraint = constraint;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public String getConstraint() {
+            return constraint;
+        }
+
+        @Override
+        public String toString() {
+            if (constraint != null) {
+                return name + " extends " + constraint;
+            }
+            return name;
+        }
+    }
+
+    // --- Generic class declaration ---
+
+    /**
+     * A generic class declaration with type parameters.
+     */
+    public static class GenericClassDeclaration extends ArkTSStatement {
+        private final String name;
+        private final List<TypeParameter> typeParams;
+        private final String superClass;
+        private final List<ArkTSStatement> members;
+
+        /**
+         * Constructs a generic class declaration.
+         *
+         * @param name the class name
+         * @param typeParams the type parameters (may be empty)
+         * @param superClass the super class name (may be null)
+         * @param members the class members
+         */
+        public GenericClassDeclaration(String name,
+                List<TypeParameter> typeParams, String superClass,
+                List<ArkTSStatement> members) {
+            this.name = name;
+            this.typeParams = Collections.unmodifiableList(
+                    new ArrayList<>(typeParams));
+            this.superClass = superClass;
+            this.members = Collections.unmodifiableList(
+                    new ArrayList<>(members));
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public List<TypeParameter> getTypeParams() {
+            return typeParams;
+        }
+
+        public String getSuperClass() {
+            return superClass;
+        }
+
+        public List<ArkTSStatement> getMembers() {
+            return members;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(indent(indent)).append("class ").append(name);
+            if (!typeParams.isEmpty()) {
+                StringJoiner joiner = new StringJoiner(", ");
+                for (TypeParameter tp : typeParams) {
+                    joiner.add(tp.toString());
+                }
+                sb.append("<").append(joiner).append(">");
+            }
+            if (superClass != null) {
+                sb.append(" extends ").append(superClass);
+            }
+            sb.append(" {\n");
+            for (ArkTSStatement member : members) {
+                sb.append(member.toArkTS(indent + 1)).append("\n");
+            }
+            sb.append(indent(indent)).append("}");
+            return sb.toString();
+        }
+    }
+
+    // --- Super call statement ---
+
+    /**
+     * A super() call statement used in constructors.
+     */
+    public static class SuperCallStatement extends ArkTSStatement {
+        private final List<ArkTSExpression> arguments;
+
+        /**
+         * Constructs a super call statement.
+         *
+         * @param arguments the arguments to super()
+         */
+        public SuperCallStatement(List<ArkTSExpression> arguments) {
+            this.arguments = Collections.unmodifiableList(
+                    new ArrayList<>(arguments));
+        }
+
+        public List<ArkTSExpression> getArguments() {
+            return arguments;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringJoiner joiner = new StringJoiner(", ");
+            for (ArkTSExpression arg : arguments) {
+                joiner.add(arg.toArkTS());
+            }
+            return indent(indent) + "super(" + joiner + ");";
+        }
+    }
+
+    // --- File module (top-level compilation unit) ---
+
+    /**
+     * A file module representing a complete .ts source file.
+     * Contains imports, top-level declarations, and exports.
+     */
+    public static class FileModule extends ArkTSStatement {
+        private final List<ArkTSStatement> imports;
+        private final List<ArkTSStatement> declarations;
+        private final List<ArkTSStatement> exports;
+
+        /**
+         * Constructs a file module.
+         *
+         * @param imports the import statements
+         * @param declarations the top-level declarations
+         * @param exports the export statements
+         */
+        public FileModule(List<ArkTSStatement> imports,
+                List<ArkTSStatement> declarations,
+                List<ArkTSStatement> exports) {
+            this.imports = Collections.unmodifiableList(new ArrayList<>(imports));
+            this.declarations = Collections.unmodifiableList(
+                    new ArrayList<>(declarations));
+            this.exports = Collections.unmodifiableList(new ArrayList<>(exports));
+        }
+
+        public List<ArkTSStatement> getImports() {
+            return imports;
+        }
+
+        public List<ArkTSStatement> getDeclarations() {
+            return declarations;
+        }
+
+        public List<ArkTSStatement> getExports() {
+            return exports;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringBuilder sb = new StringBuilder();
+            for (ArkTSStatement imp : imports) {
+                sb.append(imp.toArkTS(indent)).append("\n");
+            }
+            if (!imports.isEmpty() && !declarations.isEmpty()) {
+                sb.append("\n");
+            }
+            for (int i = 0; i < declarations.size(); i++) {
+                sb.append(declarations.get(i).toArkTS(indent));
+                if (i < declarations.size() - 1) {
+                    sb.append("\n\n");
+                }
+            }
+            if (!exports.isEmpty()) {
+                sb.append("\n\n");
+                for (int i = 0; i < exports.size(); i++) {
+                    sb.append(exports.get(i).toArkTS(indent));
+                    if (i < exports.size() - 1) {
+                        sb.append("\n");
+                    }
+                }
             }
             return sb.toString();
         }

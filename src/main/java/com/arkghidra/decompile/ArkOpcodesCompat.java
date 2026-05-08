@@ -145,6 +145,20 @@ final class ArkOpcodesCompat {
 
     static final int STARRAYSPREAD = ArkOpcodes.STARRAYSPREAD;
 
+    static final int STCONSTTOGLOBALRECORD = ArkOpcodes.STCONSTTOGLOBALRECORD;
+    static final int STTOGLOBALRECORD = ArkOpcodes.STTOGLOBALRECORD;
+    static final int LDEXTERNALMODULEVAR = ArkOpcodes.LDEXTERNALMODULEVAR;
+    static final int LDLOCALMODULEVAR = ArkOpcodes.LDLOCALMODULEVAR;
+    static final int STMODULEVAR = ArkOpcodes.STMODULEVAR;
+    static final int GETMODULENAMESPACE = ArkOpcodes.GETMODULENAMESPACE;
+    static final int DYNAMICIMPORT = ArkOpcodes.DYNAMICIMPORT;
+    static final int DEFINEMETHOD = ArkOpcodes.DEFINEMETHOD;
+    static final int DEFINEFIELDBYNAME = ArkOpcodes.DEFINEFIELDBYNAME;
+    static final int DEFINEPROPERTYBYNAME = ArkOpcodes.DEFINEPROPERTYBYNAME;
+    static final int SUPERCALLTHISRANGE = ArkOpcodes.SUPERCALLTHISRANGE;
+    static final int SUPERCALLSPREAD = ArkOpcodes.SUPERCALLSPREAD;
+    static final int SUPERCALLARROWRANGE = ArkOpcodes.SUPERCALLARROWRANGE;
+
     static final int THROW = ArkOpcodes.PREFIX_THROW;
 
     private ArkOpcodesCompat() {

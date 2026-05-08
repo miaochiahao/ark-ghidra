@@ -738,6 +738,109 @@ public abstract class ArkTSExpression {
         }
     }
 
+    // --- Type cast (as) ---
+
+    /**
+     * A type cast expression using the {@code as} keyword: expr as Type.
+     */
+    public static class AsExpression extends ArkTSExpression {
+        private final ArkTSExpression expression;
+        private final String typeName;
+
+        /**
+         * Constructs an as-expression (type cast).
+         *
+         * @param expression the expression being cast
+         * @param typeName the target type name
+         */
+        public AsExpression(ArkTSExpression expression, String typeName) {
+            this.expression = expression;
+            this.typeName = typeName;
+        }
+
+        public ArkTSExpression getExpression() {
+            return expression;
+        }
+
+        public String getTypeName() {
+            return typeName;
+        }
+
+        @Override
+        public String toArkTS() {
+            return expression.toArkTS() + " as " + typeName;
+        }
+    }
+
+    // --- Non-null assertion ---
+
+    /**
+     * A non-null assertion expression: expr!.
+     */
+    public static class NonNullExpression extends ArkTSExpression {
+        private final ArkTSExpression expression;
+
+        /**
+         * Constructs a non-null assertion expression.
+         *
+         * @param expression the expression being asserted non-null
+         */
+        public NonNullExpression(ArkTSExpression expression) {
+            this.expression = expression;
+        }
+
+        public ArkTSExpression getExpression() {
+            return expression;
+        }
+
+        @Override
+        public String toArkTS() {
+            return expression.toArkTS() + "!";
+        }
+    }
+
+    // --- Type reference ---
+
+    /**
+     * A type reference expression used in type positions: TypeName or
+     * TypeName&lt;Args&gt;.
+     */
+    public static class TypeReferenceExpression extends ArkTSExpression {
+        private final String typeName;
+        private final List<String> typeArgs;
+
+        /**
+         * Constructs a type reference expression.
+         *
+         * @param typeName the type name
+         * @param typeArgs the type arguments (may be empty)
+         */
+        public TypeReferenceExpression(String typeName, List<String> typeArgs) {
+            this.typeName = typeName;
+            this.typeArgs = Collections.unmodifiableList(new ArrayList<>(typeArgs));
+        }
+
+        public String getTypeName() {
+            return typeName;
+        }
+
+        public List<String> getTypeArgs() {
+            return typeArgs;
+        }
+
+        @Override
+        public String toArkTS() {
+            if (typeArgs.isEmpty()) {
+                return typeName;
+            }
+            StringJoiner joiner = new StringJoiner(", ");
+            for (String arg : typeArgs) {
+                joiner.add(arg);
+            }
+            return typeName + "<" + joiner + ">";
+        }
+    }
+
     // --- Arrow function ---
 
     /**
