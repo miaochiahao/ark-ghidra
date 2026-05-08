@@ -179,7 +179,7 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Try/catch decompilation:** Use `AbcCode.getTryBlocks()` → `AbcTryBlock.getCatchBlocks()` → `AbcCatchBlock` to reconstruct exception handling. Map try start/end PC ranges to CFG block addresses. Catch-all blocks (typeIdx=0) map to `finally`.
 - **Jump offset calculation:** `jmp +0` at offset 0 with instruction length 2 gives target = 0+2+0 = 2 (not 0). For infinite loop (jmp to self), need negative offset = -instruction_length (e.g., `0xFE` for 2-byte jmp).
 - **Parameter naming convention:** Use `param_0`, `param_1` etc. (not `p0`/`p1`) for better readability. Falls back to untyped when no proto info available.
-- **Test count tracking:** 642 tests across 14 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
+- **Test count tracking:** 697 tests across 15 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
 - **ABC debug info parsing:** Tags 0x07 (SOURCE_FILE), 0x03 (DEBUG_INFO) in class/method tag values. Debug info contains line_start, num_params, param name string offsets, constant pool. LNP uses DWARF v3 state machine with special opcodes.
 - **Realistic test fixture design:** Use 16384-byte buffer with 200-byte spacing between areas (strings at 200, classes at 800, code at 2000, protos at 6000, etc.). Encode methods with ULEB128 for vregs/args/codeSize/triesSize.
 - **Debug parameter name resolution:** `AbcFile.getDebugInfoForMethod()` → `AbcDebugInfo.getParameterNames()` → pass to `MethodSignatureBuilder.buildParams(proto, numArgs, debugNames)`. Falls back to `param_N` for unnamed.
@@ -194,6 +194,12 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Async/generator decompilation:** `createasyncgeneratorobj` → async generator variable. `asyncgeneratorresolve` → return. `asyncgeneratorreject` → throw. `setgeneratorstate` → comment. `createobjectwithexcludedkeys` → spread object `{...source}`.
 - **ABC module records:** Import/export metadata stored in LiteralArrays, referenced by special field name `moduleRecordIdx`. `AbcModuleRecord` contains RegularImport, NamespaceImport, LocalExport, IndirectExport, StarExport. Parse via `AbcFile.parseModuleRecord()`.
 - **Field tag parsing:** ABC fields have tag values: FIELD_TAG_NOTHING (0x00), FIELD_TAG_INT_VALUE (0x01), FIELD_TAG_VALUE (0x02), FIELD_TAG_ANNOTATION (0x05). Parse with `parseFieldTags()` to extract intValue for module record indices.
+- **For-of/for-in decompilation:** Detect from CFG: GETITERATOR before loop header + GETNEXTPROPNAME pattern in body. `detectForOfPattern()` searches predecessor chain. `detectForInPattern()` looks for GETPROPITERATOR. Use `processBlockInstructionsExcludingIterator()` to filter boilerplate.
+- **Destructuring detection:** Array: consecutive `lda vN; ldobjbyindex 0, I; sta vM` with increasing indices. Object: consecutive `lda vN; ldobjbyname 0, "prop"; sta vM`. `tryDetectArrayDestructuring()` and `tryDetectObjectDestructuring()` scan forward from instruction index.
+- **Template literal reconstruction:** `tryReconstructTemplateLiteral()` flattens `+` binary expression chains into quasis + interpolations. Only activates when at least one string literal is present.
+- **Nullish coalescing:** Detect from ternary patterns where condition is `===`/`==` comparison against `null`. Produces `value ?? default` via `tryDetectNullishCoalescing()`.
+- **Annotation parsing:** `AbcAnnotation` and `AbcAnnotationElement` data classes. Elements support TAG_INT (0x03), TAG_DOUBLE (0x04), TAG_STRING (0x05), TAG_ID (0x06). Annotations linked to classes/methods/fields via offset maps in AbcFile. `toDecoratorString()` generates `@Name(arg1, arg2)`.
+- **Decorator detection improvement:** `detectDecorators()` now checks annotation data from AbcFile when available, falls back to heuristic detection. `buildFieldDeclaration()` uses field annotations for @State, @Prop, etc.
 <!-- LINT_RULES_END -->
 
 ---
