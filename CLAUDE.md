@@ -179,12 +179,16 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Try/catch decompilation:** Use `AbcCode.getTryBlocks()` → `AbcTryBlock.getCatchBlocks()` → `AbcCatchBlock` to reconstruct exception handling. Map try start/end PC ranges to CFG block addresses. Catch-all blocks (typeIdx=0) map to `finally`.
 - **Jump offset calculation:** `jmp +0` at offset 0 with instruction length 2 gives target = 0+2+0 = 2 (not 0). For infinite loop (jmp to self), need negative offset = -instruction_length (e.g., `0xFE` for 2-byte jmp).
 - **Parameter naming convention:** Use `param_0`, `param_1` etc. (not `p0`/`p1`) for better readability. Falls back to untyped when no proto info available.
-- **Test count tracking:** 566 tests across 11 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
+- **Test count tracking:** 598 tests across 13 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
 - **ABC debug info parsing:** Tags 0x07 (SOURCE_FILE), 0x03 (DEBUG_INFO) in class/method tag values. Debug info contains line_start, num_params, param name string offsets, constant pool. LNP uses DWARF v3 state machine with special opcodes.
 - **Realistic test fixture design:** Use 16384-byte buffer with 200-byte spacing between areas (strings at 200, classes at 800, code at 2000, protos at 6000, etc.). Encode methods with ULEB128 for vregs/args/codeSize/triesSize.
 - **Debug parameter name resolution:** `AbcFile.getDebugInfoForMethod()` → `AbcDebugInfo.getParameterNames()` → pass to `MethodSignatureBuilder.buildParams(proto, numArgs, debugNames)`. Falls back to `param_N` for unnamed.
 - **SLEIGH pcode:** Most Ark instructions already have pcode. Use `acc` (32-bit) and `acc64` (64-bit) for accumulator. NaN/infinity must use 64-bit local temp + acc64. Custom pcodeops (arkCallRuntime, arkThrow, etc.) for complex operations.
 - **Parser robustness:** AbcReader validates all reads with `checkRemaining()`. ULEB128 max 5 bytes. AbcFile validates header offsets. AbcFormatException for descriptive error messages. All 63 fuzzing tests pass.
+- **Break/continue detection:** Track loop context (headerOffset, endOffset) via a stack in DecompilationContext. `isBreakJump()` checks if jump target == endOffset, `isContinueJump()` checks if target == headerOffset. Push context on loop entry, pop on exit.
+- **Short-circuit evaluation (&&/||):** Detect via consecutive conditional branches: condition→true_branch→merge←false_branch for &&, condition→false_branch→merge←true_branch for ||. Use `detectShortCircuitPattern()` with PatternType enum.
+- **Ternary expression detection:** Pattern: condition→true_branch→merge←false_branch where both branches assign to same variable or produce a value. Use `detectTernaryPattern()` and `processTernary()` to emit `cond ? val1 : val2`.
+- **Nested try/catch:** Process try/catch regions recursively. Inner regions handled before outer. Each region maps to a try/catch/finally block in ArkTS output.
 <!-- LINT_RULES_END -->
 
 ---
