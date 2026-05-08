@@ -93,9 +93,12 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 8. ~~UI components (menu, structure viewer, output panel)~~ DONE
 9. ~~Release packaging, CI, documentation~~ DONE
 10. ~~Real .abc file integration testing (#18)~~ DONE
-11. Pcode generation for instructions (#19)
+11. ~~Pcode generation for instructions (#19, #21, #22)~~ DONE
 12. ~~Complete ABC format parser — debug info, source maps (#20)~~ DONE
-13. Fuzzing and robustness testing
+13. ~~Fuzzing and robustness testing (#23)~~ DONE
+14. Decompiler quality: switch with fall-through, nested try/catch, ternary expressions
+15. Real .abc file support: test with actual HarmonyOS compiler output
+16. Performance: large file handling and incremental decompilation
 
 ### Rules for the loop
 
@@ -176,10 +179,12 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Try/catch decompilation:** Use `AbcCode.getTryBlocks()` → `AbcTryBlock.getCatchBlocks()` → `AbcCatchBlock` to reconstruct exception handling. Map try start/end PC ranges to CFG block addresses. Catch-all blocks (typeIdx=0) map to `finally`.
 - **Jump offset calculation:** `jmp +0` at offset 0 with instruction length 2 gives target = 0+2+0 = 2 (not 0). For infinite loop (jmp to self), need negative offset = -instruction_length (e.g., `0xFE` for 2-byte jmp).
 - **Parameter naming convention:** Use `param_0`, `param_1` etc. (not `p0`/`p1`) for better readability. Falls back to untyped when no proto info available.
-- **Test count tracking:** 503 tests across 10 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
+- **Test count tracking:** 566 tests across 11 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
 - **ABC debug info parsing:** Tags 0x07 (SOURCE_FILE), 0x03 (DEBUG_INFO) in class/method tag values. Debug info contains line_start, num_params, param name string offsets, constant pool. LNP uses DWARF v3 state machine with special opcodes.
 - **Realistic test fixture design:** Use 16384-byte buffer with 200-byte spacing between areas (strings at 200, classes at 800, code at 2000, protos at 6000, etc.). Encode methods with ULEB128 for vregs/args/codeSize/triesSize.
 - **Debug parameter name resolution:** `AbcFile.getDebugInfoForMethod()` → `AbcDebugInfo.getParameterNames()` → pass to `MethodSignatureBuilder.buildParams(proto, numArgs, debugNames)`. Falls back to `param_N` for unnamed.
+- **SLEIGH pcode:** Most Ark instructions already have pcode. Use `acc` (32-bit) and `acc64` (64-bit) for accumulator. NaN/infinity must use 64-bit local temp + acc64. Custom pcodeops (arkCallRuntime, arkThrow, etc.) for complex operations.
+- **Parser robustness:** AbcReader validates all reads with `checkRemaining()`. ULEB128 max 5 bytes. AbcFile validates header offsets. AbcFormatException for descriptive error messages. All 63 fuzzing tests pass.
 <!-- LINT_RULES_END -->
 
 ---
