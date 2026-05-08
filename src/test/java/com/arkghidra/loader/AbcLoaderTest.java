@@ -109,32 +109,32 @@ class AbcLoaderTest {
     @Test
     void testToNamespaceName_stripsLeadingLandTrailingSemicolon() {
         assertEquals("com/example/TestClass",
-                AbcLoader.toNamespaceName("Lcom/example/TestClass;"));
+                AbcLoaderUtils.toNamespaceName("Lcom/example/TestClass;"));
     }
 
     @Test
     void testToNamespaceName_handlesNoPrefixOrSuffix() {
-        assertEquals("MyClass", AbcLoader.toNamespaceName("MyClass"));
+        assertEquals("MyClass", AbcLoaderUtils.toNamespaceName("MyClass"));
     }
 
     @Test
     void testToNamespaceName_handlesNull() {
-        assertEquals("unknown", AbcLoader.toNamespaceName(null));
+        assertEquals("unknown", AbcLoaderUtils.toNamespaceName(null));
     }
 
     @Test
     void testToNamespaceName_handlesEmptyString() {
-        assertEquals("unknown", AbcLoader.toNamespaceName(""));
+        assertEquals("unknown", AbcLoaderUtils.toNamespaceName(""));
     }
 
     @Test
     void testToNamespaceName_handlesOnlyL() {
-        assertEquals("", AbcLoader.toNamespaceName("L"));
+        assertEquals("", AbcLoaderUtils.toNamespaceName("L"));
     }
 
     @Test
     void testToNamespaceName_handlesLAndSemicolon() {
-        assertEquals("", AbcLoader.toNamespaceName("L;"));
+        assertEquals("", AbcLoaderUtils.toNamespaceName("L;"));
     }
 
     @Test

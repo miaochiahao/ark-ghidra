@@ -29,6 +29,7 @@ import com.arkghidra.format.AbcTryBlock;
 import ghidra.app.util.bin.ByteProvider;
 import ghidra.app.util.opinion.LoadSpec;
 import com.arkghidra.loader.AbcLoader;
+import com.arkghidra.loader.AbcLoaderUtils;
 
 /**
  * Integration tests that verify the full pipeline:
@@ -503,22 +504,22 @@ class IntegrationTest {
     @Test
     void testToNamespaceName_stripsLprefixAndSemicolon() {
         assertEquals("com/example/BaseClass",
-                AbcLoader.toNamespaceName("Lcom/example/BaseClass;"));
+                AbcLoaderUtils.toNamespaceName("Lcom/example/BaseClass;"));
     }
 
     @Test
     void testToNamespaceName_handlesNull() {
-        assertEquals("unknown", AbcLoader.toNamespaceName(null));
+        assertEquals("unknown", AbcLoaderUtils.toNamespaceName(null));
     }
 
     @Test
     void testToNamespaceName_handlesEmpty() {
-        assertEquals("unknown", AbcLoader.toNamespaceName(""));
+        assertEquals("unknown", AbcLoaderUtils.toNamespaceName(""));
     }
 
     @Test
     void testToNamespaceName_handlesPlainName() {
-        assertEquals("MyClass", AbcLoader.toNamespaceName("MyClass"));
+        assertEquals("MyClass", AbcLoaderUtils.toNamespaceName("MyClass"));
     }
 
     // =====================================================================

@@ -1,5 +1,7 @@
 package com.arkghidra.analyzer;
 
+import java.util.ArrayList;
+import java.util.List;
 import ghidra.app.services.AbstractAnalyzer;
 import ghidra.app.services.AnalysisPriority;
 import ghidra.app.services.AnalyzerType;
@@ -24,7 +26,7 @@ import com.arkghidra.format.AbcCode;
 import com.arkghidra.format.AbcFile;
 import com.arkghidra.format.AbcLiteralArray;
 import com.arkghidra.format.AbcMethod;
-import com.arkghidra.loader.AbcLoader;
+import com.arkghidra.loader.AbcLoaderUtils;
 
 /**
  * Ghidra auto-analyzer for Ark Bytecode programs.
@@ -79,50 +81,59 @@ public class ArkBytecodeAnalyzer extends AbstractAnalyzer {
 
         Msg.info(OWNER, "Starting Ark Bytecode analysis");
 
-        byte[] fileBytes = readAbcBytes(program);
-        if (fileBytes == null) {
-            log.appendMsg("No 'abc' memory block found; skipping analysis");
-            return false;
-        }
-
-        AbcFile abc;
-        try {
-            abc = AbcFile.parse(fileBytes);
-        } catch (Exception e) {
-            String msg = "Failed to re-parse ABC during analysis: " + e.getMessage();
-            log.appendMsg(msg);
-            Msg.error(OWNER, msg, e);
+        List<byte[]> allAbcBytes = readAllAbcBytes(program);
+        if (allAbcBytes.isEmpty()) {
+            log.appendMsg("No ABC memory blocks found; skipping analysis");
             return false;
         }
 
         ArkTSDataTypeManager dtManager = new ArkTSDataTypeManager(program);
         dtManager.createDataTypes();
 
-        annotateMethods(program, abc, monitor, log);
-        annotateStrings(program, abc, monitor, log);
+        for (byte[] fileBytes : allAbcBytes) {
+            if (monitor.isCancelled()) {
+                break;
+            }
+            AbcFile abc;
+            try {
+                abc = AbcFile.parse(fileBytes);
+            } catch (Exception e) {
+                String msg = "Failed to re-parse ABC during analysis: "
+                        + e.getMessage();
+                log.appendMsg(msg);
+                Msg.error(OWNER, msg, e);
+                continue;
+            }
+
+            annotateMethods(program, abc, monitor, log);
+            annotateStrings(program, abc, monitor, log);
+        }
 
         Msg.info(OWNER, "Ark Bytecode analysis complete");
         return true;
     }
 
-    private byte[] readAbcBytes(Program program) {
+    private List<byte[]> readAllAbcBytes(Program program) {
+        List<byte[]> result = new ArrayList<>();
         Memory memory = program.getMemory();
-        MemoryBlock block = memory.getBlock("abc");
-        if (block == null) {
-            return null;
+        for (MemoryBlock block : memory.getBlocks()) {
+            if (!block.getName().startsWith("abc")) {
+                continue;
+            }
+            long size = block.getSize();
+            if (size <= 0 || size > Integer.MAX_VALUE) {
+                continue;
+            }
+            byte[] bytes = new byte[(int) size];
+            try {
+                block.getBytes(block.getStart(), bytes);
+                result.add(bytes);
+            } catch (Exception e) {
+                Msg.error(OWNER, "Failed to read ABC memory block '"
+                        + block.getName() + "'", e);
+            }
         }
-        long size = block.getSize();
-        if (size <= 0 || size > Integer.MAX_VALUE) {
-            return null;
-        }
-        byte[] bytes = new byte[(int) size];
-        try {
-            block.getBytes(block.getStart(), bytes);
-        } catch (Exception e) {
-            Msg.error(OWNER, "Failed to read ABC memory block", e);
-            return null;
-        }
-        return bytes;
+        return result;
     }
 
     private void annotateMethods(Program program, AbcFile abc,
@@ -139,7 +150,7 @@ public class ArkBytecodeAnalyzer extends AbstractAnalyzer {
                 break;
             }
             String className = cls.getName();
-            String displayClassName = AbcLoader.toNamespaceName(className);
+            String displayClassName = AbcLoaderUtils.toNamespaceName(className);
 
             for (AbcMethod method : cls.getMethods()) {
                 if (monitor.isCancelled()) {
