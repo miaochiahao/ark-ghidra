@@ -1,0 +1,60 @@
+plugins {
+    id 'java'
+    id 'checkstyle'
+}
+
+def ghidraDir = file(properties['ghidra.install.dir'] ?: '/Users/anakin/Documents/ghidra_12.0.4_PUBLIC')
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation files("${ghidraDir}/Ghidra/Framework/Utility/lib/Utility.jar")
+    implementation files("${ghidraDir}/Ghidra/Framework/Generic/lib/Generic.jar")
+    implementation files("${ghidraDir}/Ghidra/Framework/DB/lib/DB.jar")
+    implementation files("${ghidraDir}/Ghidra/Framework/SoftwareModeling/lib/SoftwareModeling.jar")
+    implementation files("${ghidraDir}/Ghidra/Framework/Project/lib/Project.jar")
+    implementation fileTree(dir: "${ghidraDir}/Ghidra", include: '**/lib/*.jar')
+
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.2'
+    testImplementation 'org.junit.jupiter:junit-jupiter-params:5.10.2'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.2'
+    testImplementation 'org.mockito:mockito-core:5.11.0'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+test {
+    useJUnitPlatform()
+    jvmArgs += ['--add-opens', 'java.base/java.lang=ALL-UNNAMED']
+}
+
+checkstyle {
+    toolVersion = '10.15.0'
+    configFile = file('config/checkstyle/checkstyle.xml')
+    maxErrors = 0
+    maxWarnings = 0
+}
+
+tasks.register('lint') {
+    dependsOn checkstyleMain, checkstyleTest
+}
+
+// Ghidra extension packaging
+tasks.register('buildExtension', Zip) {
+    dependsOn jar
+    archiveBaseName = project.name
+    archiveVersion = project.findProperty('extension.version') ?: '0.1.0'
+
+    from(jar.archiveFile) {
+        into "lib"
+    }
+    from('src/main/resources') {
+        include 'Extension.properties'
+        include 'Module.manifest'
+    }
+}
