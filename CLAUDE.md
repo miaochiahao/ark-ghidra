@@ -4,7 +4,7 @@
 
 A Ghidra plugin that provides native decompilation support for ArkTS (the language used by HarmonyOS/OpenHarmony applications). The goal is to enable security researchers and reverse engineers to analyze HarmonyOS `.abc` (Ark Bytecode) files within Ghidra.
 
-**Tech stack:** Java 17 + Gradle + Ghidra 12.0.4 Extension API
+**Tech stack:** Java 21 + Gradle + Ghidra 12.0.4 Extension API
 
 **Repository:** https://github.com/miaochiahao/ark-ghidra
 
@@ -30,14 +30,14 @@ ark-ghidra/
 └── ghidra_scripts/        # Ghidra scripting bridge (optional)
 ```
 
-### Core components (to be built)
+### Core components
 
-1. **ABC Loader** — Parse `.abc` file format, load into Ghidra's program model
-2. **ArkTS Analyzer** — Module that wires into Ghidra's auto-analysis pipeline
-3. **Bytecode Decoder** — Disassemble Ark bytecode instructions
-4. **Pcode Translator** — Map Ark bytecode ops to Ghidra's pcode for decompilation
-5. **Type System** — Represent ArkTS types (dynamic, static, generics) in Ghidra's data type manager
-6. **UI Integration** — Plugin menu entries, tree viewers for ABC structure
+1. **ABC Loader** — Parses `.abc` files, maps sections into Ghidra address spaces, creates namespaces/functions
+2. **Bytecode Decoder** — Disassembles ~220 Ark bytecode instructions with full operand support
+3. **SLEIGH Processor Module** — Instruction encoding/disassembly (pcode generation pending)
+4. **ArkTS Decompiler** — Custom decompiler: CFG → AST → ArkTS source code
+5. **Auto-Analyzer** — Wires into Ghidra's analysis pipeline with ArkTS data types
+6. **UI Plugin** — Menu actions, ABC structure tree viewer, decompiler output panel
 
 ---
 
@@ -81,18 +81,21 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 5. **Learn** — Capture lint errors and new conventions into the "Lint Rules" section below
 6. **Repeat** — Propose the next most impactful feature
 
-### Feature priority order (initial)
+### Feature priority order (current)
 
-1. Project skeleton: Gradle build, Ghidra extension manifest, module wiring
-2. ABC file format parser (header, string table, method table)
-3. Bytecode instruction decoder
-4. Ghidra program loader (maps ABC sections into address spaces)
-5. Pcode translation layer (enables decompilation)
-6. Auto-analyzer integration
-7. Data type manager for ArkTS types
-8. UI components (menu, structure viewer)
-9. Test coverage expansion and fuzzing
-10. Documentation and release packaging
+1. ~~Project skeleton: Gradle build, Ghidra extension manifest, module wiring~~ DONE
+2. ~~ABC file format parser (header, string table, method table)~~ DONE
+3. ~~Bytecode instruction decoder~~ DONE
+4. ~~Ghidra program loader (maps ABC sections into address spaces)~~ DONE
+5. ~~SLEIGH processor module (disassembly)~~ DONE
+6. ~~ArkTS decompiler (CFG, AST, type inference)~~ DONE
+7. ~~Auto-analyzer integration~~ DONE
+8. ~~UI components (menu, structure viewer, output panel)~~ DONE
+9. ~~Release packaging, CI, documentation~~ DONE
+10. Real .abc file integration testing (#18)
+11. Pcode generation for instructions (#19)
+12. Complete ABC format parser — debug info, source maps (#20)
+13. Fuzzing and robustness testing
 
 ### Rules for the loop
 
@@ -168,6 +171,12 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **UI testing without Ghidra runtime:** Test static helper methods and constants from plugin/action classes. Avoid testing code that calls Ghidra APIs (requires `Application.initializeApplication()`). Package-private access helps testability.
 - **ArkTS decompilation pipeline:** Full method: disassemble → CFG → control flow reconstruction → type inference → expression tree → statement generation → pretty-print. Full file: iterate classes → decompile methods → resolve imports → generate output.
 - **ArkTS-specific syntax:** Use `struct` for decorated classes, `let`/`const` (never `var`), no `any` type, `as` for casting, `@Decorator` syntax, `enum` with optional values, `interface` with optional properties (`prop?: type`).
+- **Extension ZIP packaging:** Ghidra expects `<module_name>/<files>` layout. Use `processExtensionProperties` task to substitute `@extension.name@`/`@extension.version@` tokens. Include `.sla` compiled SLEIGH binary.
+- **Parallel subagent coordination:** Launch independent work streams (e.g., release packaging + decompiler improvements) in parallel. Each agent does its own build+lint verification. After both complete, do one final unified build before committing.
+- **Try/catch decompilation:** Use `AbcCode.getTryBlocks()` → `AbcTryBlock.getCatchBlocks()` → `AbcCatchBlock` to reconstruct exception handling. Map try start/end PC ranges to CFG block addresses. Catch-all blocks (typeIdx=0) map to `finally`.
+- **Jump offset calculation:** `jmp +0` at offset 0 with instruction length 2 gives target = 0+2+0 = 2 (not 0). For infinite loop (jmp to self), need negative offset = -instruction_length (e.g., `0xFE` for 2-byte jmp).
+- **Parameter naming convention:** Use `param_0`, `param_1` etc. (not `p0`/`p1`) for better readability. Falls back to untyped when no proto info available.
+- **Test count tracking:** 445 tests across 8 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
 <!-- LINT_RULES_END -->
 
 ---
