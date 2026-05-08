@@ -155,11 +155,17 @@ public class AbcLoader extends AbstractProgramWrapperLoader {
             AddressSpace space, TaskMonitor monitor, MessageLog log) {
         SymbolTable symbolTable = program.getSymbolTable();
         Namespace globalNs = program.getGlobalNamespace();
+        List<AbcClass> classes = abc.getClasses();
+        int total = classes.size();
 
-        for (AbcClass cls : abc.getClasses()) {
+        monitor.setMessage("Creating class symbols...");
+        monitor.initialize(total);
+
+        for (int i = 0; i < total; i++) {
             if (monitor.isCancelled()) {
                 break;
             }
+            AbcClass cls = classes.get(i);
             try {
                 String namespaceName = toNamespaceName(cls.getName());
                 Namespace classNs = symbolTable.getOrCreateNameSpace(
@@ -177,6 +183,7 @@ public class AbcLoader extends AbstractProgramWrapperLoader {
                 log.appendMsg(msg);
                 Msg.warn(OWNER, msg);
             }
+            monitor.setProgress(i + 1);
         }
     }
 
@@ -185,6 +192,16 @@ public class AbcLoader extends AbstractProgramWrapperLoader {
         FunctionManager funcMgr = program.getFunctionManager();
         SymbolTable symbolTable = program.getSymbolTable();
 
+        // Count total methods for progress reporting
+        int totalMethods = 0;
+        for (AbcClass cls : abc.getClasses()) {
+            totalMethods += cls.getMethods().size();
+        }
+
+        monitor.setMessage("Creating method functions...");
+        monitor.initialize(totalMethods);
+
+        int processed = 0;
         for (AbcClass cls : abc.getClasses()) {
             if (monitor.isCancelled()) {
                 break;
@@ -195,12 +212,16 @@ public class AbcLoader extends AbstractProgramWrapperLoader {
                 if (monitor.isCancelled()) {
                     break;
                 }
+                processed++;
+
                 if (method.getCodeOff() == 0) {
+                    monitor.setProgress(processed);
                     continue;
                 }
 
                 AbcCode code = abc.getCodeForMethod(method);
                 if (code == null) {
+                    monitor.setProgress(processed);
                     continue;
                 }
 
@@ -209,6 +230,7 @@ public class AbcLoader extends AbstractProgramWrapperLoader {
 
                     Function existing = funcMgr.getFunctionAt(funcAddr);
                     if (existing != null) {
+                        monitor.setProgress(processed);
                         continue;
                     }
 
@@ -234,6 +256,7 @@ public class AbcLoader extends AbstractProgramWrapperLoader {
                     log.appendMsg(msg);
                     Msg.warn(OWNER, msg);
                 }
+                monitor.setProgress(processed);
             }
         }
     }

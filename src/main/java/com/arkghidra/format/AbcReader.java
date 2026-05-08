@@ -80,16 +80,25 @@ public class AbcReader {
     }
 
     public long readUleb128() {
+        if (buf.remaining() < 1) {
+            throw new AbcFormatException(
+                    "Not enough data for readUleb128: need 1 bytes, have "
+                            + buf.remaining() + " at offset " + buf.position());
+        }
         long result = 0;
         int shift = 0;
         int byteCount = 0;
         while (true) {
-            checkRemaining(1, "readUleb128");
             byte b = buf.get();
             byteCount++;
             result |= (long) (b & 0x7F) << shift;
             if ((b & 0x80) == 0) {
                 break;
+            }
+            if (buf.remaining() < 1) {
+                throw new AbcFormatException(
+                        "Not enough data for readUleb128: need 1 bytes, have 0 at offset "
+                                + buf.position());
             }
             shift += 7;
             if (byteCount >= MAX_ULEB128_BYTES) {
@@ -101,18 +110,27 @@ public class AbcReader {
     }
 
     public long readSleb128() {
+        if (buf.remaining() < 1) {
+            throw new AbcFormatException(
+                    "Not enough data for readSleb128: need 1 bytes, have "
+                            + buf.remaining() + " at offset " + buf.position());
+        }
         long result = 0;
         int shift = 0;
         int byteCount = 0;
         byte b;
         while (true) {
-            checkRemaining(1, "readSleb128");
             b = buf.get();
             byteCount++;
             result |= (long) (b & 0x7F) << shift;
             shift += 7;
             if ((b & 0x80) == 0) {
                 break;
+            }
+            if (buf.remaining() < 1) {
+                throw new AbcFormatException(
+                        "Not enough data for readSleb128: need 1 bytes, have 0 at offset "
+                                + buf.position());
             }
             if (byteCount >= MAX_ULEB128_BYTES) {
                 throw new AbcFormatException(

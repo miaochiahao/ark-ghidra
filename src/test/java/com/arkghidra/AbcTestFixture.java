@@ -1592,4 +1592,280 @@ public class AbcTestFixture {
         String[] names = {"name", "age", "breed", "weight", "color"};
         return names[index];
     }
+
+    // =========================================================================
+    // Large ABC builder (100 classes, 10 methods each, 5 fields each = 1000 methods)
+    // =========================================================================
+
+    private static final int LARGE_NUM_CLASSES = 100;
+    private static final int LARGE_METHODS_PER_CLASS = 10;
+    private static final int LARGE_FIELDS_PER_CLASS = 5;
+    private static final int LARGE_TOTAL_METHODS =
+            LARGE_NUM_CLASSES * LARGE_METHODS_PER_CLASS;
+    private static final int LARGE_TOTAL_FIELDS =
+            LARGE_NUM_CLASSES * LARGE_FIELDS_PER_CLASS;
+
+    /**
+     * Buffer size for the large ABC fixture.
+     * Layout calculation:
+     *   String area: 200..20000 (~20000 bytes for 1600 strings)
+     *   Class area: 30000..130000 (~1000 bytes per class * 100 = 100000)
+     *   Code area:  150000..230000 (~80 bytes per code block * 1000 = 80000)
+     *   Proto area: 240000
+     *   Literal array area: 242000
+     *   Region header: 244000
+     *   Index arrays: 246000..290000
+     *   Total ~300000, rounded to 512KB with generous padding.
+     */
+    private static final int LARGE_BUFFER_SIZE = 524288;
+
+    /**
+     * Builds a large ABC binary with 100 classes, each having 10 methods
+     * and 5 fields, for a total of 1000 methods and 500 fields.
+     *
+     * <p>This fixture is designed to test performance characteristics
+     * and memory usage of the parser and loader at real-world scale.
+     *
+     * @return a valid byte[] that AbcFile.parse() can correctly parse
+     */
+    public byte[] buildLargeAbc() {
+        int lStringAreaOff = 200;
+        int lClassAreaOff = 30000;
+        int lCodeAreaOff = 150000;
+        int lProtoAreaOff = 240000;
+        int lLiteralArrayAreaOff = 242000;
+        int lRegionHeaderOff = 244000;
+        int lClassIdxOff = 246000;
+        int lMethodRegionIdxOff = 247000;
+        int lFieldRegionIdxOff = 252000;
+        int lProtoIdxOff = 254000;
+        int lClassRegionIdxOff = 255000;
+        int lLiteralArrayIdxOff = 256000;
+        int lLnpIdxOff = 257000;
+        int lFileSize = LARGE_BUFFER_SIZE;
+
+        ByteBuffer lbb = ByteBuffer.allocate(LARGE_BUFFER_SIZE)
+                .order(ByteOrder.LITTLE_ENDIAN);
+
+        int[] lClassNameStringOff = new int[LARGE_NUM_CLASSES];
+        int[] lMethodNameStringOff = new int[LARGE_TOTAL_METHODS];
+        int[] lFieldNameStringOff = new int[LARGE_TOTAL_FIELDS];
+        int[] lMethodCodeOff = new int[LARGE_TOTAL_METHODS];
+
+        // --- Write string area ---
+        lbb.position(lStringAreaOff);
+        int stringCursor = lStringAreaOff;
+
+        // Class names: Lcom/example/Class0; through Lcom/example/Class99;
+        for (int i = 0; i < LARGE_NUM_CLASSES; i++) {
+            lClassNameStringOff[i] = stringCursor;
+            byte[] nameBytes = mutf8String("Lcom/example/Class" + i + ";");
+            lbb.put(nameBytes);
+            stringCursor += nameBytes.length;
+        }
+
+        // Method names: method0 through method9, with <init> at index 0
+        String[] methodNames = {
+            "<init>", "method1", "method2", "method3", "method4",
+            "method5", "method6", "method7", "method8", "method9"
+        };
+        for (int i = 0; i < LARGE_TOTAL_METHODS; i++) {
+            lMethodNameStringOff[i] = stringCursor;
+            String name = methodNames[i % LARGE_METHODS_PER_CLASS];
+            byte[] nameBytes = mutf8String(name);
+            lbb.put(nameBytes);
+            stringCursor += nameBytes.length;
+        }
+
+        // Field names: field0 through field4
+        String[] fieldNames = {"field0", "field1", "field2", "field3", "field4"};
+        for (int i = 0; i < LARGE_TOTAL_FIELDS; i++) {
+            lFieldNameStringOff[i] = stringCursor;
+            String name = fieldNames[i % LARGE_FIELDS_PER_CLASS];
+            byte[] nameBytes = mutf8String(name);
+            lbb.put(nameBytes);
+            stringCursor += nameBytes.length;
+        }
+
+        // --- Write class definitions ---
+        // Each class: name (~25 bytes) + header (12) + 5 fields * 12 = 60
+        //           + 10 methods * 17 = 170 = ~267 bytes, round to 1000
+        int classDefSize = 1000;
+
+        for (int clsIdx = 0; clsIdx < LARGE_NUM_CLASSES; clsIdx++) {
+            int classOff = lClassAreaOff + clsIdx * classDefSize;
+            lbb.position(classOff);
+            lbb.put(mutf8String("Lcom/example/Class" + clsIdx + ";"));
+            lbb.putInt(0);                           // superClassOff = 0
+            lbb.put(uleb128(0x0001));                // ACC_PUBLIC
+            lbb.put(uleb128(LARGE_FIELDS_PER_CLASS));
+            lbb.put(uleb128(LARGE_METHODS_PER_CLASS));
+            lbb.put(new byte[] {0x00});              // end tag values
+
+            // Fields
+            int fieldBase = clsIdx * LARGE_FIELDS_PER_CLASS;
+            for (int f = 0; f < LARGE_FIELDS_PER_CLASS; f++) {
+                lbb.putShort((short) clsIdx);
+                lbb.putShort((short) f);
+                lbb.putInt(lFieldNameStringOff[fieldBase + f]);
+                lbb.put(uleb128(0x0001));            // ACC_PUBLIC
+                lbb.put(new byte[] {0x00});          // end tag
+            }
+
+            // Methods
+            int methodBase = clsIdx * LARGE_METHODS_PER_CLASS;
+            for (int m = 0; m < LARGE_METHODS_PER_CLASS; m++) {
+                int globalMethodIdx = methodBase + m;
+                int codeBlockSize = 80;
+                lMethodCodeOff[globalMethodIdx] =
+                        lCodeAreaOff + globalMethodIdx * codeBlockSize;
+                lbb.putShort((short) clsIdx);
+                lbb.putShort((short) 0);
+                lbb.putInt(lMethodNameStringOff[globalMethodIdx]);
+                lbb.put(uleb128(0x0001));            // ACC_PUBLIC
+                lbb.put(new byte[] {0x01});          // code offset tag
+                lbb.putInt(lMethodCodeOff[globalMethodIdx]);
+                lbb.put(new byte[] {0x00});          // end tags
+            }
+        }
+
+        // --- Write code sections ---
+        int codeBlockSize = 80;
+        byte[] simpleCode = simpleMethodCode(42);
+        byte[] ctorCode = constructorMethodCode();
+        byte[] arithCode = arithmeticMethodCode();
+        for (int i = 0; i < LARGE_TOTAL_METHODS; i++) {
+            int codeOff = lMethodCodeOff[i];
+            int numVregs = 4;
+            int numArgs = 1;
+            byte[] codeBytes;
+            if (i % LARGE_METHODS_PER_CLASS == 0) {
+                codeBytes = ctorCode;
+            } else if (i % 3 == 0) {
+                codeBytes = arithCode;
+                numArgs = 2;
+            } else {
+                codeBytes = simpleCode;
+            }
+            lbb.position(codeOff);
+            lbb.put(uleb128(numVregs));
+            lbb.put(uleb128(numArgs));
+            lbb.put(uleb128(codeBytes.length));
+            lbb.put(uleb128(0));         // triesSize = 0
+            lbb.put(codeBytes);
+        }
+
+        // --- Write proto area ---
+        lbb.position(lProtoAreaOff);
+        // Proto 0: ()I32
+        lbb.putShort((short) 0x0007);
+
+        // --- Write literal arrays ---
+        lbb.position(lLiteralArrayAreaOff);
+        lbb.putInt(2);
+        lbb.put((byte) 0x01);
+        lbb.put((byte) 0x2A);
+
+        // --- Write region headers ---
+        lbb.position(lRegionHeaderOff);
+        int codeEndOff = lCodeAreaOff + LARGE_TOTAL_METHODS * codeBlockSize;
+        lbb.putInt(lClassAreaOff);
+        lbb.putInt(codeEndOff);
+        lbb.putInt(LARGE_NUM_CLASSES);
+        lbb.putInt(lClassRegionIdxOff);
+        lbb.putInt(LARGE_TOTAL_METHODS);
+        lbb.putInt(lMethodRegionIdxOff);
+        lbb.putInt(LARGE_TOTAL_FIELDS);
+        lbb.putInt(lFieldRegionIdxOff);
+        lbb.putInt(1);                     // protoIdxSize
+        lbb.putInt(lProtoIdxOff);
+
+        // --- Write index arrays ---
+        lbb.position(lClassIdxOff);
+        for (int i = 0; i < LARGE_NUM_CLASSES; i++) {
+            lbb.putInt(lClassAreaOff + i * classDefSize);
+        }
+
+        lbb.position(lClassRegionIdxOff);
+        for (int i = 0; i < LARGE_NUM_CLASSES; i++) {
+            lbb.putInt(lClassAreaOff + i * classDefSize);
+        }
+
+        lbb.position(lMethodRegionIdxOff);
+        for (int i = 0; i < LARGE_TOTAL_METHODS; i++) {
+            lbb.putInt(0);
+        }
+
+        lbb.position(lFieldRegionIdxOff);
+        for (int i = 0; i < LARGE_TOTAL_FIELDS; i++) {
+            lbb.putInt(0);
+        }
+
+        lbb.position(lProtoIdxOff);
+        lbb.putInt(lProtoAreaOff);
+
+        lbb.position(lLiteralArrayIdxOff);
+        lbb.putInt(lLiteralArrayAreaOff);
+
+        lbb.position(lLnpIdxOff);
+
+        // --- Write header ---
+        lbb.position(0);
+        lbb.put(new byte[] {'P', 'A', 'N', 'D', 'A', 0, 0, 0});
+        lbb.putInt(0);
+        lbb.put(new byte[] {'0', '0', '0', '2'});
+        lbb.putInt(lFileSize);
+        lbb.putInt(0);
+        lbb.putInt(0);
+        lbb.putInt(LARGE_NUM_CLASSES);
+        lbb.putInt(lClassIdxOff);
+        lbb.putInt(0);
+        lbb.putInt(lLnpIdxOff);
+        lbb.putInt(1);
+        lbb.putInt(lLiteralArrayIdxOff);
+        lbb.putInt(1);
+        lbb.putInt(lRegionHeaderOff);
+
+        lbb.position(0);
+        byte[] result = new byte[lFileSize];
+        lbb.get(result);
+        return result;
+    }
+
+    /**
+     * Returns the expected number of classes in the large fixture.
+     *
+     * @return 100
+     */
+    public int getLargeClassCount() {
+        return LARGE_NUM_CLASSES;
+    }
+
+    /**
+     * Returns the expected total method count in the large fixture.
+     *
+     * @return 1000
+     */
+    public int getLargeMethodCount() {
+        return LARGE_TOTAL_METHODS;
+    }
+
+    /**
+     * Returns the expected total field count in the large fixture.
+     *
+     * @return 500
+     */
+    public int getLargeFieldCount() {
+        return LARGE_TOTAL_FIELDS;
+    }
+
+    /**
+     * Returns the expected class name at the given index in the large fixture.
+     *
+     * @param index class index (0-based)
+     * @return class name
+     */
+    public String getLargeClassName(int index) {
+        return "Lcom/example/Class" + index + ";";
+    }
 }

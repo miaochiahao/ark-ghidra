@@ -2,11 +2,17 @@ package com.arkghidra.format;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Top-level parser for Panda .abc binary files.
  * Reads header, class index, region headers, classes, methods, fields, code, and protos.
+ *
+ * <p>String lookups via {@link #readStringAt(AbcReader, int)} are cached to avoid
+ * re-reading and re-decoding the same MUTF-8 bytes on repeated access. Code sections
+ * are parsed lazily when accessed via {@link #getCodeForMethod(AbcMethod)}.
  */
 public class AbcFile {
     private final AbcHeader header;
@@ -18,6 +24,18 @@ public class AbcFile {
     private final List<Long> lnpIndex;
     private final List<Long> literalArrayIndex;
     private final byte[] rawData;
+
+    /**
+     * Cache of string table offset to decoded string. Avoids re-reading MUTF-8
+     * bytes and creating a new AbcReader for repeated lookups of the same offset.
+     */
+    private final Map<Integer, String> stringCache = new HashMap<>();
+
+    /**
+     * Cache of code offset to parsed AbcCode. Avoids re-parsing the same code
+     * section when multiple components (loader, analyzer, decompiler) request it.
+     */
+    private final Map<Integer, AbcCode> codeCache = new HashMap<>();
 
     // Tag constants for class_data TaggedValues
     private static final int CLASS_TAG_NOTHING = 0x00;
@@ -412,6 +430,37 @@ public class AbcFile {
         return s;
     }
 
+    /**
+     * Reads a string from the given offset, using the string cache to avoid
+     * redundant MUTF-8 decoding for repeated lookups.
+     *
+     * @param r the reader (position is saved and restored)
+     * @param off the string table offset
+     * @return the decoded string
+     */
+    private String readStringAtCached(AbcReader r, int off) {
+        String cached = stringCache.get(off);
+        if (cached != null) {
+            return cached;
+        }
+        int saved = r.position();
+        r.position(off);
+        String s = r.readMutf8();
+        r.position(saved);
+        stringCache.put(off, s);
+        return s;
+    }
+
+    /**
+     * Returns the number of strings currently in the lookup cache.
+     * Used for testing cache effectiveness.
+     *
+     * @return cached string count
+     */
+    public int getStringCacheSize() {
+        return stringCache.size();
+    }
+
     public AbcHeader getHeader() {
         return header;
     }
@@ -458,7 +507,14 @@ public class AbcFile {
         if (method.getCodeOff() == 0) {
             return null;
         }
-        return parseCode(new AbcReader(rawData), (int) method.getCodeOff());
+        int codeOff = (int) method.getCodeOff();
+        AbcCode cached = codeCache.get(codeOff);
+        if (cached != null) {
+            return cached;
+        }
+        AbcCode code = parseCode(new AbcReader(rawData), codeOff);
+        codeCache.put(codeOff, code);
+        return code;
     }
 
     /**
@@ -471,7 +527,14 @@ public class AbcFile {
         if (stringOff <= 0 || stringOff >= rawData.length) {
             return null;
         }
-        return readStringAt(new AbcReader(rawData), (int) stringOff);
+        int off = (int) stringOff;
+        String cached = stringCache.get(off);
+        if (cached != null) {
+            return cached;
+        }
+        AbcReader r = new AbcReader(rawData);
+        String result = readStringAtCached(r, off);
+        return result;
     }
 
     /**
