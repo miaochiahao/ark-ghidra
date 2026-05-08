@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<opinions>
+  <constraint loader="Ark Bytecode (ABC)" compilerSpecID="default">
+    <constraint primary="1" processor="ArkBytecode" endian="little" size="32"/>
+  </constraint>
+</opinions>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<language_definitions>
+  <language processor="ArkBytecode"
+            endian="little"
+            size="32"
+            variant="default"
+            version="1.0"
+            slafile="ArkBytecode.sla"
+            processorspec="ArkBytecode.pspec"
+            id="ArkBytecode:LE:32:default">
+    <description>Ark Bytecode for HarmonyOS/OpenHarmony</description>
+    <compiler name="default" spec="ArkBytecode.cspec" id="default"/>
+  </language>
+</language_definitions>

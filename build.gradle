@@ -24,8 +24,8 @@ dependencies {
 }
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
 }
 
 test {
@@ -56,5 +56,14 @@ tasks.register('buildExtension', Zip) {
     from('src/main/resources') {
         include 'Extension.properties'
         include 'Module.manifest'
+    }
+    from('data/languages') {
+        into 'data/languages'
+        include '*.ldefs'
+        include '*.cspec'
+        include '*.pspec'
+        include '*.opinion'
+        include '*.slaspec'
+        include '*.sinc'
     }
 }

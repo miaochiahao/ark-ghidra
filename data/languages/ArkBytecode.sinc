@@ -1,0 +1,508 @@
+# Ark Bytecode SLEIGH instruction definitions
+# Based on Ark ISA version 13.0.0.0 (isa.yaml)
+# Register-based VM with dedicated accumulator
+
+define endian = little;
+define alignment = 1;
+
+# Address spaces
+define space ram       type=ram_space      size=4  default;
+define space register  type=register_space size=4;
+
+# Core registers
+define register offset=0x00  size=4 [ sp fp acc ];
+
+# Virtual registers v0-v255 (8-bit index)
+define register offset=0x1000 size=4
+[
+     v0   v1   v2   v3   v4   v5   v6   v7
+     v8   v9  v10  v11  v12  v13  v14  v15
+    v16  v17  v18  v19  v20  v21  v22  v23
+    v24  v25  v26  v27  v28  v29  v30  v31
+    v32  v33  v34  v35  v36  v37  v38  v39
+    v40  v41  v42  v43  v44  v45  v46  v47
+    v48  v49  v50  v51  v52  v53  v54  v55
+    v56  v57  v58  v59  v60  v61  v62  v63
+    v64  v65  v66  v67  v68  v69  v70  v71
+    v72  v73  v74  v75  v76  v77  v78  v79
+    v80  v81  v82  v83  v84  v85  v86  v87
+    v88  v89  v90  v91  v92  v93  v94  v95
+    v96  v97  v98  v99 v100 v101 v102 v103
+   v104 v105 v106 v107 v108 v109 v110 v111
+   v112 v113 v114 v115 v116 v117 v118 v119
+   v120 v121 v122 v123 v124 v125 v126 v127
+   v128 v129 v130 v131 v132 v133 v134 v135
+   v136 v137 v138 v139 v140 v141 v142 v143
+   v144 v145 v146 v147 v148 v149 v150 v151
+   v152 v153 v154 v155 v156 v157 v158 v159
+   v160 v161 v162 v163 v164 v165 v166 v167
+   v168 v169 v170 v171 v172 v173 v174 v175
+   v176 v177 v178 v179 v180 v181 v182 v183
+   v184 v185 v186 v187 v188 v189 v190 v191
+   v192 v193 v194 v195 v196 v197 v198 v199
+   v200 v201 v202 v203 v204 v205 v206 v207
+   v208 v209 v210 v211 v212 v213 v214 v215
+   v216 v217 v218 v219 v220 v221 v222 v223
+   v224 v225 v226 v227 v228 v229 v230 v231
+   v232 v233 v234 v235 v236 v237 v238 v239
+   v240 v241 v242 v243 v244 v245 v246 v247
+   v248 v249 v250 v251 v252 v253 v254 v255
+];
+
+# Custom p-code operations for VM runtime calls
+define pcodeop arkThrow;
+define pcodeop arkNewObject;
+define pcodeop arkCallRuntime;
+define pcodeop arkCallArg;
+define pcodeop arkCreateArray;
+define pcodeop arkCreateObject;
+define pcodeop arkLoadProperty;
+define pcodeop arkStoreProperty;
+define pcodeop arkDefineFunc;
+define pcodeop arkDynamicImport;
+define pcodeop arkGetIterator;
+define pcodeop arkCloseIterator;
+define pcodeop arkGetPropIterator;
+define pcodeop arkTypeOf;
+define pcodeop arkInstanceOf;
+define pcodeop arkDebugger;
+
+# --- Instruction Token ---
+define token instruction(8)
+    opcode = (0, 7)
+;
+
+# Token for 8-bit register operand
+define token reg8(8)
+    vreg = (0, 7)
+;
+
+# Token for packed 4-bit register pair
+define token reg4pair(8)
+    vreg_lo = (0, 3)
+    vreg_hi = (4, 7)
+;
+
+# Token for packed 4-bit immediate pair
+define token imm4pair(8)
+    imm_lo = (0, 3)
+    imm_hi = (4, 7)
+;
+
+# Token for 8-bit immediate
+define token imm8token(8)
+    imm8_val    = (0, 7)
+    imm8_signed = (0, 7) signed
+;
+
+# Token for 16-bit immediate
+define token imm16(16)
+    imm16_val    = (0, 15)
+    imm16_signed = (0, 15) signed
+;
+
+# Token for 32-bit immediate
+define token imm32(32)
+    imm32_val    = (0, 31)
+    imm32_signed = (0, 31) signed
+;
+
+# Token for 64-bit immediate
+define token imm64(64)
+    imm64_val = (0, 63) signed
+;
+
+# Token for wide-prefixed (0xFD) instructions — 16-bit opcode where first byte is 0xFD
+define token wide_instr(16)
+    wide_prefix = (0, 7)
+    wide_opcode = (8, 15)
+;
+
+# --- Register Operand Constructors ---
+
+# 8-bit register index
+vr: vreg is vreg { export vreg; }
+
+# Packed 4-bit register pair
+vr1: vreg_lo is vreg_lo & vreg_lo { export vreg_lo; }
+vr2: vreg_hi is vreg_hi & vreg_hi { export vreg_hi; }
+
+# Packed 4-bit immediates
+imm1_4: imm_lo is imm_lo { export *[const]:1 imm_lo; }
+imm2_4: imm_hi is imm_hi { export *[const]:1 imm_hi; }
+
+# 8-bit unsigned immediate
+imm8: imm8_val is imm8_val { export *[const]:1 imm8_val; }
+
+# 16-bit unsigned immediate
+imm16u: imm16_val is imm16_val { export *[const]:2 imm16_val; }
+
+# 16-bit signed immediate (for jumps)
+imm16s: imm16_signed is imm16_signed { export *[const]:2 imm16_signed; }
+
+# 8-bit signed immediate (for short jumps)
+imm8s: imm8_signed is imm8_signed { export *[const]:1 imm8_signed; }
+
+# 32-bit immediate
+imm32v: imm32_val is imm32_val { export *[const]:4 imm32_val; }
+
+# 32-bit signed immediate
+imm32s: imm32_signed is imm32_signed { export *[const]:4 imm32_signed; }
+
+# 64-bit immediate
+imm64v: imm64_val is imm64_val { export *[const]:8 imm64_val; }
+
+# --- Attach register index to register space ---
+attach variables vreg [ v0 v1 v2 v3 v4 v5 v6 v7
+    v8 v9 v10 v11 v12 v13 v14 v15
+    v16 v17 v18 v19 v20 v21 v22 v23
+    v24 v25 v26 v27 v28 v29 v30 v31
+    v32 v33 v34 v35 v36 v37 v38 v39
+    v40 v41 v42 v43 v44 v45 v46 v47
+    v48 v49 v50 v51 v52 v53 v54 v55
+    v56 v57 v58 v59 v60 v61 v62 v63
+    v64 v65 v66 v67 v68 v69 v70 v71
+    v72 v73 v74 v75 v76 v77 v78 v79
+    v80 v81 v82 v83 v84 v85 v86 v87
+    v88 v89 v90 v91 v92 v93 v94 v95
+    v96 v97 v98 v99 v100 v101 v102 v103
+    v104 v105 v106 v107 v108 v109 v110 v111
+    v112 v113 v114 v115 v116 v117 v118 v119
+    v120 v121 v122 v123 v124 v125 v126 v127
+    v128 v129 v130 v131 v132 v133 v134 v135
+    v136 v137 v138 v139 v140 v141 v142 v143
+    v144 v145 v146 v147 v148 v149 v150 v151
+    v152 v153 v154 v155 v156 v157 v158 v159
+    v160 v161 v162 v163 v164 v165 v166 v167
+    v168 v169 v170 v171 v172 v173 v174 v175
+    v176 v177 v178 v179 v180 v181 v182 v183
+    v184 v185 v186 v187 v188 v189 v190 v191
+    v192 v193 v194 v195 v196 v197 v198 v199
+    v200 v201 v202 v203 v204 v205 v206 v207
+    v208 v209 v210 v211 v212 v213 v214 v215
+    v216 v217 v218 v219 v220 v221 v222 v223
+    v224 v225 v226 v227 v228 v229 v230 v231
+    v232 v233 v234 v235 v236 v237 v238 v239
+    v240 v241 v242 v243 v244 v245 v246 v247
+    v248 v249 v250 v251 v252 v253 v254 v255 ];
+
+# ===========================================================
+# Instruction Definitions
+# ===========================================================
+
+# --- Constant loaders (op_none format) ---
+
+:ldundefined    is opcode=0x00 { acc = 0; }
+:ldnull         is opcode=0x01 { acc = 0; }
+:ldtrue         is opcode=0x02 { acc = 1; }
+:ldfalse        is opcode=0x03 { acc = 0; }
+:createemptyobject is opcode=0x04 { acc = arkNewObject(); }
+
+# --- Array/Object creation (op_imm_8 / op_imm_16) ---
+
+:createemptyarray imm8   is opcode=0x05; imm8 { acc = arkCreateArray(imm8); }
+:getpropiterator  is opcode=0x66 { acc = arkGetPropIterator(); }
+:poplexenv        is opcode=0x69 { }
+:ldnan            is opcode=0x6A { acc = 0x7FF8000000000000; }
+:ldinfinity       is opcode=0x6B { acc = 0x7FF0000000000000; }
+:getunmappedargs  is opcode=0x6C { acc = arkCallRuntime(); }
+:ldglobal         is opcode=0x6D { acc = arkLoadProperty(); }
+:ldnewtarget      is opcode=0x6E { acc = arkLoadProperty(); }
+:ldthis           is opcode=0x6F { acc = arkLoadProperty(); }
+:ldhole           is opcode=0x70 { acc = 0; }
+:ldsymbol         is opcode=0xAD { acc = arkCallRuntime(); }
+:asyncfunctionenter is opcode=0xAE { acc = arkCallRuntime(); }
+:ldfunction       is opcode=0xAF { acc = arkLoadProperty(); }
+:debugger         is opcode=0xB0 { arkDebugger(); }
+:return           is opcode=0x64 { return [sp]; }
+:returnundefined  is opcode=0x65 { acc = 0; return [sp]; }
+:nop              is opcode=0xD5 { }
+:resumegenerator  is opcode=0xBF { }
+:getresumemode    is opcode=0xC0 { }
+:istrue           is opcode=0x23 { acc = (acc != 0) ? 1 : 0; }
+:isfalse          is opcode=0x24 { acc = (acc == 0) ? 1 : 0; }
+:dynamicimport    is opcode=0xBD { acc = arkDynamicImport(); }
+
+# --- Object creation with register args ---
+
+:creategeneratorobj vr    is opcode=0xB1; vr { acc = arkNewObject(); }
+:createiterresultobj vr, vr    is opcode=0xB2; vr & vr { acc = arkNewObject(); }
+:createasyncgeneratorobj vr    is opcode=0xB7; vr { acc = arkNewObject(); }
+
+# --- Binary operations (op_imm_8_v_8) ---
+
+:add2 imm8, vr    is opcode=0x0A; imm8 & vr { acc = acc + vr; }
+:sub2 imm8, vr    is opcode=0x0B; imm8 & vr { acc = acc - vr; }
+:mul2 imm8, vr    is opcode=0x0C; imm8 & vr { acc = acc * vr; }
+:div2 imm8, vr    is opcode=0x0D; imm8 & vr { acc = acc / vr; }
+:mod2 imm8, vr    is opcode=0x0E; imm8 & vr { acc = acc % vr; }
+:eq imm8, vr      is opcode=0x0F; imm8 & vr { acc = (acc == vr) ? 1 : 0; }
+:noteq imm8, vr   is opcode=0x10; imm8 & vr { acc = (acc != vr) ? 1 : 0; }
+:less imm8, vr    is opcode=0x11; imm8 & vr { acc = (acc <s vr) ? 1 : 0; }
+:lesseq imm8, vr  is opcode=0x12; imm8 & vr { acc = (acc <=s vr) ? 1 : 0; }
+:greater imm8, vr is opcode=0x13; imm8 & vr { acc = (acc >s vr) ? 1 : 0; }
+:greatereq imm8, vr is opcode=0x14; imm8 & vr { acc = (acc >=s vr) ? 1 : 0; }
+:shl2 imm8, vr    is opcode=0x15; imm8 & vr { acc = acc << vr; }
+:shr2 imm8, vr    is opcode=0x16; imm8 & vr { acc = acc >> vr; }
+:ashr2 imm8, vr   is opcode=0x17; imm8 & vr { acc = acc >>> vr; }
+:and2 imm8, vr    is opcode=0x18; imm8 & vr { acc = acc & vr; }
+:or2 imm8, vr     is opcode=0x19; imm8 & vr { acc = acc | vr; }
+:xor2 imm8, vr    is opcode=0x1A; imm8 & vr { acc = acc ^ vr; }
+:exp imm8, vr     is opcode=0x1B; imm8 & vr { acc = arkCallRuntime(); }
+
+# --- Comparison with register ---
+:isin imm8, vr       is opcode=0x25; imm8 & vr { acc = arkCallRuntime(); }
+:instanceof imm8, vr is opcode=0x26; imm8 & vr { acc = arkInstanceOf(); }
+:strictnoteq imm8, vr is opcode=0x27; imm8 & vr { acc = (acc != vr) ? 1 : 0; }
+:stricteq imm8, vr   is opcode=0x28; imm8 & vr { acc = (acc == vr) ? 1 : 0; }
+
+# --- Unary operations (op_imm_8) ---
+
+:typeof imm8    is opcode=0x1C; imm8 { acc = arkTypeOf(); }
+:tonumber imm8  is opcode=0x1D; imm8 { }
+:tonumeric imm8 is opcode=0x1E; imm8 { }
+:neg imm8       is opcode=0x1F; imm8 { acc = -acc; }
+:not imm8       is opcode=0x20; imm8 { acc = ~acc; }
+:inc imm8       is opcode=0x21; imm8 { acc = acc + 1; }
+:dec imm8       is opcode=0x22; imm8 { acc = acc - 1; }
+
+# --- Call instructions ---
+
+:callarg0 imm8           is opcode=0x29; imm8 { acc = arkCallArg(); }
+:callarg1 imm8, vr       is opcode=0x2A; imm8 & vr { acc = arkCallArg(); }
+:callargs2 imm8, vr, vr  is opcode=0x2B; imm8 & vr & vr { acc = arkCallArg(); }
+:callargs3 imm8, vr, vr, vr is opcode=0x2C; imm8 & vr & vr & vr { acc = arkCallArg(); }
+
+:callthis0 imm8, vr            is opcode=0x2D; imm8 & vr { acc = arkCallArg(); }
+:callthis1 imm8, vr, vr        is opcode=0x2E; imm8 & vr & vr { acc = arkCallArg(); }
+:callthis2 imm8, vr, vr, vr    is opcode=0x2F; imm8 & vr & vr & vr { acc = arkCallArg(); }
+:callthis3 imm8, vr, vr, vr, vr is opcode=0x30; imm8 & vr & vr & vr & vr { acc = arkCallArg(); }
+
+# --- Register moves ---
+
+:mov vr1, vr2 is opcode=0x44; vr1 & vr2 { vr1 = vr2; }
+:lda vr       is opcode=0x60; vr { acc = vr; }
+:sta vr       is opcode=0x61; vr { vr = acc; }
+
+# --- Load immediate ---
+
+:ldai imm32s   is opcode=0x62; imm32s { acc = imm32s; }
+:fldai imm64v  is opcode=0x63; imm64v { acc = imm64v; }
+
+# --- Lexical variable access (4-bit packed) ---
+
+:ldlexvar imm1_4, imm2_4 is opcode=0x3C; imm1_4 & imm2_4 { acc = arkLoadProperty(); }
+:stlexvar imm1_4, imm2_4 is opcode=0x3D; imm1_4 & imm2_4 { arkStoreProperty(); }
+
+# --- String constant load ---
+
+:lda.str imm16u is opcode=0x3E; imm16u { acc = imm16u; }
+
+# --- Property access by name (op_imm_8_id_16) ---
+
+:tryldglobalbyname imm8, imm16u    is opcode=0x3F; imm8 & imm16u { acc = arkLoadProperty(); }
+:trystglobalbyname imm8, imm16u    is opcode=0x40; imm8 & imm16u { arkStoreProperty(); }
+:ldobjbyname imm8, imm16u          is opcode=0x42; imm8 & imm16u { acc = arkLoadProperty(); }
+:stobjbyname imm8, imm16u, vr      is opcode=0x43; imm8 & imm16u & vr { arkStoreProperty(); }
+:ldsuperbyname imm8, imm16u        is opcode=0x46; imm8 & imm16u { acc = arkLoadProperty(); }
+:ldthisbyname imm8, imm16u         is opcode=0x49; imm8 & imm16u { acc = arkLoadProperty(); }
+:stthisbyname imm8, imm16u, vr     is opcode=0x4A; imm8 & imm16u & vr { arkStoreProperty(); }
+:stownbyname imm8, imm16u, vr      is opcode=0x7A; imm8 & imm16u & vr { arkStoreProperty(); }
+:stsuperbyname imm8, imm16u, vr    is opcode=0xD0; imm8 & imm16u & vr { arkStoreProperty(); }
+
+# --- Property access by value (op_imm_8_v_8) ---
+
+:ldobjbyvalue imm8, vr       is opcode=0x37; imm8 & vr { acc = arkLoadProperty(); }
+:stobjbyvalue imm8, vr, vr   is opcode=0x38; imm8 & vr & vr { arkStoreProperty(); }
+:ldsuperbyvalue imm8, vr     is opcode=0x39; imm8 & vr { acc = arkLoadProperty(); }
+:ldthisbyvalue imm8          is opcode=0x4B; imm8 { acc = arkLoadProperty(); }
+:stthisbyvalue imm8, vr      is opcode=0x4C; imm8 & vr { arkStoreProperty(); }
+:stownbyvalue imm8, vr, vr   is opcode=0x78; imm8 & vr & vr { arkStoreProperty(); }
+:stsuperbyvalue imm8, vr, vr is opcode=0xC9; imm8 & vr & vr { arkStoreProperty(); }
+
+# --- Property access by index (op_imm_8_imm_16) ---
+
+:ldobjbyindex imm8, imm16u        is opcode=0x3A; imm8 & imm16u { acc = arkLoadProperty(); }
+:stobjbyindex imm8, vr, imm16u    is opcode=0x3B; imm8 & vr & imm16u { arkStoreProperty(); }
+:stownbyindex imm8, vr, imm16u    is opcode=0x79; imm8 & vr & imm16u { arkStoreProperty(); }
+
+# --- Global variable access ---
+
+:ldglobalvar imm8, imm16u       is opcode=0x41; imm8 & imm16u { acc = arkLoadProperty(); }
+:stglobalvar imm8, imm16u       is opcode=0x7F; imm8 & imm16u { arkStoreProperty(); }
+:stconsttoglobalrecord imm8, imm16u is opcode=0x47; imm8 & imm16u { arkStoreProperty(); }
+:sttoglobalrecord imm8, imm16u  is opcode=0x48; imm8 & imm16u { arkStoreProperty(); }
+
+# --- Module variable access ---
+
+:getmodulenamespace imm8  is opcode=0x7B; imm8 { acc = arkLoadProperty(); }
+:stmodulevar imm8         is opcode=0x7C; imm8 { arkStoreProperty(); }
+:ldlocalmodulevar imm8    is opcode=0x7D; imm8 { acc = arkLoadProperty(); }
+:ldexternalmodulevar imm8 is opcode=0x7E; imm8 { acc = arkLoadProperty(); }
+
+# --- Jump instructions ---
+
+:jmp imm8s      is opcode=0x4D; imm8s { goto [inst_start + imm8s]; }
+:jeqz imm8s     is opcode=0x4F; imm8s { if (acc == 0) goto [inst_start + imm8s]; }
+:jnez imm8s     is opcode=0x51; imm8s { if (acc != 0) goto [inst_start + imm8s]; }
+:jstricteqz imm8s   is opcode=0x52; imm8s { if (acc == 0) goto [inst_start + imm8s]; }
+:jnstricteqz imm8s  is opcode=0x53; imm8s { if (acc != 0) goto [inst_start + imm8s]; }
+:jeqnull imm8s      is opcode=0x54; imm8s { if (acc == 0) goto [inst_start + imm8s]; }
+:jnenull imm8s      is opcode=0x55; imm8s { if (acc != 0) goto [inst_start + imm8s]; }
+:jstricteqnull imm8s is opcode=0x56; imm8s { if (acc == 0) goto [inst_start + imm8s]; }
+:jnstricteqnull imm8s is opcode=0x57; imm8s { if (acc != 0) goto [inst_start + imm8s]; }
+:jequndefined imm8s   is opcode=0x58; imm8s { if (acc == 0) goto [inst_start + imm8s]; }
+:jneundefined imm8s   is opcode=0x59; imm8s { if (acc != 0) goto [inst_start + imm8s]; }
+
+# Jump with register comparison
+:jeq vr, imm8s    is opcode=0x5C; vr & imm8s { if (acc == vr) goto [inst_start + imm8s]; }
+:jne vr, imm8s    is opcode=0x5D; vr & imm8s { if (acc != vr) goto [inst_start + imm8s]; }
+:jstricteq vr, imm8s   is opcode=0x5E; vr & imm8s { if (acc == vr) goto [inst_start + imm8s]; }
+:jnstricteq vr, imm8s  is opcode=0x5F; vr & imm8s { if (acc != vr) goto [inst_start + imm8s]; }
+
+# --- Iterator ---
+
+:getiterator imm8      is opcode=0x67; imm8 { acc = arkGetIterator(); }
+:closeiterator imm8, vr is opcode=0x68; imm8 & vr { arkCloseIterator(); }
+:getnextpropname vr    is opcode=0x36; vr { acc = arkLoadProperty(); }
+
+# --- Function definition ---
+
+:definefunc imm8, imm16u, imm8 is opcode=0x33; imm8 & imm16u & imm8 { acc = arkDefineFunc(); }
+:definemethod imm8, imm16u, imm8 is opcode=0x34; imm8 & imm16u & imm8 { acc = arkDefineFunc(); }
+
+# --- Object with nameset ---
+
+:stownbyvaluewithnameset imm8, vr, vr is opcode=0x99; imm8 & vr & vr { arkStoreProperty(); }
+:stownbynamewithnameset imm8, imm16u, vr is opcode=0x8E; imm8 & imm16u & vr { arkStoreProperty(); }
+
+# --- Set object with proto ---
+
+:setobjectwithproto imm8, vr is opcode=0x77; imm8 & vr { arkStoreProperty(); }
+
+# --- Misc ---
+
+:gettemplateobject imm8 is opcode=0x76; imm8 { acc = arkCallRuntime(); }
+:delobjprop vr          is opcode=0xC2; vr { acc = arkCallRuntime(); }
+:suspendgenerator vr    is opcode=0xC3; vr { arkCallRuntime(); }
+:asyncfunctionawaituncaught vr is opcode=0xC4; vr { arkCallRuntime(); }
+:copydataproperties vr  is opcode=0xC5; vr { arkCallRuntime(); }
+:starrayspread vr, vr   is opcode=0xC6; vr & vr { arkStoreProperty(); }
+:asyncfunctionresolve vr is opcode=0xCD; vr { arkCallRuntime(); }
+:asyncfunctionreject vr  is opcode=0xCE; vr { arkCallRuntime(); }
+:copyrestargs imm8       is opcode=0xCF; imm8 { acc = arkCallRuntime(); }
+:ldbigint imm16u         is opcode=0xD3; imm16u { acc = imm16u; }
+:setgeneratorstate imm8  is opcode=0xD6; imm8 { }
+:getasynciterator imm8   is opcode=0xD7; imm8 { acc = arkGetIterator(); }
+
+# --- Newobj range ---
+
+:newobjrange imm8, imm8, vr is opcode=0x08; imm8 & imm8 & vr { acc = arkNewObject(); }
+:newlexenv imm8            is opcode=0x09; imm8 { acc = arkNewObject(); }
+:supercallthisrange imm8, imm8, vr is opcode=0x32; imm8 & imm8 & vr { acc = arkCallArg(); }
+:callrange imm8, imm8, vr  is opcode=0x73; imm8 & imm8 & vr { acc = arkCallArg(); }
+:supercallarrowrange imm8, imm8, vr is opcode=0xBB; imm8 & imm8 & vr { acc = arkCallArg(); }
+
+# --- Call this range ---
+
+:callthisrange imm8, imm8, vr is opcode=0x31; imm8 & imm8 & vr { acc = arkCallArg(); }
+
+# --- Special operations ---
+
+:supercallspread imm8, vr    is opcode=0xB9; imm8 & vr { acc = arkCallArg(); }
+:apply imm8, vr, vr          is opcode=0xBA; imm8 & vr & vr { acc = arkCallArg(); }
+:newobjapply imm8, vr         is opcode=0xB4; imm8 & vr { acc = arkNewObject(); }
+
+# --- Create with buffer ---
+
+:createarraywithbuffer imm8, imm16u    is opcode=0x06; imm8 & imm16u { acc = arkCreateArray(); }
+:createobjectwithbuffer imm8, imm16u   is opcode=0x07; imm8 & imm16u { acc = arkCreateObject(); }
+:createregexpwithliteral imm8, imm16u, imm8 is opcode=0x71; imm8 & imm16u & imm8 { acc = arkNewObject(); }
+
+# --- Async generator ---
+
+:asyncgeneratorresolve vr, vr, vr is opcode=0xB8; vr & vr & vr { acc = arkCallRuntime(); }
+:asyncgeneratorreject vr          is opcode=0x97; vr { arkCallRuntime(); }
+
+# --- Private property ---
+
+:ldprivateproperty imm8, imm16u, imm16u is opcode=0xD8; imm8 & imm16u & imm16u { acc = arkLoadProperty(); }
+:stprivateproperty imm8, imm16u, imm16u, vr is opcode=0xD9; imm8 & imm16u & imm16u & vr { arkStoreProperty(); }
+:testin imm8, imm16u, imm16u is opcode=0xDA; imm8 & imm16u & imm16u { acc = arkCallRuntime(); }
+:definefieldbyname imm8, imm16u, vr is opcode=0xDB; imm8 & imm16u & vr { arkStoreProperty(); }
+:definepropertybyname imm8, imm16u, vr is opcode=0xDC; imm8 & imm16u & vr { arkStoreProperty(); }
+
+# --- Class definition ---
+
+:defineclasswithbuffer imm8, imm16u, imm16u, imm8, vr is opcode=0x35; imm8 & imm16u & imm16u & imm8 & vr { acc = arkDefineFunc(); }
+
+# --- Define getter/setter ---
+
+:definegettersetterbyvalue vr, vr, vr, vr is opcode=0xBC; vr & vr & vr & vr { arkStoreProperty(); }
+
+# --- Create with excluded keys ---
+
+:createobjectwithexcludedkeys imm8, vr, vr is opcode=0xB3; imm8 & vr & vr { acc = arkNewObject(); }
+
+# --- Lex env with name ---
+
+:newlexenvwithname imm8, imm16u is opcode=0xB6; imm8 & imm16u { acc = arkNewObject(); }
+
+# ===========================================================
+# Wide prefix (0xFD) instructions
+# ===========================================================
+
+:createemptyarray imm16u is wide_prefix=0xFD & wide_opcode=0x80; imm16u { acc = arkCreateArray(); }
+:createarraywithbuffer imm16u, imm16u is wide_prefix=0xFD & wide_opcode=0x81; imm16u & imm16u { acc = arkCreateArray(); }
+:createobjectwithbuffer imm16u, imm16u is wide_prefix=0xFD & wide_opcode=0x82; imm16u & imm16u { acc = arkCreateObject(); }
+:newobjrange imm16u, imm8, vr is wide_prefix=0xFD & wide_opcode=0x83; imm16u & imm8 & vr { acc = arkNewObject(); }
+:typeof imm16u is wide_prefix=0xFD & wide_opcode=0x84; imm16u { acc = arkTypeOf(); }
+:ldobjbyvalue imm16u, vr is wide_prefix=0xFD & wide_opcode=0x85; imm16u & vr { acc = arkLoadProperty(); }
+:stobjbyvalue imm16u, vr, vr is wide_prefix=0xFD & wide_opcode=0x86; imm16u & vr & vr { arkStoreProperty(); }
+:ldsuperbyvalue imm16u, vr is wide_prefix=0xFD & wide_opcode=0x87; imm16u & vr { acc = arkLoadProperty(); }
+:ldobjbyindex imm16u, imm16u is wide_prefix=0xFD & wide_opcode=0x88; imm16u & imm16u { acc = arkLoadProperty(); }
+:stobjbyindex imm16u, vr, imm16u is wide_prefix=0xFD & wide_opcode=0x89; imm16u & vr & imm16u { arkStoreProperty(); }
+:ldlexvar imm16u, imm16u is wide_prefix=0xFD & wide_opcode=0x8A; imm16u & imm16u { acc = arkLoadProperty(); }
+:stlexvar imm16u, imm16u is wide_prefix=0xFD & wide_opcode=0x8B; imm16u & imm16u { arkStoreProperty(); }
+:tryldglobalbyname imm16u, imm16u is wide_prefix=0xFD & wide_opcode=0x8C; imm16u & imm16u { acc = arkLoadProperty(); }
+:trystglobalbyname imm16u, imm16u is wide_prefix=0xFD & wide_opcode=0x8D; imm16u & imm16u { arkStoreProperty(); }
+:mov vr, vr is wide_prefix=0xFD & wide_opcode=0x8F; vr & vr { vr = vr; }
+:ldsuperbyname imm16u, imm16u is wide_prefix=0xFD & wide_opcode=0x92; imm16u & imm16u { acc = arkLoadProperty(); }
+:stobjbyname imm16u, imm16u, vr is wide_prefix=0xFD & wide_opcode=0x91; imm16u & imm16u & vr { arkStoreProperty(); }
+:ldobjbyname imm16u, imm16u is wide_prefix=0xFD & wide_opcode=0x90; imm16u & imm16u { acc = arkLoadProperty(); }
+:ldthisbyvalue imm16u is wide_prefix=0xFD & wide_opcode=0x95; imm16u { acc = arkLoadProperty(); }
+:stthisbyvalue imm16u, vr is wide_prefix=0xFD & wide_opcode=0x96; imm16u & vr { arkStoreProperty(); }
+:ldthisbyname imm16u, imm16u is wide_prefix=0xFD & wide_opcode=0x93; imm16u & imm16u { acc = arkLoadProperty(); }
+:stthisbyname imm16u, imm16u, vr is wide_prefix=0xFD & wide_opcode=0x94; imm16u & imm16u & vr { arkStoreProperty(); }
+:definefunc imm16u, imm16u, imm8 is wide_prefix=0xFD & wide_opcode=0x74; imm16u & imm16u & imm8 { acc = arkDefineFunc(); }
+:gettemplateobject imm16u is wide_prefix=0xFD & wide_opcode=0xC1; imm16u { acc = arkCallRuntime(); }
+:setobjectwithproto imm16u, vr is wide_prefix=0xFD & wide_opcode=0xC7; imm16u & vr { arkStoreProperty(); }
+:stownbyvalue imm16u, vr, vr is wide_prefix=0xFD & wide_opcode=0xC8; imm16u & vr & vr { arkStoreProperty(); }
+:stownbyindex imm16u, vr, imm16u is wide_prefix=0xFD & wide_opcode=0xCB; imm16u & vr & imm16u { arkStoreProperty(); }
+:stownbyname imm16u, imm16u, vr is wide_prefix=0xFD & wide_opcode=0xCC; imm16u & imm16u & vr { arkStoreProperty(); }
+:definemethod imm16u, imm16u, imm8 is wide_prefix=0xFD & wide_opcode=0xBE; imm16u & imm16u & imm8 { acc = arkDefineFunc(); }
+:supercallthisrange imm16u, imm8, vr is wide_prefix=0xFD & wide_opcode=0x75; imm16u & imm8 & vr { acc = arkCallArg(); }
+
+# ===========================================================
+# Additional 16-bit IC instructions
+# ===========================================================
+
+:jmp imm16s is opcode=0x4E; imm16s { goto [inst_start + imm16s]; }
+:jeqz imm16s is opcode=0x50; imm16s { if (acc == 0) goto [inst_start + imm16s]; }
+:jnez imm16s is opcode=0x9B; imm16s { if (acc != 0) goto [inst_start + imm16s]; }
+:jstricteqz imm16s is opcode=0x9D; imm16s { if (acc == 0) goto [inst_start + imm16s]; }
+:jnstricteqz imm16s is opcode=0x9E; imm16s { if (acc != 0) goto [inst_start + imm16s]; }
+:jeqnull imm16s is opcode=0x9F; imm16s { if (acc == 0) goto [inst_start + imm16s]; }
+:jnenull imm16s is opcode=0xA0; imm16s { if (acc != 0) goto [inst_start + imm16s]; }
+:jstricteqnull imm16s is opcode=0xA1; imm16s { if (acc == 0) goto [inst_start + imm16s]; }
+:jnstricteqnull imm16s is opcode=0xA2; imm16s { if (acc != 0) goto [inst_start + imm16s]; }
+:jequndefined imm16s is opcode=0xA3; imm16s { if (acc == 0) goto [inst_start + imm16s]; }
+:jneundefined imm16s is opcode=0xA4; imm16s { if (acc != 0) goto [inst_start + imm16s]; }
+:jstrictequndefined imm16s is opcode=0xA5; imm16s { if (acc == 0) goto [inst_start + imm16s]; }
+:jnstrictequndefined imm16s is opcode=0xA6; imm16s { if (acc != 0) goto [inst_start + imm16s]; }
+:jeq vr, imm16s is opcode=0xA7; vr & imm16s { if (acc == vr) goto [inst_start + imm16s]; }
+:jne vr, imm16s is opcode=0xA8; vr & imm16s { if (acc != vr) goto [inst_start + imm16s]; }
+:jstricteq vr, imm16s is opcode=0xA9; vr & imm16s { if (acc == vr) goto [inst_start + imm16s]; }
+:jnstricteq vr, imm16s is opcode=0xAA; vr & imm16s { if (acc != vr) goto [inst_start + imm16s]; }
+:getiterator imm16u is opcode=0xAB; imm16u { acc = arkGetIterator(); }
+:closeiterator imm16u, vr is opcode=0xAC; imm16u & vr { arkCloseIterator(); }
