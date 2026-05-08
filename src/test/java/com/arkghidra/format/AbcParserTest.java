@@ -355,4 +355,455 @@ class AbcParserTest {
         AbcCode code = abc.getCodeForMethod(method);
         assertNull(code);
     }
+
+    @Test
+    void testClassWithSourceFile() {
+        byte[] data = buildAbcWithSourceFile();
+        AbcFile abc = AbcFile.parse(data);
+        AbcClass cls = abc.getClasses().get(0);
+
+        assertTrue(cls.getSourceFileOff() > 0,
+                "sourceFileOff should be non-zero");
+        String sourceFile = abc.getSourceFileForClass(cls);
+        assertNotNull(sourceFile);
+        assertEquals("TestClass.ets", sourceFile);
+    }
+
+    @Test
+    void testMethodWithDebugInfoOffset() {
+        byte[] data = buildAbcWithDebugInfo();
+        AbcFile abc = AbcFile.parse(data);
+        AbcMethod method = abc.getClasses().get(0).getMethods().get(0);
+
+        assertTrue(method.getDebugInfoOff() > 0,
+                "debugInfoOff should be non-zero");
+    }
+
+    @Test
+    void testDebugInfoParameterNames() {
+        byte[] data = buildAbcWithDebugInfo();
+        AbcFile abc = AbcFile.parse(data);
+        AbcMethod method = abc.getClasses().get(0).getMethods().get(0);
+
+        AbcDebugInfo debugInfo = abc.getDebugInfoForMethod(method);
+        assertNotNull(debugInfo);
+        assertEquals(2, debugInfo.getNumParameters());
+        assertEquals(1, debugInfo.getLineStart());
+        assertEquals("x", debugInfo.getParameterNames().get(0));
+        assertEquals("y", debugInfo.getParameterNames().get(1));
+    }
+
+    @Test
+    void testDebugInfoNullWhenNoDebugOff() {
+        byte[] data = buildMinimalAbc();
+        AbcFile abc = AbcFile.parse(data);
+        AbcMethod method = abc.getClasses().get(0).getMethods().get(0);
+
+        AbcDebugInfo debugInfo = abc.getDebugInfoForMethod(method);
+        assertNull(debugInfo,
+                "debugInfo should be null when debugInfoOff is 0");
+    }
+
+    @Test
+    void testGetSourceFileNameWithInvalidOffset() {
+        byte[] data = buildMinimalAbc();
+        AbcFile abc = AbcFile.parse(data);
+
+        assertNull(abc.getSourceFileName(0));
+        assertNull(abc.getSourceFileName(-1));
+        assertNull(abc.getSourceFileName(99999));
+    }
+
+    @Test
+    void testLineNumberProgramParsing() {
+        // Build a simple LNP: one special opcode that emits a line entry
+        // Special opcode: 0x0C + adjusted
+        // adjusted = 5 -> opcode = 0x11
+        // address += 5/15 = 0, line += -4 + (5%15) = 1
+        // Starting line is 1, so final line = 1 + 1 = 2
+        // Then END_SEQUENCE (0x00)
+        byte[] lnpData = new byte[] {0x11, 0x00};
+        AbcReader r = new AbcReader(lnpData);
+        List<AbcLineNumberEntry> entries =
+                AbcFile.parseLineNumberProgramData(r, 0);
+
+        assertEquals(1, entries.size());
+        assertEquals(0, entries.get(0).getPc());
+        assertEquals(2, entries.get(0).getLine());
+    }
+
+    @Test
+    void testLineNumberProgramAdvancePcAndLine() {
+        // ADVANCE_PC(4) + ADVANCE_LINE(3) + special opcode + END_SEQUENCE
+        // ADVANCE_PC = opcode 0x01, operand ULEB128(4)
+        // ADVANCE_LINE = opcode 0x02, operand SLEB128(3)
+        // special opcode 0x0C (adjusted=0): address += 0, line += -4
+        // END_SEQUENCE = 0x00
+        // Line: starts at 1, +3 from ADVANCE_LINE, -4 from special = 0
+        byte[] lnpData = new byte[] {
+            0x01, 0x04,       // ADVANCE_PC +4
+            0x02, 0x03,       // ADVANCE_LINE +3
+            0x0C,             // special opcode (adjusted=0): pc+=0, line+=-4
+            0x00              // END_SEQUENCE
+        };
+        AbcReader r = new AbcReader(lnpData);
+        List<AbcLineNumberEntry> entries =
+                AbcFile.parseLineNumberProgramData(r, 0);
+
+        assertEquals(1, entries.size());
+        assertEquals(4, entries.get(0).getPc());
+        assertEquals(0, entries.get(0).getLine());
+    }
+
+    @Test
+    void testLineNumberProgramStartLocal() {
+        // START_LOCAL skips register, name idx, type idx
+        // START_LOCAL = opcode 0x03
+        // Then special opcode 0x0C + END
+        byte[] lnpData = new byte[] {
+            0x03, 0x01, 0x02, 0x03,  // START_LOCAL reg=1, name=2, type=3
+            0x0C,                     // special opcode
+            0x00                      // END_SEQUENCE
+        };
+        AbcReader r = new AbcReader(lnpData);
+        List<AbcLineNumberEntry> entries =
+                AbcFile.parseLineNumberProgramData(r, 0);
+
+        assertEquals(1, entries.size());
+        assertEquals(0, entries.get(0).getPc());
+    }
+
+    @Test
+    void testLineNumberProgramEndSequence() {
+        // Just END_SEQUENCE - no entries
+        byte[] lnpData = new byte[] {0x00};
+        AbcReader r = new AbcReader(lnpData);
+        List<AbcLineNumberEntry> entries =
+                AbcFile.parseLineNumberProgramData(r, 0);
+
+        assertTrue(entries.isEmpty());
+    }
+
+    @Test
+    void testDebugInfoConstantPoolSkipped() {
+        // Build debug info with 2 constant pool entries
+        byte[] data = buildAbcWithDebugInfoAndConstantPool();
+        AbcFile abc = AbcFile.parse(data);
+        AbcMethod method = abc.getClasses().get(0).getMethods().get(0);
+
+        AbcDebugInfo debugInfo = abc.getDebugInfoForMethod(method);
+        assertNotNull(debugInfo);
+        assertEquals(2, debugInfo.getConstantPoolSize());
+        assertEquals(1, debugInfo.getParameterNames().size());
+        assertEquals("count", debugInfo.getParameterNames().get(0));
+    }
+
+    // --- Helper methods for building ABC fixtures with debug info ---
+
+    private static byte[] buildAbcWithSourceFile() {
+        ByteBuffer bb = ByteBuffer.allocate(512).order(ByteOrder.LITTLE_ENDIAN);
+
+        int stringAreaOff = 200;
+        int classOff = 300;
+        int codeOff = 400;
+        int regionHeaderOff = 440;
+        int classIdxOff = 480;
+        int literalArrayIdxOff = 488;
+        int lnpIdxOff = 496;
+        int classRegionIdxOff = 500;
+        int fileSize = 512;
+
+        // Header
+        bb.put(new byte[] {'P', 'A', 'N', 'D', 'A', 0, 0, 0});
+        bb.putInt(0);
+        bb.put(new byte[] {'0', '0', '0', '2'});
+        bb.putInt(fileSize);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(1);
+        bb.putInt(classIdxOff);
+        bb.putInt(0);
+        bb.putInt(lnpIdxOff);
+        bb.putInt(0);
+        bb.putInt(literalArrayIdxOff);
+        bb.putInt(1);
+        bb.putInt(regionHeaderOff);
+
+        // String area - compute actual positions
+        bb.position(stringAreaOff);
+        int sourceFileStringOff = bb.position();
+        bb.put(mutf8String("TestClass.ets"));
+        int classNameStringOff = bb.position();
+        bb.put(mutf8String("Lcom/example/TestClass;"));
+        int methodNameStringOff = bb.position();
+        bb.put(mutf8String("testMethod"));
+
+        // Class index
+        bb.position(classIdxOff);
+        bb.putInt(classOff);
+
+        // Region header
+        bb.position(regionHeaderOff);
+        bb.putInt(classOff);
+        bb.putInt(codeOff + 32);
+        bb.putInt(1);
+        bb.putInt(classRegionIdxOff);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(0);
+
+        bb.position(classRegionIdxOff);
+        bb.putInt(classOff);
+
+        // Class definition with SOURCE_FILE tag (0x07)
+        bb.position(classOff);
+        bb.put(mutf8String("Lcom/example/TestClass;"));
+        bb.putInt(0);                       // superClassOff
+        bb.put(uleb128(0x0001));            // accessFlags
+        bb.put(uleb128(0));                 // numFields
+        bb.put(uleb128(1));                 // numMethods
+        // Class tags: SOURCE_FILE tag (0x07) followed by string offset, then end (0x00)
+        bb.put(new byte[] {0x07});
+        bb.putInt(sourceFileStringOff);     // source file name offset
+        bb.put(new byte[] {0x00});          // end tags
+
+        // Method
+        bb.putShort((short) 0);
+        bb.putShort((short) 0);
+        bb.putInt(methodNameStringOff);
+        bb.put(uleb128(0x0001));
+        bb.put(new byte[] {0x01});          // code offset tag
+        bb.putInt(codeOff);
+        bb.put(new byte[] {0x00});          // end tags
+
+        // Code
+        bb.position(codeOff);
+        bb.put(uleb128(2));
+        bb.put(uleb128(1));
+        bb.put(uleb128(4));
+        bb.put(uleb128(0));
+        bb.put(new byte[] {0x00, 0x60, 0x00, 0x64});
+
+        bb.position(0);
+        byte[] result = new byte[fileSize];
+        bb.get(result);
+        return result;
+    }
+
+    private static byte[] buildAbcWithDebugInfo() {
+        ByteBuffer bb = ByteBuffer.allocate(1024).order(ByteOrder.LITTLE_ENDIAN);
+
+        int stringAreaOff = 200;
+        int debugInfoOff = 300;
+        int classOff = 400;
+        int codeOff = 500;
+        int regionHeaderOff = 550;
+        int classIdxOff = 600;
+        int literalArrayIdxOff = 608;
+        int lnpIdxOff = 616;
+        int classRegionIdxOff = 620;
+        int fileSize = 1024;
+
+        // Header
+        bb.position(0);
+        bb.put(new byte[] {'P', 'A', 'N', 'D', 'A', 0, 0, 0});
+        bb.putInt(0);
+        bb.put(new byte[] {'0', '0', '0', '2'});
+        bb.putInt(fileSize);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(1);
+        bb.putInt(classIdxOff);
+        bb.putInt(0);
+        bb.putInt(lnpIdxOff);
+        bb.putInt(0);
+        bb.putInt(literalArrayIdxOff);
+        bb.putInt(1);
+        bb.putInt(regionHeaderOff);
+
+        // String area - compute actual positions
+        bb.position(stringAreaOff);
+        int paramXStringOff = bb.position();
+        byte[] xBytes = mutf8String("x");
+        bb.put(xBytes);
+        int paramYStringOff = bb.position();
+        byte[] yBytes = mutf8String("y");
+        bb.put(yBytes);
+        int classNameStringOff = bb.position();
+        bb.put(mutf8String("Lcom/example/TestClass;"));
+        int methodNameStringOff = bb.position();
+        bb.put(mutf8String("add"));
+
+        // Debug info section:
+        // line_start = 1 (ULEB128)
+        // num_parameters = 2 (ULEB128)
+        // param 0 name off = paramXStringOff (ULEB128)
+        // param 1 name off = paramYStringOff (ULEB128)
+        // constant_pool_size = 0 (ULEB128)
+        bb.position(debugInfoOff);
+        bb.put(uleb128(1));                  // line_start
+        bb.put(uleb128(2));                  // num_parameters
+        bb.put(uleb128(paramXStringOff));    // param 0 -> "x"
+        bb.put(uleb128(paramYStringOff));    // param 1 -> "y"
+        bb.put(uleb128(0));                  // constant_pool_size
+
+        // Class index
+        bb.position(classIdxOff);
+        bb.putInt(classOff);
+
+        // Region header
+        bb.position(regionHeaderOff);
+        bb.putInt(classOff);
+        bb.putInt(codeOff + 32);
+        bb.putInt(1);
+        bb.putInt(classRegionIdxOff);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(0);
+
+        bb.position(classRegionIdxOff);
+        bb.putInt(classOff);
+
+        // Class definition
+        bb.position(classOff);
+        bb.put(mutf8String("Lcom/example/TestClass;"));
+        bb.putInt(0);                       // superClassOff
+        bb.put(uleb128(0x0001));            // accessFlags
+        bb.put(uleb128(0));                 // numFields
+        bb.put(uleb128(1));                 // numMethods
+        bb.put(new byte[] {0x00});          // end class tags
+
+        // Method with DEBUG_INFO tag (0x03)
+        bb.putShort((short) 0);
+        bb.putShort((short) 0);
+        bb.putInt(methodNameStringOff);
+        bb.put(uleb128(0x0001));            // accessFlags
+        bb.put(new byte[] {0x01});          // CODE_OFFSET tag
+        bb.putInt(codeOff);
+        bb.put(new byte[] {0x03});          // DEBUG_INFO tag
+        bb.putInt(debugInfoOff);
+        bb.put(new byte[] {0x00});          // end method tags
+
+        // Code
+        bb.position(codeOff);
+        bb.put(uleb128(4));                 // numVregs
+        bb.put(uleb128(2));                 // numArgs
+        bb.put(uleb128(4));                 // codeSize
+        bb.put(uleb128(0));                 // triesSize
+        bb.put(new byte[] {0x00, 0x60, 0x00, 0x64});
+
+        bb.position(0);
+        byte[] result = new byte[fileSize];
+        bb.get(result);
+        return result;
+    }
+
+    private static byte[] buildAbcWithDebugInfoAndConstantPool() {
+        ByteBuffer bb = ByteBuffer.allocate(1024).order(ByteOrder.LITTLE_ENDIAN);
+
+        int stringAreaOff = 200;
+        int debugInfoOff = 300;
+        int classOff = 400;
+        int codeOff = 500;
+        int regionHeaderOff = 550;
+        int classIdxOff = 600;
+        int literalArrayIdxOff = 608;
+        int lnpIdxOff = 616;
+        int classRegionIdxOff = 620;
+        int fileSize = 1024;
+
+        // Header
+        bb.position(0);
+        bb.put(new byte[] {'P', 'A', 'N', 'D', 'A', 0, 0, 0});
+        bb.putInt(0);
+        bb.put(new byte[] {'0', '0', '0', '2'});
+        bb.putInt(fileSize);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(1);
+        bb.putInt(classIdxOff);
+        bb.putInt(0);
+        bb.putInt(lnpIdxOff);
+        bb.putInt(0);
+        bb.putInt(literalArrayIdxOff);
+        bb.putInt(1);
+        bb.putInt(regionHeaderOff);
+
+        // String area - compute actual positions
+        bb.position(stringAreaOff);
+        int paramStrOff = bb.position();
+        bb.put(mutf8String("count"));
+        int classNameStringOff = bb.position();
+        bb.put(mutf8String("Lcom/example/TestClass;"));
+        int methodNameStringOff = bb.position();
+        bb.put(mutf8String("doWork"));
+
+        // Debug info with constant pool
+        bb.position(debugInfoOff);
+        bb.put(uleb128(1));                  // line_start
+        bb.put(uleb128(1));                  // num_parameters
+        bb.put(uleb128(paramStrOff));        // param 0 -> "count"
+        bb.put(uleb128(2));                  // constant_pool_size = 2
+        bb.put(uleb128(100));                // constant pool entry 1
+        bb.put(uleb128(200));                // constant pool entry 2
+
+        // Class index
+        bb.position(classIdxOff);
+        bb.putInt(classOff);
+
+        // Region header
+        bb.position(regionHeaderOff);
+        bb.putInt(classOff);
+        bb.putInt(codeOff + 32);
+        bb.putInt(1);
+        bb.putInt(classRegionIdxOff);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(0);
+
+        bb.position(classRegionIdxOff);
+        bb.putInt(classOff);
+
+        // Class definition
+        bb.position(classOff);
+        bb.put(mutf8String("Lcom/example/TestClass;"));
+        bb.putInt(0);
+        bb.put(uleb128(0x0001));
+        bb.put(uleb128(0));
+        bb.put(uleb128(1));
+        bb.put(new byte[] {0x00});           // end class tags
+
+        // Method with debug info
+        bb.putShort((short) 0);
+        bb.putShort((short) 0);
+        bb.putInt(methodNameStringOff);
+        bb.put(uleb128(0x0001));
+        bb.put(new byte[] {0x01});           // CODE_OFFSET
+        bb.putInt(codeOff);
+        bb.put(new byte[] {0x03});           // DEBUG_INFO
+        bb.putInt(debugInfoOff);
+        bb.put(new byte[] {0x00});           // end method tags
+
+        // Code
+        bb.position(codeOff);
+        bb.put(uleb128(2));
+        bb.put(uleb128(1));
+        bb.put(uleb128(4));
+        bb.put(uleb128(0));
+        bb.put(new byte[] {0x00, 0x60, 0x00, 0x64});
+
+        bb.position(0);
+        byte[] result = new byte[fileSize];
+        bb.get(result);
+        return result;
+    }
 }

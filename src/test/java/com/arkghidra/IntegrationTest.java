@@ -10,10 +10,13 @@ import java.util.Collection;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import com.arkghidra.decompile.ArkTSDecompiler;
 import com.arkghidra.disasm.ArkDisassembler;
 import com.arkghidra.disasm.ArkInstruction;
+import com.arkghidra.format.AbcCatchBlock;
 import com.arkghidra.format.AbcClass;
 import com.arkghidra.format.AbcCode;
 import com.arkghidra.format.AbcFile;
@@ -21,6 +24,7 @@ import com.arkghidra.format.AbcField;
 import com.arkghidra.format.AbcHeader;
 import com.arkghidra.format.AbcMethod;
 import com.arkghidra.format.AbcRegionHeader;
+import com.arkghidra.format.AbcTryBlock;
 
 import ghidra.app.util.bin.ByteProvider;
 import ghidra.app.util.opinion.LoadSpec;
@@ -670,6 +674,558 @@ class IntegrationTest {
         AbcRegionHeader region = abc.findRegionForOffset(
                 abc.getClasses().get(0).getOffset());
         assertNotNull(region, "Should find a region containing the first class");
+    }
+
+    // =========================================================================
+    // Realistic ABC integration tests (3 classes, try/catch, large methods)
+    // =========================================================================
+
+    /**
+     * Nested test class for the realistic 3-class ABC fixture.
+     * Tests full pipeline: parsing, disassembly, decompilation, edge cases.
+     */
+    @Nested
+    class RealisticAbcTests {
+
+        private byte[] data;
+        private AbcFile abc;
+
+        @BeforeEach
+        void setUpRealistic() {
+            data = fixture.buildRealisticAbc();
+            abc = AbcFile.parse(data);
+        }
+
+        // =================================================================
+        // Header
+        // =================================================================
+
+        @Test
+        void testRealistic_headerIsValid() {
+            AbcHeader header = abc.getHeader();
+            assertTrue(header.hasValidMagic());
+            assertEquals(2, header.getVersionNumber());
+            assertEquals(3, header.getNumClasses());
+            assertEquals(2, header.getNumLiteralArrays());
+        }
+
+        // =================================================================
+        // Class structure
+        // =================================================================
+
+        @Test
+        void testRealistic_findsAllThreeClasses() {
+            assertEquals(3, abc.getClasses().size());
+        }
+
+        @Test
+        void testRealistic_classNamesAreCorrect() {
+            assertEquals("Lcom/example/Animal;", abc.getClasses().get(0).getName());
+            assertEquals("Lcom/example/Dog;", abc.getClasses().get(1).getName());
+            assertEquals("Lcom/example/Utils;", abc.getClasses().get(2).getName());
+        }
+
+        @Test
+        void testRealistic_dogExtendsAnimal() {
+            AbcClass animal = abc.getClasses().get(0);
+            AbcClass dog = abc.getClasses().get(1);
+            assertTrue(dog.getSuperClassOff() > 0,
+                    "Dog should have a superclass");
+            assertEquals(animal.getOffset(), dog.getSuperClassOff(),
+                    "Dog's superclass offset should point to Animal");
+        }
+
+        @Test
+        void testRealistic_animalHasNoSuperclass() {
+            assertEquals(0, abc.getClasses().get(0).getSuperClassOff(),
+                    "Animal should have no superclass");
+        }
+
+        @Test
+        void testRealistic_utilsHasNoSuperclass() {
+            assertEquals(0, abc.getClasses().get(2).getSuperClassOff(),
+                    "Utils should have no superclass");
+        }
+
+        @Test
+        void testRealistic_allClassesPublic() {
+            for (AbcClass cls : abc.getClasses()) {
+                assertEquals(1, cls.getAccessFlags(),
+                        "Class " + cls.getName() + " should be ACC_PUBLIC");
+            }
+        }
+
+        // =================================================================
+        // Field verification
+        // =================================================================
+
+        @Test
+        void testRealistic_fieldCounts() {
+            assertEquals(2, abc.getClasses().get(0).getFields().size(),
+                    "Animal should have 2 fields");
+            assertEquals(3, abc.getClasses().get(1).getFields().size(),
+                    "Dog should have 3 fields");
+            assertTrue(abc.getClasses().get(2).getFields().isEmpty(),
+                    "Utils should have 0 fields");
+        }
+
+        @Test
+        void testRealistic_fieldNames() {
+            assertEquals("name", abc.getClasses().get(0).getFields().get(0).getName());
+            assertEquals("age", abc.getClasses().get(0).getFields().get(1).getName());
+            assertEquals("breed", abc.getClasses().get(1).getFields().get(0).getName());
+            assertEquals("weight", abc.getClasses().get(1).getFields().get(1).getName());
+            assertEquals("color", abc.getClasses().get(1).getFields().get(2).getName());
+        }
+
+        @Test
+        void testRealistic_fieldAccessFlags() {
+            // Animal.name = public (0x01)
+            assertEquals(0x0001, abc.getClasses().get(0).getFields().get(0)
+                    .getAccessFlags());
+            // Dog.breed = private (0x02)
+            assertEquals(0x0002, abc.getClasses().get(1).getFields().get(0)
+                    .getAccessFlags());
+            // Dog.color = protected (0x04)
+            assertEquals(0x0004, abc.getClasses().get(1).getFields().get(2)
+                    .getAccessFlags());
+        }
+
+        // =================================================================
+        // Method verification
+        // =================================================================
+
+        @Test
+        void testRealistic_methodCounts() {
+            assertEquals(2, abc.getClasses().get(0).getMethods().size(),
+                    "Animal should have 2 methods");
+            assertEquals(5, abc.getClasses().get(1).getMethods().size(),
+                    "Dog should have 5 methods");
+            assertEquals(3, abc.getClasses().get(2).getMethods().size(),
+                    "Utils should have 3 methods");
+        }
+
+        @Test
+        void testRealistic_methodNames() {
+            // Animal methods
+            assertEquals("<init>", abc.getClasses().get(0).getMethods().get(0)
+                    .getName());
+            assertEquals("tryCatchMethod", abc.getClasses().get(0).getMethods()
+                    .get(1).getName());
+
+            // Dog methods
+            assertEquals("<init>", abc.getClasses().get(1).getMethods().get(0)
+                    .getName());
+            assertEquals("largeLoop", abc.getClasses().get(1).getMethods().get(1)
+                    .getName());
+            assertEquals("manyParams", abc.getClasses().get(1).getMethods().get(2)
+                    .getName());
+            assertEquals("subtract", abc.getClasses().get(1).getMethods().get(3)
+                    .getName());
+            assertEquals("nestedIf", abc.getClasses().get(1).getMethods().get(4)
+                    .getName());
+
+            // Utils methods
+            assertEquals("<init>", abc.getClasses().get(2).getMethods().get(0)
+                    .getName());
+            assertEquals("staticHelper", abc.getClasses().get(2).getMethods().get(1)
+                    .getName());
+            assertEquals("anotherHelper", abc.getClasses().get(2).getMethods().get(2)
+                    .getName());
+        }
+
+        @Test
+        void testRealistic_staticMethodHasCorrectFlags() {
+            // staticHelper = ACC_PUBLIC | ACC_STATIC = 0x0009
+            AbcMethod staticHelper = abc.getClasses().get(2).getMethods().get(1);
+            assertEquals(0x0009, staticHelper.getAccessFlags(),
+                    "staticHelper should be public+static");
+        }
+
+        @Test
+        void testRealistic_privateMethodHasCorrectFlags() {
+            // anotherHelper = ACC_PRIVATE = 0x0002
+            AbcMethod privateMethod = abc.getClasses().get(2).getMethods().get(2);
+            assertEquals(0x0002, privateMethod.getAccessFlags(),
+                    "anotherHelper should be private");
+        }
+
+        @Test
+        void testRealistic_allMethodsHaveCode() {
+            for (AbcClass cls : abc.getClasses()) {
+                for (AbcMethod method : cls.getMethods()) {
+                    assertTrue(method.getCodeOff() > 0,
+                            method.getName() + " should have a code offset");
+                }
+            }
+        }
+
+        // =================================================================
+        // Code section and disassembly
+        // =================================================================
+
+        @Test
+        void testRealistic_largeMethod_has20PlusInstructions() {
+            AbcMethod largeLoop = abc.getClasses().get(1).getMethods().get(1);
+            AbcCode code = abc.getCodeForMethod(largeLoop);
+            assertNotNull(code);
+            assertEquals(8, code.getNumVregs());
+            assertEquals(2, code.getNumArgs());
+
+            List<ArkInstruction> insns = disasm.disassemble(
+                    code.getInstructions(), 0, (int) code.getCodeSize());
+            assertTrue(insns.size() >= 16,
+                    "Large method should have at least 16 instructions, got: "
+                            + insns.size());
+        }
+
+        @Test
+        void testRealistic_largeMethod_hasLoopStructure() {
+            AbcMethod largeLoop = abc.getClasses().get(1).getMethods().get(1);
+            AbcCode code = abc.getCodeForMethod(largeLoop);
+            List<ArkInstruction> insns = disasm.disassemble(
+                    code.getInstructions(), 0, (int) code.getCodeSize());
+
+            boolean hasBackwardJmp = insns.stream()
+                    .anyMatch(i -> "jmp".equals(i.getMnemonic())
+                            && i.getOperands().stream()
+                                    .anyMatch(o -> o.getValue() < 0));
+            assertTrue(hasBackwardJmp, "Large loop should have backward jump");
+
+            boolean hasJeQz = insns.stream()
+                    .anyMatch(i -> "jeqz".equals(i.getMnemonic()));
+            assertTrue(hasJeQz, "Large loop should have conditional branch");
+
+            boolean hasReturn = insns.stream()
+                    .anyMatch(i -> "return".equals(i.getMnemonic()));
+            assertTrue(hasReturn, "Large loop should have return");
+        }
+
+        @Test
+        void testRealistic_manyParamsMethod_has6Args() {
+            AbcMethod manyParams = abc.getClasses().get(1).getMethods().get(2);
+            AbcCode code = abc.getCodeForMethod(manyParams);
+            assertNotNull(code);
+            assertEquals(6, code.getNumArgs(),
+                    "manyParams should have 6 arguments");
+            assertEquals(8, code.getNumVregs());
+        }
+
+        @Test
+        void testRealistic_manyParamsMethod_disassemblesCorrectly() {
+            AbcMethod manyParams = abc.getClasses().get(1).getMethods().get(2);
+            AbcCode code = abc.getCodeForMethod(manyParams);
+            List<ArkInstruction> insns = disasm.disassemble(
+                    code.getInstructions(), 0, (int) code.getCodeSize());
+
+            // Should be: lda v0, add2 v1, add2 v2, add2 v3, add2 v4, add2 v5, return
+            assertEquals(7, insns.size());
+            assertEquals("lda", insns.get(0).getMnemonic());
+            assertTrue(insns.stream()
+                    .filter(i -> "add2".equals(i.getMnemonic()))
+                    .count() >= 5,
+                    "Should have at least 5 add2 instructions");
+        }
+
+        @Test
+        void testRealistic_subtractMethod_disassemblesCorrectly() {
+            AbcMethod sub = abc.getClasses().get(1).getMethods().get(3);
+            AbcCode code = abc.getCodeForMethod(sub);
+            List<ArkInstruction> insns = disasm.disassemble(
+                    code.getInstructions(), 0, (int) code.getCodeSize());
+
+            assertEquals("sub2", insns.get(1).getMnemonic(),
+                    "Subtract method should use sub2");
+        }
+
+        @Test
+        void testRealistic_allMethods_offsetChainCorrect() {
+            for (AbcClass cls : abc.getClasses()) {
+                for (AbcMethod method : cls.getMethods()) {
+                    AbcCode code = abc.getCodeForMethod(method);
+                    assertNotNull(code,
+                            "Method " + method.getName() + " should have code");
+
+                    List<ArkInstruction> insns = disasm.disassemble(
+                            code.getInstructions(), 0, (int) code.getCodeSize());
+                    assertFalse(insns.isEmpty(),
+                            "Method " + method.getName() + " should have insns");
+
+                    int expectedOffset = 0;
+                    for (ArkInstruction insn : insns) {
+                        assertEquals(expectedOffset, insn.getOffset(),
+                                "Offset mismatch in " + method.getName()
+                                        + " at " + insn.getMnemonic());
+                        expectedOffset = insn.getNextOffset();
+                    }
+                    assertEquals(code.getCodeSize(), expectedOffset,
+                            "Final offset mismatch for " + method.getName());
+                }
+            }
+        }
+
+        // =================================================================
+        // Try/catch block parsing
+        // =================================================================
+
+        @Test
+        void testRealistic_tryCatchMethod_hasTryBlocks() {
+            AbcMethod tryCatch = abc.getClasses().get(0).getMethods().get(1);
+            AbcCode code = abc.getCodeForMethod(tryCatch);
+            assertNotNull(code);
+            assertEquals(1, code.getTryBlocks().size(),
+                    "tryCatchMethod should have 1 try block");
+        }
+
+        @Test
+        void testRealistic_tryBlock_hasCorrectRange() {
+            AbcMethod tryCatch = abc.getClasses().get(0).getMethods().get(1);
+            AbcCode code = abc.getCodeForMethod(tryCatch);
+            AbcTryBlock tryBlock = code.getTryBlocks().get(0);
+
+            assertEquals(0, tryBlock.getStartPc(),
+                    "Try block should start at PC 0");
+            assertEquals(13, tryBlock.getLength(),
+                    "Try block length should cover the try body");
+        }
+
+        @Test
+        void testRealistic_tryBlock_hasCatchHandler() {
+            AbcMethod tryCatch = abc.getClasses().get(0).getMethods().get(1);
+            AbcCode code = abc.getCodeForMethod(tryCatch);
+            AbcTryBlock tryBlock = code.getTryBlocks().get(0);
+
+            assertEquals(1, tryBlock.getCatchBlocks().size(),
+                    "Try block should have 1 catch block");
+            AbcCatchBlock catchBlock = tryBlock.getCatchBlocks().get(0);
+            assertTrue(catchBlock.isCatchAll(),
+                    "Catch block should be catch-all (typeIdx=0)");
+            assertEquals(13, catchBlock.getHandlerPc(),
+                    "Catch handler should start at PC 13");
+            assertEquals(6, catchBlock.getCodeSize(),
+                    "Catch handler code size should be 6 bytes");
+        }
+
+        @Test
+        void testRealistic_otherMethodsHaveNoTryBlocks() {
+            // All methods except tryCatchMethod should have no try blocks
+            for (int ci = 0; ci < abc.getClasses().size(); ci++) {
+                for (int mi = 0; mi < abc.getClasses().get(ci).getMethods()
+                        .size(); mi++) {
+                    if (ci == 0 && mi == 1) {
+                        continue; // skip tryCatchMethod
+                    }
+                    AbcMethod method = abc.getClasses().get(ci).getMethods()
+                            .get(mi);
+                    AbcCode code = abc.getCodeForMethod(method);
+                    assertNotNull(code);
+                    assertTrue(code.getTryBlocks().isEmpty(),
+                            "Method " + method.getName()
+                                    + " should have no try blocks");
+                }
+            }
+        }
+
+        // =================================================================
+        // Proto / literal array verification
+        // =================================================================
+
+        @Test
+        void testRealistic_hasProtos() {
+            assertFalse(abc.getProtos().isEmpty(),
+                    "Should have at least one proto");
+        }
+
+        @Test
+        void testRealistic_hasTwoLiteralArrays() {
+            assertEquals(2, abc.getLiteralArrays().size(),
+                    "Should have 2 literal arrays");
+        }
+
+        @Test
+        void testRealistic_literalArraysHaveEntries() {
+            for (int i = 0; i < abc.getLiteralArrays().size(); i++) {
+                assertTrue(abc.getLiteralArrays().get(i).getNumLiterals() > 0,
+                        "Literal array " + i + " should have entries");
+            }
+        }
+
+        // =================================================================
+        // Decompiler integration
+        // =================================================================
+
+        @Test
+        void testRealistic_decompileTryCatchMethod_producesTryCatch() {
+            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+            AbcMethod tryCatch = abc.getClasses().get(0).getMethods().get(1);
+            AbcCode code = abc.getCodeForMethod(tryCatch);
+
+            String result = decompiler.decompileMethod(tryCatch, code, abc);
+            assertNotNull(result);
+            assertTrue(result.contains("try"),
+                    "Decompiled try/catch method should contain 'try'");
+            assertTrue(result.contains("catch"),
+                    "Decompiled try/catch method should contain 'catch'");
+        }
+
+        @Test
+        void testRealistic_decompileLargeLoop_hasWhileLoop() {
+            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+            AbcMethod largeLoop = abc.getClasses().get(1).getMethods().get(1);
+            AbcCode code = abc.getCodeForMethod(largeLoop);
+
+            String result = decompiler.decompileMethod(largeLoop, code, abc);
+            assertNotNull(result);
+            assertTrue(result.contains("while") || result.contains("for"),
+                    "Decompiled large loop should contain while/for");
+        }
+
+        @Test
+        void testRealistic_decompileSimpleReturn() {
+            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+            AbcMethod staticHelper = abc.getClasses().get(2).getMethods().get(1);
+            AbcCode code = abc.getCodeForMethod(staticHelper);
+
+            String result = decompiler.decompileMethod(staticHelper, code, abc);
+            assertNotNull(result);
+            assertTrue(result.contains("99"),
+                    "Static helper should return 99");
+        }
+
+        @Test
+        void testRealistic_decompileSubtractMethod() {
+            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+            AbcMethod sub = abc.getClasses().get(1).getMethods().get(3);
+            AbcCode code = abc.getCodeForMethod(sub);
+
+            String result = decompiler.decompileMethod(sub, code, abc);
+            assertNotNull(result);
+            assertTrue(result.contains("-"),
+                    "Subtract method should contain subtraction operator");
+        }
+
+        @Test
+        void testRealistic_decompileMultiplyMethod() {
+            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+            AbcMethod mul = abc.getClasses().get(2).getMethods().get(2);
+            AbcCode code = abc.getCodeForMethod(mul);
+
+            String result = decompiler.decompileMethod(mul, code, abc);
+            assertNotNull(result);
+            assertTrue(result.contains("*"),
+                    "Multiply method should contain multiplication operator");
+        }
+
+        @Test
+        void testRealistic_decompileAllMethods_noExceptions() {
+            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+            for (AbcClass cls : abc.getClasses()) {
+                for (AbcMethod method : cls.getMethods()) {
+                    AbcCode code = abc.getCodeForMethod(method);
+                    assertNotNull(code,
+                            "Method " + method.getName() + " should have code");
+                    // Should not throw
+                    String result = decompiler.decompileMethod(method, code, abc);
+                    assertNotNull(result,
+                            "Decompiled " + cls.getName() + "."
+                                    + method.getName() + " should not be null");
+                    assertFalse(result.isEmpty(),
+                            "Decompiled " + cls.getName() + "."
+                                    + method.getName() + " should not be empty");
+                }
+            }
+        }
+
+        // =================================================================
+        // Full file decompilation
+        // =================================================================
+
+        @Test
+        void testRealistic_decompileFile_producesOutput() {
+            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+            String result = decompiler.decompileFile(abc);
+            assertNotNull(result);
+            assertFalse(result.isEmpty(),
+                    "Full file decompilation should produce output");
+        }
+
+        @Test
+        void testRealistic_decompileFile_containsAllClassNames() {
+            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+            String result = decompiler.decompileFile(abc);
+            assertTrue(result.contains("Animal"),
+                    "Should contain Animal class");
+            assertTrue(result.contains("Dog"),
+                    "Should contain Dog class");
+            assertTrue(result.contains("Utils"),
+                    "Should contain Utils class");
+        }
+
+        @Test
+        void testRealistic_decompileFile_dogExtendsAnimal() {
+            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+            String result = decompiler.decompileFile(abc);
+            assertTrue(result.contains("extends Animal") || result.contains("Animal"),
+                    "Dog class output should reference Animal");
+        }
+
+        @Test
+        void testRealistic_decompileFile_containsConstructors() {
+            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+            String result = decompiler.decompileFile(abc);
+            assertTrue(result.contains("constructor"),
+                    "File output should contain constructors");
+        }
+
+        // =================================================================
+        // Edge case: nested conditional method
+        // =================================================================
+
+        @Test
+        void testRealistic_nestedIfMethod_hasMultipleBranches() {
+            AbcMethod nestedIf = abc.getClasses().get(1).getMethods().get(4);
+            AbcCode code = abc.getCodeForMethod(nestedIf);
+            List<ArkInstruction> insns = disasm.disassemble(
+                    code.getInstructions(), 0, (int) code.getCodeSize());
+
+            long jeqzCount = insns.stream()
+                    .filter(i -> "jeqz".equals(i.getMnemonic()))
+                    .count();
+            assertTrue(jeqzCount >= 2,
+                    "Nested if should have at least 2 conditional branches");
+
+            boolean hasJmp = insns.stream()
+                    .anyMatch(i -> "jmp".equals(i.getMnemonic()));
+            assertTrue(hasJmp, "Nested if should have unconditional jump");
+        }
+
+        // =================================================================
+        // Region header verification
+        // =================================================================
+
+        @Test
+        void testRealistic_regionHeaderHasCorrectCounts() {
+            assertFalse(abc.getRegionHeaders().isEmpty());
+            AbcRegionHeader region = abc.getRegionHeaders().get(0);
+            assertEquals(3, region.getClassIdxSize(),
+                    "Region should report 3 class index entries");
+        }
+
+        // =================================================================
+        // Loader integration
+        // =================================================================
+
+        @Test
+        void testRealistic_loaderRecognizesFile() throws IOException {
+            AbcLoader loader = new AbcLoader();
+            ByteProvider provider = new InMemoryByteProvider(data);
+            try {
+                Collection<LoadSpec> specs = loader.findSupportedLoadSpecs(provider);
+                assertEquals(1, specs.size(), "Should recognize realistic ABC");
+            } finally {
+                provider.close();
+            }
+        }
     }
 
     // =====================================================================

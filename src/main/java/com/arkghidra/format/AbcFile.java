@@ -19,6 +19,18 @@ public class AbcFile {
     private final List<Long> literalArrayIndex;
     private final byte[] rawData;
 
+    // Tag constants for class_data TaggedValues
+    private static final int CLASS_TAG_NOTHING = 0x00;
+    private static final int CLASS_TAG_SOURCE_LANG = 0x02;
+    private static final int CLASS_TAG_SOURCE_FILE = 0x07;
+
+    // Tag constants for method_data TaggedValues
+    private static final int METHOD_TAG_END = 0x00;
+    private static final int METHOD_TAG_CODE_OFFSET = 0x01;
+    private static final int METHOD_TAG_SOURCE_LANG = 0x02;
+    private static final int METHOD_TAG_DEBUG_INFO = 0x03;
+    // Tags 0x04-0x09 are uint32 values (various metadata)
+
     private AbcFile(AbcHeader header, List<AbcRegionHeader> regionHeaders,
             List<AbcClass> classes, List<AbcProto> protos,
             List<AbcLiteralArray> literalArrays,
@@ -131,7 +143,7 @@ public class AbcFile {
         long accessFlags = r.readUleb128();
         long numFields = r.readUleb128();
         long numMethods = r.readUleb128();
-        skipTagValues(r);
+        long sourceFileOff = parseClassTags(r);
 
         List<AbcField> fields = new ArrayList<>((int) numFields);
         for (int i = 0; i < (int) numFields; i++) {
@@ -143,7 +155,8 @@ public class AbcFile {
             methods.add(parseMethod(r));
         }
 
-        return new AbcClass(name, superClassOff, accessFlags, fields, methods, classOff);
+        return new AbcClass(name, superClassOff, accessFlags, fields, methods,
+                classOff, sourceFileOff);
     }
 
     private static AbcField parseField(AbcReader r) {
@@ -152,7 +165,7 @@ public class AbcFile {
         int typeIdx = r.readU16();
         String name = readStringAt(r, (int) r.readU32());
         long accessFlags = r.readUleb128();
-        skipTagValues(r);
+        parseClassTags(r);
         return new AbcField(classIdx, typeIdx, name, accessFlags, fieldPos);
     }
 
@@ -163,25 +176,37 @@ public class AbcFile {
         long nameOff = r.readU32();
         String name = readStringAt(r, (int) nameOff);
         long accessFlags = r.readUleb128();
-        long codeOff = parseMethodTagsForCode(r);
-        return new AbcMethod(classIdx, protoIdx, name, accessFlags, codeOff, methodPos);
+        long[] methodMeta = parseMethodTags(r);
+        long codeOff = methodMeta[0];
+        long debugInfoOff = methodMeta[1];
+        return new AbcMethod(classIdx, protoIdx, name, accessFlags, codeOff,
+                methodPos, debugInfoOff);
     }
 
-    private static long parseMethodTagsForCode(AbcReader r) {
+    /**
+     * Parses method_data TaggedValues, extracting code offset and debug info offset.
+     *
+     * @return a two-element array: [codeOff, debugInfoOff]
+     */
+    private static long[] parseMethodTags(AbcReader r) {
         long codeOff = 0;
+        long debugInfoOff = 0;
         while (true) {
             int tag = r.readU8() & 0xFF;
-            if (tag == 0x00) {
+            if (tag == METHOD_TAG_END) {
                 break;
             }
             switch (tag) {
-                case 0x01:
+                case METHOD_TAG_CODE_OFFSET:
                     codeOff = r.readU32();
                     break;
-                case 0x02:
+                case METHOD_TAG_SOURCE_LANG:
                     r.readU8();
                     break;
-                case 0x03: case 0x04: case 0x05: case 0x06:
+                case METHOD_TAG_DEBUG_INFO:
+                    debugInfoOff = r.readU32();
+                    break;
+                case 0x04: case 0x05: case 0x06:
                 case 0x07: case 0x08: case 0x09:
                     r.readU32();
                     break;
@@ -190,28 +215,38 @@ public class AbcFile {
                             "Unknown method tag: 0x" + Integer.toHexString(tag));
             }
         }
-        return codeOff;
+        return new long[] {codeOff, debugInfoOff};
     }
 
-    private static void skipTagValues(AbcReader r) {
+    /**
+     * Parses class_data TaggedValues, capturing SOURCE_FILE offset.
+     *
+     * @return the source file string table offset, or 0 if none
+     */
+    private static long parseClassTags(AbcReader r) {
+        long sourceFileOff = 0;
         while (true) {
             int tag = r.readU8() & 0xFF;
-            if (tag == 0x00) {
+            if (tag == CLASS_TAG_NOTHING) {
                 break;
             }
             switch (tag) {
-                case 0x01: case 0x03: case 0x04:
-                case 0x05: case 0x06: case 0x07:
-                    r.readU32();
+                case CLASS_TAG_SOURCE_FILE:
+                    sourceFileOff = r.readU32();
                     break;
-                case 0x02:
+                case CLASS_TAG_SOURCE_LANG:
                     r.readU8();
+                    break;
+                case 0x01: case 0x03: case 0x04:
+                case 0x05: case 0x06:
+                    r.readU32();
                     break;
                 default:
                     throw new AbcFormatException(
                             "Unknown tag: 0x" + Integer.toHexString(tag));
             }
         }
+        return sourceFileOff;
     }
 
     public static AbcCode parseCode(AbcReader r, int codeOff) {
@@ -385,5 +420,211 @@ public class AbcFile {
             return null;
         }
         return parseCode(new AbcReader(rawData), (int) method.getCodeOff());
+    }
+
+    /**
+     * Resolves a source file name from a string table offset.
+     *
+     * @param stringOff the string table offset (from AbcClass.getSourceFileOff())
+     * @return the source file name, or null if offset is 0 or out of range
+     */
+    public String getSourceFileName(long stringOff) {
+        if (stringOff <= 0 || stringOff >= rawData.length) {
+            return null;
+        }
+        return readStringAt(new AbcReader(rawData), (int) stringOff);
+    }
+
+    /**
+     * Returns the source file name for a class, or null if not available.
+     *
+     * @param cls the class
+     * @return the source file name, or null
+     */
+    public String getSourceFileForClass(AbcClass cls) {
+        return getSourceFileName(cls.getSourceFileOff());
+    }
+
+    /**
+     * Parses and returns debug info for a method, if available.
+     *
+     * @param method the method
+     * @return the debug info, or null if none
+     */
+    public AbcDebugInfo getDebugInfoForMethod(AbcMethod method) {
+        if (method.getDebugInfoOff() == 0) {
+            return null;
+        }
+        return parseDebugInfo(new AbcReader(rawData),
+                (int) method.getDebugInfoOff());
+    }
+
+    /**
+     * Parses debug info from the given offset.
+     *
+     * <p>Debug info structure:
+     * <ul>
+     *   <li>line_start (ULEB128) - starting line number</li>
+     *   <li>num_parameters (ULEB128) - number of parameters with debug names</li>
+     *   <li>parameters[] (ULEB128 each) - string table offsets for param names</li>
+     *   <li>constant_pool_size (ULEB128)</li>
+     *   <li>constant_pool[] (ULEB128 each)</li>
+     *   <li>line_number_program_idx[] (ULEB128 each)</li>
+     * </ul>
+     */
+    static AbcDebugInfo parseDebugInfo(AbcReader r, int off) {
+        r.position(off);
+        long lineStart = r.readUleb128();
+        long numParameters = r.readUleb128();
+
+        List<String> parameterNames = new ArrayList<>((int) numParameters);
+        for (int i = 0; i < (int) numParameters; i++) {
+            long nameOff = r.readUleb128();
+            if (nameOff > 0) {
+                parameterNames.add(readStringAt(r, (int) nameOff));
+            } else {
+                parameterNames.add(null);
+            }
+        }
+
+        long constantPoolSize = r.readUleb128();
+        for (int i = 0; i < (int) constantPoolSize; i++) {
+            r.readUleb128();
+        }
+
+        List<Long> lnpIdx = new ArrayList<>();
+        while (r.remaining() > 0) {
+            long idx = r.readUleb128();
+            lnpIdx.add(idx);
+            // Check if next byte is 0 (end marker) or end of data
+            if (r.remaining() == 0) {
+                break;
+            }
+            int next = r.readU8() & 0xFF;
+            if (next == 0) {
+                break;
+            }
+            // Not end - push back by reading as part of next ULEB128
+            // Actually, the LNP index entries are just a sequence of ULEB128s
+            // terminated by the end of the debug_info block. We don't have an
+            // explicit end marker, so we stop after the first entry for now.
+            // In practice, there is typically one LNP index per debug info.
+            break;
+        }
+
+        return new AbcDebugInfo(lineStart, numParameters, parameterNames,
+                constantPoolSize, lnpIdx, off);
+    }
+
+    /**
+     * Parses a line number program and returns the line number entries.
+     *
+     * <p>Implements a DWARF v3 line number state machine with the following opcodes:
+     * <ul>
+     *   <li>0x00 - END_SEQUENCE</li>
+     *   <li>0x01 - ADVANCE_PC (ULEB128 offset)</li>
+     *   <li>0x02 - ADVANCE_LINE (SLEB128 offset)</li>
+     *   <li>0x03 - START_LOCAL (reg ULEB128, nameIdx ULEB128, typeIdx ULEB128)</li>
+     *   <li>0x04 - START_LOCAL_EXTENDED (reg, nameIdx, typeIdx, sigIdx)</li>
+     *   <li>0x05 - END_LOCAL (reg ULEB128)</li>
+     *   <li>0x06 - RESTART_LOCAL (reg ULEB128)</li>
+     *   <li>0x07 - SET_PROLOGUE_END</li>
+     *   <li>0x08 - SET_EPILOGUE_BEGIN</li>
+     *   <li>0x09 - SET_FILE (ULEB128 string idx)</li>
+     *   <li>0x0A - SET_SOURCE_CODE (ULEB128 string idx)</li>
+     *   <li>0x0B - SET_COLUMN (ULEB128 column)</li>
+     *   <li>0x0C-0xFF - special opcodes</li>
+     * </ul>
+     *
+     * @param lnpOff the offset of the line number program data
+     * @return the list of line number entries
+     */
+    public List<AbcLineNumberEntry> parseLineNumberProgram(long lnpOff) {
+        if (lnpOff <= 0 || lnpOff >= rawData.length) {
+            return Collections.emptyList();
+        }
+        return parseLineNumberProgramData(new AbcReader(rawData), (int) lnpOff);
+    }
+
+    /**
+     * Parses the line number program from the LNP index.
+     *
+     * <p>The LNP index table stores offsets to line number programs.
+     * Each entry is a ULEB128 offset. The line number program at that offset
+     * is executed as a state machine.
+     *
+     * @param lnpIndex the index into the LNP table (0-based)
+     * @return the line number entries, or empty list if not available
+     */
+    public List<AbcLineNumberEntry> getLineNumberEntries(int lnpIndex) {
+        if (lnpIndex < 0 || lnpIndex >= this.lnpIndex.size()) {
+            return Collections.emptyList();
+        }
+        long lnpOff = this.lnpIndex.get(lnpIndex);
+        return parseLineNumberProgram(lnpOff);
+    }
+
+    static List<AbcLineNumberEntry> parseLineNumberProgramData(AbcReader r, int off) {
+        r.position(off);
+        List<AbcLineNumberEntry> entries = new ArrayList<>();
+        long address = 0;
+        long line = 1;
+
+        while (r.remaining() > 0) {
+            int opcode = r.readU8() & 0xFF;
+
+            if (opcode == 0x00) {
+                // END_SEQUENCE
+                break;
+            } else if (opcode == 0x01) {
+                // ADVANCE_PC
+                long delta = r.readUleb128();
+                address += delta;
+            } else if (opcode == 0x02) {
+                // ADVANCE_LINE
+                long delta = r.readSleb128();
+                line += delta;
+            } else if (opcode == 0x03) {
+                // START_LOCAL
+                r.readUleb128(); // register
+                r.readUleb128(); // name idx
+                r.readUleb128(); // type idx
+            } else if (opcode == 0x04) {
+                // START_LOCAL_EXTENDED
+                r.readUleb128(); // register
+                r.readUleb128(); // name idx
+                r.readUleb128(); // type idx
+                r.readUleb128(); // signature idx
+            } else if (opcode == 0x05) {
+                // END_LOCAL
+                r.readUleb128(); // register
+            } else if (opcode == 0x06) {
+                // RESTART_LOCAL
+                r.readUleb128(); // register
+            } else if (opcode == 0x07) {
+                // SET_PROLOGUE_END - no operands
+                break;
+            } else if (opcode == 0x08) {
+                // SET_EPILOGUE_BEGIN - no operands
+                break;
+            } else if (opcode == 0x09) {
+                // SET_FILE
+                r.readUleb128(); // string idx
+            } else if (opcode == 0x0A) {
+                // SET_SOURCE_CODE
+                r.readUleb128(); // string idx
+            } else if (opcode == 0x0B) {
+                // SET_COLUMN
+                r.readUleb128(); // column
+            } else if (opcode >= 0x0C) {
+                // Special opcode: address += adjusted / 15, line += -4 + (adjusted % 15)
+                int adjusted = opcode - 0x0C;
+                address += adjusted / 15;
+                line += -4 + (adjusted % 15);
+                entries.add(new AbcLineNumberEntry(address, line));
+            }
+        }
+
+        return entries;
     }
 }

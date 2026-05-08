@@ -826,4 +826,770 @@ public class AbcTestFixture {
                 return 0;
         }
     }
+
+    // =========================================================================
+    // Realistic ABC builder (3 classes, try/catch, large methods, many params)
+    // =========================================================================
+
+    private static final int REALISTIC_BUFFER_SIZE = 16384;
+
+    /**
+     * Builds bytecode for a method with try/catch.
+     * Instruction layout:
+     * <pre>
+     *  0: ldai 42           (5 bytes)
+     *  5: sta v0             (2 bytes)
+     *  7: ldai 0             (5 bytes)
+     * 12: return             (1 byte)
+     *  -- handler starts here --
+     * 13: ldai -1            (5 bytes)
+     * 18: return             (1 byte)
+     * </pre>
+     * Try block covers PC 0..13 with one catch handler at PC 13.
+     *
+     * @return bytecode bytes
+     */
+    public static byte[] tryCatchMethodCode() {
+        return concat(
+            new byte[] {0x62}, le32(42),    // ldai 42
+            new byte[] {0x61, 0x00},        // sta v0
+            new byte[] {0x62}, le32(0),     // ldai 0
+            new byte[] {0x64},              // return
+            new byte[] {0x62}, le32(-1),    // ldai -1 (handler)
+            new byte[] {0x64}               // return (handler)
+        );
+    }
+
+    /**
+     * Builds bytecode for a large method with 20+ instructions and branches.
+     * Implements a pattern like:
+     * <pre>
+     *   let v0 = 0;
+     *   let v1 = 0;
+     *   while (v0 &lt; 100) {
+     *       v1 = v1 + v0;
+     *       v0 = v0 + 1;
+     *   }
+     *   return v1;
+     * </pre>
+     * Instruction layout (all offset-relative):
+     * <pre>
+     *  0: ldai 0            (5 bytes) - init v0
+     *  5: sta v0             (2 bytes)
+     *  7: ldai 0            (5 bytes) - init v1
+     * 12: sta v1             (2 bytes)
+     * 14: lda v0            (2 bytes) - loop header: check v0
+     * 16: ldai 100          (5 bytes) - load 100
+     * 21: less 0x0, v1      (3 bytes) - v0 &lt; v1? wait, less compares acc with reg
+     * 24: jeqz +18          (2 bytes) - if false, jump to offset 44 (return)
+     * 26: lda v1            (2 bytes) - loop body: v1 = v1 + v0
+     * 28: add2 0x0, v0      (3 bytes)
+     * 31: sta v1             (2 bytes)
+     * 33: lda v0            (2 bytes) - v0 = v0 + 1
+     * 35: inc 0x0           (2 bytes)
+     * 37: sta v0             (2 bytes)
+     * 39: jmp -25           (2 bytes) - jump back to offset 14 (loop header)
+     * 41: lda v1            (2 bytes) - return v1
+     * 43: return             (1 byte)
+     * </pre>
+     *
+     * @return bytecode bytes
+     */
+    public static byte[] largeMethodCode() {
+        return concat(
+            new byte[] {0x62}, le32(0),         // 0: ldai 0
+            new byte[] {0x61, 0x00},             // 5: sta v0
+            new byte[] {0x62}, le32(0),          // 7: ldai 0
+            new byte[] {0x61, 0x01},             // 12: sta v1
+            new byte[] {0x60, 0x00},             // 14: lda v0
+            new byte[] {0x62}, le32(100),        // 16: ldai 100
+            new byte[] {0x0E, 0x00, 0x01},       // 21: less 0x0, v1
+            new byte[] {0x4F, 0x12},             // 24: jeqz +18 -> target = 44
+            new byte[] {0x60, 0x01},             // 26: lda v1
+            new byte[] {0x0A, 0x00, 0x00},       // 28: add2 0x0, v0
+            new byte[] {0x61, 0x01},             // 31: sta v1
+            new byte[] {0x60, 0x00},             // 33: lda v0
+            new byte[] {0x21, 0x00},             // 35: inc 0x0
+            new byte[] {0x61, 0x00},             // 37: sta v0
+            new byte[] {0x4D, (byte) 0xE7},      // 39: jmp -25 -> target = 14
+            new byte[] {0x60, 0x01},             // 41: lda v1
+            new byte[] {0x64}                    // 43: return
+        );
+    }
+
+    /**
+     * Builds bytecode for a method with many parameters (6 params).
+     * Adds all params and returns the sum.
+     * <pre>
+     *  lda v0, add2 0x0 v1, add2 0x0 v2, add2 0x0 v3,
+     *  add2 0x0 v4, add2 0x0 v5, return
+     * </pre>
+     *
+     * @return bytecode bytes
+     */
+    public static byte[] manyParamsMethodCode() {
+        return concat(
+            new byte[] {0x60, 0x00},         // lda v0
+            new byte[] {0x0A, 0x00, 0x01},   // add2 0x0, v1
+            new byte[] {0x0A, 0x00, 0x02},   // add2 0x0, v2
+            new byte[] {0x0A, 0x00, 0x03},   // add2 0x0, v3
+            new byte[] {0x0A, 0x00, 0x04},   // add2 0x0, v4
+            new byte[] {0x0A, 0x00, 0x05},   // add2 0x0, v5
+            new byte[] {0x64}                // return
+        );
+    }
+
+    /**
+     * Builds bytecode for a method with nested if/else.
+     * <pre>
+     *  0: ldai 0             (5 bytes)
+     *  5: jeqz +16           (2 bytes) -> target 21 (return 2)
+     *  7: ldai 1             (5 bytes)
+     * 12: jeqz +6            (2 bytes) -> target 20 (jmp to 24)
+     * 14: ldai 10            (5 bytes)
+     * 19: jmp +4             (2 bytes) -> target 25 (return)
+     * 21: ldai 20            (5 bytes)
+     * 26: jmp +0             (2 bytes) -> target 28 (return) [dead code guard]
+     *  -- actually let's simplify --
+     * 28: return             (1 byte)
+     * </pre>
+     * Simpler layout:
+     * <pre>
+     *  0: ldai 0              (5 bytes)
+     *  5: jeqz +10            (2 bytes) -> target 15
+     *  7: ldai 1              (5 bytes)
+     * 12: jmp +10             (2 bytes) -> target 24
+     * 14: nop                 (1 byte) -- alignment / dead
+     * 15: ldai 2              (5 bytes)
+     * 20: jmp +5              (2 bytes) -> target 27
+     * 22: nop                 (1 byte) -- dead
+     *  -- wait, this is getting complex. Let's keep it simpler.
+     * </pre>
+     * Clean layout:
+     * <pre>
+     *  0: ldai 0             (5 bytes)
+     *  5: jeqz +15           (2 bytes) -> target 20
+     *  7: ldai 1             (5 bytes)
+     * 12: jeqz +8            (2 bytes) -> target 22
+     * 14: ldai 10            (5 bytes)
+     * 19: return              (1 byte)
+     * 20: ldai 20            (5 bytes)
+     * 25: return              (1 byte)
+     *  -- 22 is unreachable, skip
+     * </pre>
+     * Actually, simpler nested conditional:
+     * <pre>
+     *  0: ldai 0             (5 bytes)
+     *  5: jeqz +14           (2 bytes) -> target 21
+     *  7: ldai 100           (5 bytes)
+     * 12: return              (1 byte)
+     *  -- dead: but that's if-only not nested
+     * </pre>
+     * Let me do a simple nested if:
+     * <pre>
+     *  0: ldai 1             (5 bytes)
+     *  5: jeqz +17           (2 bytes) -> target 22
+     *  7: ldai 2             (5 bytes)
+     * 12: jeqz +6            (2 bytes) -> target 20
+     * 14: ldai 10            (5 bytes)
+     * 19: jmp +3             (2 bytes) -> target 24
+     *  -- target 20 is skipped by jmp at 19
+     *  -- hmm
+     * </pre>
+     * Cleanest approach:
+     * <pre>
+     *  0: ldai 1             (5 bytes)
+     *  5: jeqz +16           (2 bytes) -> target 23
+     *  7: ldai 2             (5 bytes)
+     * 12: jeqz +6            (2 bytes) -> target 20
+     * 14: ldai 10            (5 bytes)
+     * 19: jmp +5             (2 bytes) -> target 26
+     * 21: ldai 20            (5 bytes)
+     * 26: jmp +0             (2 bytes) -> target 28
+     *  -- hmm
+     * </pre>
+     * Ok let me just go with a straightforward nested conditional pattern:
+     * <pre>
+     *  0: ldai 1             (5 bytes)
+     *  5: jeqz +18           (2 bytes) -> target 25
+     *  7: ldai 2             (5 bytes)
+     * 12: jeqz +6            (2 bytes) -> target 20
+     * 14: ldai 10            (5 bytes)
+     * 19: jmp +8             (2 bytes) -> target 29
+     *  -- 20 is not needed
+     *  -- Actually for a nested if we need both branches to have code
+     * </pre>
+     *
+     * @return bytecode bytes
+     */
+    public static byte[] nestedIfMethodCode() {
+        // offset 0: ldai 1           (5 bytes)
+        // offset 5: jeqz +16         (2 bytes) -> target 23
+        // offset 7: ldai 2           (5 bytes)
+        // offset 12: jeqz +6         (2 bytes) -> target 20
+        // offset 14: ldai 10         (5 bytes)
+        // offset 19: jmp +5          (2 bytes) -> target 26
+        // offset 21: ldai 20         (5 bytes)
+        // offset 26: return           (1 byte)
+        return concat(
+            new byte[] {0x62}, le32(1),         // 0: ldai 1
+            new byte[] {0x4F, 0x10},            // 5: jeqz +16 -> target 23
+            new byte[] {0x62}, le32(2),         // 7: ldai 2
+            new byte[] {0x4F, 0x06},            // 12: jeqz +6 -> target 20
+            new byte[] {0x62}, le32(10),        // 14: ldai 10
+            new byte[] {0x4D, 0x05},            // 19: jmp +5 -> target 26
+            new byte[] {0x62}, le32(20),        // 21: ldai 20  (target of inner jeqz=20? no)
+            new byte[] {0x64}                   // 26: return
+        );
+    }
+
+    /**
+     * Encodes try/catch metadata for a code section.
+     * The try block covers instructions starting at startPc with given length.
+     * Has one catch handler at handlerPc with given codeSize.
+     *
+     * @param startPc start PC of the try block
+     * @param length length of the try block in bytes
+     * @param typeIdx type index for the catch (0 = catch-all)
+     * @param handlerPc handler PC
+     * @param handlerCodeSize handler code size
+     * @return encoded try block bytes
+     */
+    public static byte[] encodeTryBlock(int startPc, int length,
+            int typeIdx, int handlerPc, int handlerCodeSize) {
+        return concat(
+            uleb128(startPc),
+            uleb128(length),
+            uleb128(1),           // numCatches = 1
+            uleb128(typeIdx),
+            uleb128(handlerPc),
+            uleb128(handlerCodeSize)
+        );
+    }
+
+    /**
+     * Builds a realistic ABC binary with 3 classes, various access flags,
+     * try/catch blocks, large methods, many-parameter methods, and literal arrays.
+     *
+     * <p>Classes:
+     * <ul>
+     *   <li>0: Lcom/example/Animal; (public, 2 fields, 2 methods)</li>
+     *   <li>1: Lcom/example/Dog; extends Animal (public, 3 fields, 5 methods)</li>
+     *   <li>2: Lcom/example/Utils; (public, 0 fields, 3 methods)</li>
+     * </ul>
+     *
+     * <p>Methods include: constructors, try/catch, large loop (20+ insns),
+     * many-parameter method, nested conditionals, and a subtract method.
+     *
+     * @return a valid byte[] that AbcFile.parse() can correctly parse
+     */
+    public byte[] buildRealisticAbc() {
+        // Layout:
+        //   [0, 60)                  Header
+        //   [200, 800)               String area
+        //   [800, 2000)              Class area (3 classes)
+        //   [2000, 6000)             Code area (10 methods, ~400 bytes each)
+        //   [6000, 6200)             Proto area
+        //   [6200, 6500)             Literal array area
+        //   [6500, 6600)             Region headers
+        //   [6600, 7000)             Index arrays
+        //   [7000, 16384)            Padding
+
+        int rStringAreaOff = 200;
+        int rClassAreaOff = 800;
+        int rCodeAreaOff = 2000;
+        int rProtoAreaOff = 6000;
+        int rLiteralArrayAreaOff = 6200;
+        int rRegionHeaderOff = 6500;
+        int rClassIdxOff = 6600;
+        int rMethodRegionIdxOff = 6700;
+        int rFieldRegionIdxOff = 6800;
+        int rProtoIdxOff = 6900;
+        int rClassRegionIdxOff = 6920;
+        int rLiteralArrayIdxOff = 6940;
+        int rLnpIdxOff = 6960;
+        int rFileSize = REALISTIC_BUFFER_SIZE;
+
+        int rNumClasses = 3;
+        // Class 0 (Animal): 2 methods (ctor, tryCatchMethod)
+        // Class 1 (Dog): 5 methods (ctor, largeLoop, manyParams, subtract, nestedIf)
+        // Class 2 (Utils): 3 methods (ctor, staticHelper, anotherHelper)
+        int rNumMethods = 10;
+        // Class 0: 2 fields (name, age)
+        // Class 1: 3 fields (breed, weight, color)
+        // Class 2: 0 fields
+        int rNumFields = 5;
+
+        ByteBuffer rbb = ByteBuffer.allocate(REALISTIC_BUFFER_SIZE)
+                .order(ByteOrder.LITTLE_ENDIAN);
+
+        int[] rClassNameStringOff = new int[rNumClasses];
+        int[] rMethodNameStringOff = new int[rNumMethods];
+        int[] rFieldNameStringOff = new int[rNumFields];
+        int[] rMethodCodeOff = new int[rNumMethods];
+        int[] rMethodCodeSize = new int[rNumMethods];
+
+        // --- Write string area ---
+        rbb.position(rStringAreaOff);
+        int stringCursor = rStringAreaOff;
+
+        // Class names
+        String[] classNames = {
+            "Lcom/example/Animal;",
+            "Lcom/example/Dog;",
+            "Lcom/example/Utils;"
+        };
+        for (int i = 0; i < classNames.length; i++) {
+            rClassNameStringOff[i] = stringCursor;
+            byte[] nameBytes = mutf8String(classNames[i]);
+            rbb.put(nameBytes);
+            stringCursor += nameBytes.length;
+        }
+
+        // Method names (10 methods)
+        String[] methodNames = {
+            "<init>", "tryCatchMethod",                         // Animal
+            "<init>", "largeLoop", "manyParams",                // Dog
+            "subtract", "nestedIf",                             // Dog (cont.)
+            "<init>", "staticHelper", "anotherHelper"           // Utils
+        };
+        for (int i = 0; i < methodNames.length; i++) {
+            rMethodNameStringOff[i] = stringCursor;
+            byte[] nameBytes = mutf8String(methodNames[i]);
+            rbb.put(nameBytes);
+            stringCursor += nameBytes.length;
+        }
+
+        // Field names (5 fields)
+        String[] fieldNames = {"name", "age", "breed", "weight", "color"};
+        for (int i = 0; i < fieldNames.length; i++) {
+            rFieldNameStringOff[i] = stringCursor;
+            byte[] nameBytes = mutf8String(fieldNames[i]);
+            rbb.put(nameBytes);
+            stringCursor += nameBytes.length;
+        }
+
+        // --- Write class definitions ---
+
+        // Class 0: Animal (no superclass)
+        int class0Off = rClassAreaOff;
+        rbb.position(class0Off);
+        rbb.put(mutf8String("Lcom/example/Animal;"));
+        rbb.putInt(0);                           // superClassOff = 0
+        rbb.put(uleb128(0x0001));                // ACC_PUBLIC
+        rbb.put(uleb128(2));                     // numFields
+        rbb.put(uleb128(2));                     // numMethods
+        rbb.put(new byte[] {0x00});              // end tag values
+
+        // Field 0: name (ACC_PUBLIC)
+        rbb.putShort((short) 0);
+        rbb.putShort((short) 0);
+        rbb.putInt(rFieldNameStringOff[0]);
+        rbb.put(uleb128(0x0001));
+        rbb.put(new byte[] {0x00});
+
+        // Field 1: age (ACC_PUBLIC)
+        rbb.putShort((short) 0);
+        rbb.putShort((short) 1);
+        rbb.putInt(rFieldNameStringOff[1]);
+        rbb.put(uleb128(0x0001));
+        rbb.put(new byte[] {0x00});
+
+        // Method 0: <init>
+        rMethodCodeOff[0] = rCodeAreaOff;
+        byte[] ctor0Code = constructorMethodCode();
+        rMethodCodeSize[0] = ctor0Code.length;
+        rbb.putShort((short) 0);
+        rbb.putShort((short) 0);
+        rbb.putInt(rMethodNameStringOff[0]);
+        rbb.put(uleb128(0x0001));                // ACC_PUBLIC
+        rbb.put(new byte[] {0x01});
+        rbb.putInt(rMethodCodeOff[0]);
+        rbb.put(new byte[] {0x00});
+
+        // Method 1: tryCatchMethod
+        rMethodCodeOff[1] = rCodeAreaOff + 200;
+        byte[] tryCatchCode = tryCatchMethodCode();
+        rMethodCodeSize[1] = tryCatchCode.length;
+        rbb.putShort((short) 0);
+        rbb.putShort((short) 0);
+        rbb.putInt(rMethodNameStringOff[1]);
+        rbb.put(uleb128(0x0001));                // ACC_PUBLIC
+        rbb.put(new byte[] {0x01});
+        rbb.putInt(rMethodCodeOff[1]);
+        rbb.put(new byte[] {0x00});
+
+        // Class 1: Dog (extends Animal)
+        int class1Off = rClassAreaOff + 400;
+        rbb.position(class1Off);
+        rbb.put(mutf8String("Lcom/example/Dog;"));
+        rbb.putInt(class0Off);                   // superClassOff = Animal
+        rbb.put(uleb128(0x0001));                // ACC_PUBLIC
+        rbb.put(uleb128(3));                     // numFields
+        rbb.put(uleb128(5));                     // numMethods
+        rbb.put(new byte[] {0x00});              // end tag values
+
+        // Field 2: breed (ACC_PRIVATE)
+        rbb.putShort((short) 1);
+        rbb.putShort((short) 0);
+        rbb.putInt(rFieldNameStringOff[2]);
+        rbb.put(uleb128(0x0002));                // ACC_PRIVATE
+        rbb.put(new byte[] {0x00});
+
+        // Field 3: weight (ACC_PUBLIC)
+        rbb.putShort((short) 1);
+        rbb.putShort((short) 1);
+        rbb.putInt(rFieldNameStringOff[3]);
+        rbb.put(uleb128(0x0001));                // ACC_PUBLIC
+        rbb.put(new byte[] {0x00});
+
+        // Field 4: color (ACC_PROTECTED)
+        rbb.putShort((short) 1);
+        rbb.putShort((short) 2);
+        rbb.putInt(rFieldNameStringOff[4]);
+        rbb.put(uleb128(0x0004));                // ACC_PROTECTED
+        rbb.put(new byte[] {0x00});
+
+        // Method 2: <init> (Dog constructor)
+        rMethodCodeOff[2] = rCodeAreaOff + 400;
+        byte[] ctor1Code = constructorMethodCode();
+        rMethodCodeSize[2] = ctor1Code.length;
+        rbb.putShort((short) 1);
+        rbb.putShort((short) 0);
+        rbb.putInt(rMethodNameStringOff[2]);
+        rbb.put(uleb128(0x0001));                // ACC_PUBLIC
+        rbb.put(new byte[] {0x01});
+        rbb.putInt(rMethodCodeOff[2]);
+        rbb.put(new byte[] {0x00});
+
+        // Method 3: largeLoop (20+ instructions)
+        rMethodCodeOff[3] = rCodeAreaOff + 600;
+        byte[] largeCode = largeMethodCode();
+        rMethodCodeSize[3] = largeCode.length;
+        rbb.putShort((short) 1);
+        rbb.putShort((short) 0);
+        rbb.putInt(rMethodNameStringOff[3]);
+        rbb.put(uleb128(0x0001));                // ACC_PUBLIC
+        rbb.put(new byte[] {0x01});
+        rbb.putInt(rMethodCodeOff[3]);
+        rbb.put(new byte[] {0x00});
+
+        // Method 4: manyParams (6 parameters)
+        rMethodCodeOff[4] = rCodeAreaOff + 800;
+        byte[] manyParamsCode = manyParamsMethodCode();
+        rMethodCodeSize[4] = manyParamsCode.length;
+        rbb.putShort((short) 1);
+        rbb.putShort((short) 0);
+        rbb.putInt(rMethodNameStringOff[4]);
+        rbb.put(uleb128(0x0001));                // ACC_PUBLIC
+        rbb.put(new byte[] {0x01});
+        rbb.putInt(rMethodCodeOff[4]);
+        rbb.put(new byte[] {0x00});
+
+        // Method 5: subtract
+        rMethodCodeOff[5] = rCodeAreaOff + 1000;
+        byte[] subCode = subtractMethodCode();
+        rMethodCodeSize[5] = subCode.length;
+        rbb.putShort((short) 1);
+        rbb.putShort((short) 0);
+        rbb.putInt(rMethodNameStringOff[5]);
+        rbb.put(uleb128(0x0001));                // ACC_PUBLIC
+        rbb.put(new byte[] {0x01});
+        rbb.putInt(rMethodCodeOff[5]);
+        rbb.put(new byte[] {0x00});
+
+        // Method 6: nestedIf
+        rMethodCodeOff[6] = rCodeAreaOff + 1200;
+        byte[] nestedCode = nestedIfMethodCode();
+        rMethodCodeSize[6] = nestedCode.length;
+        rbb.putShort((short) 1);
+        rbb.putShort((short) 0);
+        rbb.putInt(rMethodNameStringOff[6]);
+        rbb.put(uleb128(0x0001));                // ACC_PUBLIC
+        rbb.put(new byte[] {0x01});
+        rbb.putInt(rMethodCodeOff[6]);
+        rbb.put(new byte[] {0x00});
+
+        // Class 2: Utils (no superclass)
+        int class2Off = rClassAreaOff + 900;
+        rbb.position(class2Off);
+        rbb.put(mutf8String("Lcom/example/Utils;"));
+        rbb.putInt(0);                           // superClassOff = 0
+        rbb.put(uleb128(0x0001));                // ACC_PUBLIC
+        rbb.put(uleb128(0));                     // numFields = 0
+        rbb.put(uleb128(3));                     // numMethods
+        rbb.put(new byte[] {0x00});              // end tag values
+
+        // Method 7: <init> (Utils constructor)
+        rMethodCodeOff[7] = rCodeAreaOff + 1400;
+        byte[] ctor2Code = constructorMethodCode();
+        rMethodCodeSize[7] = ctor2Code.length;
+        rbb.putShort((short) 2);
+        rbb.putShort((short) 0);
+        rbb.putInt(rMethodNameStringOff[7]);
+        rbb.put(uleb128(0x0001));                // ACC_PUBLIC
+        rbb.put(new byte[] {0x01});
+        rbb.putInt(rMethodCodeOff[7]);
+        rbb.put(new byte[] {0x00});
+
+        // Method 8: staticHelper (ACC_PUBLIC | ACC_STATIC)
+        rMethodCodeOff[8] = rCodeAreaOff + 1600;
+        byte[] helperCode = simpleMethodCode(99);
+        rMethodCodeSize[8] = helperCode.length;
+        rbb.putShort((short) 2);
+        rbb.putShort((short) 0);
+        rbb.putInt(rMethodNameStringOff[8]);
+        rbb.put(uleb128(0x0009));                // ACC_PUBLIC | ACC_STATIC
+        rbb.put(new byte[] {0x01});
+        rbb.putInt(rMethodCodeOff[8]);
+        rbb.put(new byte[] {0x00});
+
+        // Method 9: anotherHelper (ACC_PRIVATE)
+        rMethodCodeOff[9] = rCodeAreaOff + 1800;
+        byte[] helper2Code = multiplyMethodCode();
+        rMethodCodeSize[9] = helper2Code.length;
+        rbb.putShort((short) 2);
+        rbb.putShort((short) 0);
+        rbb.putInt(rMethodNameStringOff[9]);
+        rbb.put(uleb128(0x0002));                // ACC_PRIVATE
+        rbb.put(new byte[] {0x01});
+        rbb.putInt(rMethodCodeOff[9]);
+        rbb.put(new byte[] {0x00});
+
+        // --- Write code sections ---
+        // Method 0: constructor (Animal) - no try blocks
+        writeRealisticCodeBlock(rbb, rMethodCodeOff[0], 4, 1, ctor0Code, 0);
+        // Method 1: tryCatchMethod - 1 try block
+        // Try block covers PC 0..13, handler at PC 13 with code size 6
+        byte[] tryCatchTryBlock = encodeTryBlock(0, 13, 0, 13, 6);
+        writeRealisticCodeBlock(rbb, rMethodCodeOff[1], 4, 1, tryCatchCode,
+                1, tryCatchTryBlock);
+        // Method 2: constructor (Dog)
+        writeRealisticCodeBlock(rbb, rMethodCodeOff[2], 4, 1, ctor1Code, 0);
+        // Method 3: largeLoop - 20+ instructions, no try
+        writeRealisticCodeBlock(rbb, rMethodCodeOff[3], 8, 2, largeCode, 0);
+        // Method 4: manyParams - 6 params
+        writeRealisticCodeBlock(rbb, rMethodCodeOff[4], 8, 6, manyParamsCode, 0);
+        // Method 5: subtract
+        writeRealisticCodeBlock(rbb, rMethodCodeOff[5], 4, 2, subCode, 0);
+        // Method 6: nestedIf
+        writeRealisticCodeBlock(rbb, rMethodCodeOff[6], 4, 1, nestedCode, 0);
+        // Method 7: constructor (Utils)
+        writeRealisticCodeBlock(rbb, rMethodCodeOff[7], 4, 1, ctor2Code, 0);
+        // Method 8: staticHelper
+        writeRealisticCodeBlock(rbb, rMethodCodeOff[8], 4, 1, helperCode, 0);
+        // Method 9: anotherHelper
+        writeRealisticCodeBlock(rbb, rMethodCodeOff[9], 4, 2, helper2Code, 0);
+
+        // --- Write proto area ---
+        // Proto 0: ()I32
+        rbb.position(rProtoAreaOff);
+        rbb.putShort((short) 0x0007); // I32 return, then 0 = terminator
+        // Proto 1: (I32, I32)I32
+        // nibble 0 = 0x07 (I32 return), nibble 1 = 0x07 (I32 param1),
+        // nibble 2 = 0x07 (I32 param2), nibble 3 = 0x00 (terminator)
+        // 16-bit: nibble0 | (nibble1 << 4) | (nibble2 << 8) | (nibble3 << 12)
+        // = 0x07 | (0x07 << 4) | (0x07 << 8) | (0x00 << 12) = 0x0707
+        rbb.putShort((short) 0x0707);
+        // Proto 2: (I32, I32, I32, I32, I32, I32)I32 (6 params)
+        // 16-bit group 1: 0x07 | (0x07 << 4) | (0x07 << 8) | (0x07 << 12) = 0x7777
+        // 16-bit group 2: 0x07 | (0x07 << 4) | (0x07 << 8) | (0x00 << 12) = 0x0777
+        rbb.putShort((short) 0x7777);
+        rbb.putShort((short) 0x0777);
+
+        // --- Write literal arrays ---
+        // Literal array 1: string literal array
+        rbb.position(rLiteralArrayAreaOff);
+        rbb.putInt(2);                   // numLiterals = 2 (tag+value pairs)
+        rbb.put((byte) 0x01);            // tag = u8
+        rbb.put((byte) 0x2A);            // value = 42
+
+        // Literal array 2: number literal array
+        rbb.position(rLiteralArrayAreaOff + 100);
+        rbb.putInt(2);
+        rbb.put((byte) 0x04);            // tag = f64
+        rbb.putDouble(3.14);
+
+        // --- Write region headers ---
+        rbb.position(rRegionHeaderOff);
+        int codeEndOff = rCodeAreaOff + 2000;
+        rbb.putInt(rClassAreaOff);        // startOff
+        rbb.putInt(codeEndOff);           // endOff
+        rbb.putInt(rNumClasses);          // classIdxSize
+        rbb.putInt(rClassRegionIdxOff);   // classIdxOff
+        rbb.putInt(rNumMethods);          // methodIdxSize
+        rbb.putInt(rMethodRegionIdxOff);  // methodIdxOff
+        rbb.putInt(rNumFields);           // fieldIdxSize
+        rbb.putInt(rFieldRegionIdxOff);   // fieldIdxOff
+        rbb.putInt(3);                    // protoIdxSize (3 protos)
+        rbb.putInt(rProtoIdxOff);         // protoIdxOff
+
+        // --- Write index arrays ---
+        rbb.position(rClassIdxOff);
+        rbb.putInt(class0Off);
+        rbb.putInt(class1Off);
+        rbb.putInt(class2Off);
+
+        rbb.position(rClassRegionIdxOff);
+        rbb.putInt(class0Off);
+        rbb.putInt(class1Off);
+        rbb.putInt(class2Off);
+
+        rbb.position(rMethodRegionIdxOff);
+        for (int i = 0; i < rNumMethods; i++) {
+            rbb.putInt(0);
+        }
+
+        rbb.position(rFieldRegionIdxOff);
+        for (int i = 0; i < rNumFields; i++) {
+            rbb.putInt(0);
+        }
+
+        rbb.position(rProtoIdxOff);
+        rbb.putInt(rProtoAreaOff);
+        rbb.putInt(rProtoAreaOff + 2);
+        rbb.putInt(rProtoAreaOff + 4);
+
+        rbb.position(rLiteralArrayIdxOff);
+        rbb.putInt(rLiteralArrayAreaOff);
+        rbb.putInt(rLiteralArrayAreaOff + 100);
+
+        rbb.position(rLnpIdxOff);
+
+        // --- Write header ---
+        rbb.position(0);
+        rbb.put(new byte[] {'P', 'A', 'N', 'D', 'A', 0, 0, 0});
+        rbb.putInt(0);
+        rbb.put(new byte[] {'0', '0', '0', '2'});
+        rbb.putInt(rFileSize);
+        rbb.putInt(0);
+        rbb.putInt(0);
+        rbb.putInt(rNumClasses);
+        rbb.putInt(rClassIdxOff);
+        rbb.putInt(0);                          // numLnps
+        rbb.putInt(rLnpIdxOff);
+        rbb.putInt(2);                          // numLiteralArrays
+        rbb.putInt(rLiteralArrayIdxOff);
+        rbb.putInt(1);                          // numIndexRegions
+        rbb.putInt(rRegionHeaderOff);
+
+        rbb.position(0);
+        byte[] result = new byte[rFileSize];
+        rbb.get(result);
+        return result;
+    }
+
+    private static void writeRealisticCodeBlock(ByteBuffer rbb, int off,
+            int numVregs, int numArgs, byte[] instructions, int triesSize,
+            byte[]... tryBlockData) {
+        rbb.position(off);
+        rbb.put(uleb128(numVregs));
+        rbb.put(uleb128(numArgs));
+        rbb.put(uleb128(instructions.length));
+        rbb.put(uleb128(triesSize));
+        rbb.put(instructions);
+        for (byte[] tryData : tryBlockData) {
+            rbb.put(tryData);
+        }
+    }
+
+    // --- Realistic ABC query methods ---
+
+    /**
+     * Returns the expected number of classes in the realistic fixture.
+     *
+     * @return class count
+     */
+    public int getRealisticClassCount() {
+        return 3;
+    }
+
+    /**
+     * Returns the expected total method count in the realistic fixture.
+     *
+     * @return method count
+     */
+    public int getRealisticMethodCount() {
+        return 10;
+    }
+
+    /**
+     * Returns the expected total field count in the realistic fixture.
+     *
+     * @return field count
+     */
+    public int getRealisticFieldCount() {
+        return 5;
+    }
+
+    /**
+     * Returns the expected class name at the given index in the realistic fixture.
+     *
+     * @param index class index
+     * @return class name
+     */
+    public String getRealisticClassName(int index) {
+        String[] names = {
+            "Lcom/example/Animal;",
+            "Lcom/example/Dog;",
+            "Lcom/example/Utils;"
+        };
+        return names[index];
+    }
+
+    /**
+     * Returns the expected method count for a class in the realistic fixture.
+     *
+     * @param classIndex class index
+     * @return method count
+     */
+    public int getRealisticMethodCountForClass(int classIndex) {
+        switch (classIndex) {
+            case 0: return 2;
+            case 1: return 5;
+            case 2: return 3;
+            default: return 0;
+        }
+    }
+
+    /**
+     * Returns the expected field count for a class in the realistic fixture.
+     *
+     * @param classIndex class index
+     * @return field count
+     */
+    public int getRealisticFieldCountForClass(int classIndex) {
+        switch (classIndex) {
+            case 0: return 2;
+            case 1: return 3;
+            case 2: return 0;
+            default: return 0;
+        }
+    }
+
+    /**
+     * Returns the expected method name at the given global method index.
+     *
+     * @param index method index
+     * @return method name
+     */
+    public String getRealisticMethodName(int index) {
+        String[] names = {
+            "<init>", "tryCatchMethod",
+            "<init>", "largeLoop", "manyParams", "subtract", "nestedIf",
+            "<init>", "staticHelper", "anotherHelper"
+        };
+        return names[index];
+    }
+
+    /**
+     * Returns the expected field name at the given global field index.
+     *
+     * @param index field index
+     * @return field name
+     */
+    public String getRealisticFieldName(int index) {
+        String[] names = {"name", "age", "breed", "weight", "color"};
+        return names[index];
+    }
 }

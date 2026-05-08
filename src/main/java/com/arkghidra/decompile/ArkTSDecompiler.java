@@ -14,6 +14,7 @@ import com.arkghidra.format.AbcAccessFlags;
 import com.arkghidra.format.AbcCatchBlock;
 import com.arkghidra.format.AbcClass;
 import com.arkghidra.format.AbcCode;
+import com.arkghidra.format.AbcDebugInfo;
 import com.arkghidra.format.AbcField;
 import com.arkghidra.format.AbcFile;
 import com.arkghidra.format.AbcMethod;
@@ -72,7 +73,7 @@ public class ArkTSDecompiler {
                         new ArkTSExpression.VariableExpression(ACC);
                 List<ArkTSStatement> stmts = List.of(
                         new ArkTSStatement.ReturnStatement(val));
-                return buildMethodSource(method, proto, code, stmts);
+                return buildMethodSource(method, proto, code, stmts, abcFile);
             }
         }
 
@@ -85,7 +86,7 @@ public class ArkTSDecompiler {
 
         List<ArkTSStatement> bodyStmts = generateStatements(ctx);
 
-        return buildMethodSource(method, proto, code, bodyStmts);
+        return buildMethodSource(method, proto, code, bodyStmts, abcFile);
     }
 
     /**
@@ -322,7 +323,8 @@ public class ArkTSDecompiler {
 
         List<ArkTSStatement.FunctionDeclaration.FunctionParam> params =
                 MethodSignatureBuilder.buildParams(proto,
-                        code != null ? code.getNumArgs() : 0);
+                        code != null ? code.getNumArgs() : 0,
+                        getDebugParamNames(method, abcFile));
         String returnType = MethodSignatureBuilder.getReturnType(proto);
         ArkTSStatement body = new ArkTSStatement.BlockStatement(bodyStmts);
         boolean isStatic = (method.getAccessFlags()
@@ -352,7 +354,8 @@ public class ArkTSDecompiler {
 
         List<ArkTSStatement.FunctionDeclaration.FunctionParam> params =
                 MethodSignatureBuilder.buildParams(proto,
-                        code != null ? code.getNumArgs() : 0);
+                        code != null ? code.getNumArgs() : 0,
+                        getDebugParamNames(method, abcFile));
         ArkTSStatement body = new ArkTSStatement.BlockStatement(bodyStmts);
         return new ArkTSStatement.ConstructorDeclaration(params, body);
     }
@@ -2644,6 +2647,24 @@ public class ArkTSDecompiler {
         return null;
     }
 
+    /**
+     * Extracts debug parameter names for a method from its debug info.
+     *
+     * @param method the method
+     * @param abcFile the parent ABC file
+     * @return the list of debug parameter names, or null if unavailable
+     */
+    private List<String> getDebugParamNames(AbcMethod method, AbcFile abcFile) {
+        if (abcFile == null) {
+            return null;
+        }
+        AbcDebugInfo debugInfo = abcFile.getDebugInfoForMethod(method);
+        if (debugInfo == null || debugInfo.getParameterNames().isEmpty()) {
+            return null;
+        }
+        return debugInfo.getParameterNames();
+    }
+
     private String buildEmptyMethod(AbcMethod method, AbcProto proto) {
         List<ArkTSStatement.FunctionDeclaration.FunctionParam> params =
                 MethodSignatureBuilder.buildParams(proto, 0);
@@ -2657,13 +2678,15 @@ public class ArkTSDecompiler {
     }
 
     private String buildMethodSource(AbcMethod method, AbcProto proto,
-            AbcCode code, List<ArkTSStatement> bodyStmts) {
+            AbcCode code, List<ArkTSStatement> bodyStmts,
+            AbcFile abcFile) {
         // Filter out trailing return undefined for cleaner output
         List<ArkTSStatement> filteredStmts =
                 filterTrivialReturnUndefined(bodyStmts);
 
         List<ArkTSStatement.FunctionDeclaration.FunctionParam> params =
-                MethodSignatureBuilder.buildParams(proto, code.getNumArgs());
+                MethodSignatureBuilder.buildParams(proto, code.getNumArgs(),
+                        getDebugParamNames(method, abcFile));
         String returnType = MethodSignatureBuilder.getReturnType(proto);
         ArkTSStatement body =
                 new ArkTSStatement.BlockStatement(filteredStmts);

@@ -10,7 +10,8 @@ import com.arkghidra.format.AbcProto;
  * Builds ArkTS method signatures from ABC method and proto metadata.
  *
  * <p>Maps shorty type codes to ArkTS type names and constructs parameter lists
- * with type annotations.
+ * with type annotations. When debug info is available, uses real parameter
+ * names instead of synthetic ones (param_0, param_1, etc.).
  */
 public class MethodSignatureBuilder {
 
@@ -39,12 +40,30 @@ public class MethodSignatureBuilder {
      */
     public static List<ArkTSStatement.FunctionDeclaration.FunctionParam> buildParams(
             AbcProto proto, long numArgs) {
+        return buildParams(proto, numArgs, null);
+    }
+
+    /**
+     * Builds the list of parameter names with type annotations,
+     * using debug parameter names when available.
+     *
+     * <p>When debugNames is provided and has an entry for a given parameter
+     * index, that name is used instead of "param_N".
+     *
+     * @param proto the method prototype
+     * @param numArgs the number of arguments from the code section
+     * @param debugNames the debug parameter names (may be null or contain nulls)
+     * @return the list of parameter strings
+     */
+    public static List<ArkTSStatement.FunctionDeclaration.FunctionParam> buildParams(
+            AbcProto proto, long numArgs, List<String> debugNames) {
         List<ArkTSStatement.FunctionDeclaration.FunctionParam> params =
                 new ArrayList<>();
         if (proto == null) {
             for (int i = 0; i < numArgs; i++) {
+                String name = resolveParamName(i, debugNames);
                 params.add(new ArkTSStatement.FunctionDeclaration.FunctionParam(
-                        "param_" + i, null));
+                        name, null));
             }
             return params;
         }
@@ -54,17 +73,32 @@ public class MethodSignatureBuilder {
         int paramCount = Math.max(0, shorty.size() - 1);
         for (int i = 0; i < paramCount; i++) {
             String typeName = shortyToArkType(shorty.get(i + 1));
+            String name = resolveParamName(i, debugNames);
             params.add(new ArkTSStatement.FunctionDeclaration.FunctionParam(
-                    "param_" + i, typeName));
+                    name, typeName));
         }
 
         // If there are more args than shorty entries, add untyped params
         for (int i = paramCount; i < numArgs; i++) {
+            String name = resolveParamName(i, debugNames);
             params.add(new ArkTSStatement.FunctionDeclaration.FunctionParam(
-                    "param_" + i, null));
+                    name, null));
         }
 
         return params;
+    }
+
+    /**
+     * Resolves a parameter name from debug info or falls back to param_N.
+     */
+    private static String resolveParamName(int index, List<String> debugNames) {
+        if (debugNames != null && index < debugNames.size()) {
+            String debugName = debugNames.get(index);
+            if (debugName != null && !debugName.isEmpty()) {
+                return debugName;
+            }
+        }
+        return "param_" + index;
     }
 
     /**
@@ -77,8 +111,22 @@ public class MethodSignatureBuilder {
      */
     public static String buildSignature(AbcMethod method, AbcProto proto,
             long numArgs) {
+        return buildSignature(method, proto, numArgs, null);
+    }
+
+    /**
+     * Builds the complete method signature string with debug parameter names.
+     *
+     * @param method the method
+     * @param proto the method prototype
+     * @param numArgs the number of arguments
+     * @param debugNames the debug parameter names (may be null)
+     * @return the signature string
+     */
+    public static String buildSignature(AbcMethod method, AbcProto proto,
+            long numArgs, List<String> debugNames) {
         List<ArkTSStatement.FunctionDeclaration.FunctionParam> params =
-                buildParams(proto, numArgs);
+                buildParams(proto, numArgs, debugNames);
         StringBuilder sb = new StringBuilder();
         sb.append("function ").append(method.getName()).append("(");
         for (int i = 0; i < params.size(); i++) {
