@@ -159,6 +159,11 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Decompiler variable tracking:** v0-v255 are virtual registers. First N are parameters (from AbcCode.numArgs). Use `let` for first assignment, bare name for reassignment. Accumulator (acc) is implicit.
 - **ArkTS syntax:** Use `let`/`const` (not `var`). No `any` type. Type annotations use `: type` syntax. Access modifiers are `public`/`private`/`protected`. Decorators use `@` prefix.
 - **Test fixture complexity:** Multi-class fixtures need careful offset management. Use AbcTestFixture helper for building complex ABC binaries. Space string area, class defs, code sections, and indexes apart by 50+ bytes.
+- **SLEIGH token naming:** Each token position needs unique field names (e.g., `vreg1`, `vreg2`, not `vreg` shared). Use `inst_byte` not `instruction` for the opcode token. Register attachment must be per-position: `attach variables vreg1 [...]`.
+- **SLEIGH jump targets:** Use constraint-based `reloc` with `[ reloc = inst_start + simm; ]` then `goto [reloc]`. Direct `goto simm` doesn't work for relative addressing.
+- **SLEIGH compilation:** Ghidra 12.0 can compile SLEIGH at runtime or via `sleigh` tool. The `.sla` binary must be in `data/languages/` alongside `.slaspec`. Include it in the extension ZIP.
+- **Type inference in decompiler:** Track types per register. Arithmetic ops → `number`, comparisons → `boolean`, ldtrue/ldfalse → `boolean`, ldai → `number`, lda.str → `string`. Skip `Object` annotation to reduce noise.
+- **Stale build artifacts:** If tests fail after agent changes, run `clean` first. Gradle incremental compilation can produce stale class files.
 <!-- LINT_RULES_END -->
 
 ---
