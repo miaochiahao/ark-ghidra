@@ -513,26 +513,47 @@ public class ArkTSDecompiler {
 
         List<ArkTSStatement> stmts = new ArrayList<>();
 
-        // Collect all blocks within the try range
+        // Build try/catch regions for nested lookup
+        List<TryCatchRegion> allRegions =
+                buildTryCatchRegions(ctx, cfg);
+
+        // Collect all blocks within the try range, processing
+        // nested try/catch regions first
         List<ArkTSStatement> tryBodyStmts = new ArrayList<>();
         for (BasicBlock block : cfg.getBlocks()) {
             if (block.getStartOffset() >= tcr.startPc
                     && block.getStartOffset() < tcr.endPc
                     && !visited.contains(block)) {
-                visited.add(block);
-                tryBodyStmts.addAll(processBlockInstructions(block, ctx));
+                // Check if this block starts a nested try/catch region
+                TryCatchRegion nestedTcr = findTryCatchRegion(
+                        block.getStartOffset(), allRegions);
+                if (nestedTcr != null && nestedTcr != tcr
+                        && !nestedTcr.isProcessed()
+                        && nestedTcr.startPc >= tcr.startPc
+                        && nestedTcr.endPc <= tcr.endPc) {
+                    // Nested try/catch: process it recursively
+                    nestedTcr.markProcessed();
+                    visited.add(block);
+                    tryBodyStmts.addAll(
+                            processTryCatch(nestedTcr, ctx, cfg, visited));
+                } else {
+                    visited.add(block);
+                    tryBodyStmts.addAll(
+                            processBlockInstructions(block, ctx));
+                }
             }
         }
         ArkTSStatement tryBody =
                 new ArkTSStatement.BlockStatement(tryBodyStmts);
 
-        // Process the first typed handler as the catch block
+        // Process catch handlers
         ArkTSStatement catchBody = null;
         String catchParam = "e";
         if (!tcr.handlers.isEmpty()) {
             CatchHandler firstHandler = tcr.handlers.get(0);
-            catchParam = firstHandler.typeName != null
-                    ? "e" : "e";
+            if (firstHandler.typeName != null) {
+                catchParam = "e";
+            }
             List<ArkTSStatement> catchBodyStmts = new ArrayList<>();
             BasicBlock handlerBlock =
                     cfg.getBlockAt(firstHandler.handlerPc);
@@ -962,9 +983,13 @@ public class ArkTSDecompiler {
                         .getJumpTarget(lastInsn);
                 if (target == block.getStartOffset()) {
                     visited.add(block);
+                    // Push loop context for break/continue in infinite loop
+                    ctx.pushLoopContext(block.getStartOffset(),
+                            block.getEndOffset());
                     List<ArkTSStatement> bodyStmts =
                             processBlockInstructionsExcluding(
                                     block, ctx, lastInsn);
+                    ctx.popLoopContext();
                     ArkTSStatement body =
                             new ArkTSStatement.BlockStatement(bodyStmts);
                     ArkTSExpression trueCond =
@@ -1016,6 +1041,21 @@ public class ArkTSDecompiler {
                     stmts.addAll(processBlockInstructions(block, ctx));
                     stmts.add(new ArkTSStatement.ContinueStatement());
                     break;
+                case TERNARY:
+                    visited.add(block);
+                    stmts.addAll(processTernary(block, pattern, ctx, cfg,
+                            visited));
+                    break;
+                case SHORT_CIRCUIT_AND:
+                    visited.add(block);
+                    stmts.addAll(processShortCircuitAnd(block, pattern, ctx,
+                            cfg, visited));
+                    break;
+                case SHORT_CIRCUIT_OR:
+                    visited.add(block);
+                    stmts.addAll(processShortCircuitOr(block, pattern, ctx,
+                            cfg, visited));
+                    break;
                 default:
                     // LINEAR or UNKNOWN: process instructions normally
                     visited.add(block);
@@ -1032,7 +1072,7 @@ public class ArkTSDecompiler {
      */
     private enum PatternType {
         LINEAR, IF_ONLY, IF_ELSE, WHILE_LOOP, FOR_LOOP, DO_WHILE, BREAK,
-        CONTINUE, UNKNOWN
+        CONTINUE, TERNARY, SHORT_CIRCUIT_AND, SHORT_CIRCUIT_OR, UNKNOWN
     }
 
     /**
@@ -1046,6 +1086,16 @@ public class ArkTSDecompiler {
         BasicBlock mergeBlock;
         BasicBlock initBlock;
         BasicBlock updateBlock;
+
+        // Short-circuit fields
+        ArkTSExpression shortCircuitLeft;
+        ArkTSExpression shortCircuitRight;
+
+        // Ternary fields
+        String ternaryTargetVar;
+        ArkTSExpression ternaryTrueValue;
+        ArkTSExpression ternaryFalseValue;
+        ArkTSExpression ternaryCondition;
 
         ControlFlowPattern(PatternType type) {
             this.type = type;
@@ -1088,6 +1138,23 @@ public class ArkTSDecompiler {
                 return p;
             }
 
+            // Check for ternary pattern: condition -> jeqz else_branch;
+            // true_branch has single sta + jmp to merge; else_branch has
+            // single sta at merge
+            ControlFlowPattern ternaryP = detectTernaryPattern(
+                    block, trueBranch, falseBranch, cfg);
+            if (ternaryP != null) {
+                return ternaryP;
+            }
+
+            // Check for short-circuit AND/OR: two consecutive conditional
+            // branches to the same target
+            ControlFlowPattern shortCircuitP = detectShortCircuitPattern(
+                    block, trueBranch, falseBranch, cfg, visited);
+            if (shortCircuitP != null) {
+                return shortCircuitP;
+            }
+
             // Check for if/else: both branches eventually merge
             BasicBlock merge = findMergeBlock(trueBranch, falseBranch, cfg);
             if (merge != null && merge != trueBranch
@@ -1126,6 +1193,219 @@ public class ArkTSDecompiler {
         }
 
         return new ControlFlowPattern(PatternType.LINEAR);
+    }
+
+    /**
+     * Detects a ternary expression pattern.
+     * Pattern: condition -> jeqz else_branch
+     * true_branch: [compute val1]; sta target; jmp merge
+     * else_branch: [compute val2]; sta target
+     * merge: ...
+     *
+     * @param condBlock the condition block
+     * @param trueBranch the branch taken when condition is true
+     * @param falseBranch the branch taken when condition is false
+     * @param cfg the control flow graph
+     * @return the ternary pattern, or null if not detected
+     */
+    private ControlFlowPattern detectTernaryPattern(BasicBlock condBlock,
+            BasicBlock trueBranch, BasicBlock falseBranch,
+            ControlFlowGraph cfg) {
+
+        // Check if trueBranch ends with an unconditional jmp
+        ArkInstruction trueLast = trueBranch.getLastInstruction();
+        if (trueLast == null
+                || !ArkOpcodesCompat.isUnconditionalJump(trueLast.getOpcode())) {
+            return null;
+        }
+
+        // The jmp target should be the merge point
+        int mergeOffset = ControlFlowGraphAccessor.getJumpTarget(trueLast);
+        BasicBlock mergeBlock = cfg.getBlockAt(mergeOffset);
+
+        // Check if falseBranch's fall-through goes to the merge point
+        if (mergeBlock == null) {
+            return null;
+        }
+
+        // The falseBranch should flow into the merge block
+        ArkInstruction falseLast = falseBranch.getLastInstruction();
+        if (falseLast == null) {
+            return null;
+        }
+        int falseEnd = falseLast.getNextOffset();
+        // The merge should be right after the falseBranch
+        boolean falseFlowsToMerge = falseEnd == mergeOffset
+                || (mergeOffset > falseBranch.getStartOffset()
+                        && mergeOffset <= falseEnd + 5);
+
+        if (!falseFlowsToMerge) {
+            // Also check if falseBranch ends with jmp to merge
+            if (!ArkOpcodesCompat.isUnconditionalJump(falseLast.getOpcode())) {
+                return null;
+            }
+            int falseJmpTarget =
+                    ControlFlowGraphAccessor.getJumpTarget(falseLast);
+            if (falseJmpTarget != mergeOffset) {
+                return null;
+            }
+        }
+
+        // Check that trueBranch has exactly: some value-producing insn(s)
+        // + sta + jmp. The sta tells us the target variable.
+        String targetVar = null;
+        ArkTSExpression trueValue = null;
+        ArkTSExpression falseValue = null;
+
+        // Scan trueBranch for sta instruction before the jmp
+        for (ArkInstruction insn : trueBranch.getInstructions()) {
+            if (insn == trueLast) {
+                break;
+            }
+            if (insn.getOpcode() == ArkOpcodesCompat.STA) {
+                targetVar = "v" + insn.getOperands().get(0).getValue();
+            }
+        }
+
+        if (targetVar == null) {
+            return null;
+        }
+
+        // Check that falseBranch also has a sta to the same variable
+        boolean hasMatchingSta = false;
+        for (ArkInstruction insn : falseBranch.getInstructions()) {
+            if (insn == falseLast && !ArkOpcodesCompat.isUnconditionalJump(
+                    falseLast.getOpcode())) {
+                break;
+            }
+            if (insn.getOpcode() == ArkOpcodesCompat.STA) {
+                String falseVar =
+                        "v" + insn.getOperands().get(0).getValue();
+                if (falseVar.equals(targetVar)) {
+                    hasMatchingSta = true;
+                }
+            }
+        }
+
+        if (!hasMatchingSta) {
+            return null;
+        }
+
+        // This looks like a ternary pattern
+        ControlFlowPattern p = new ControlFlowPattern(PatternType.TERNARY);
+        p.conditionBlock = condBlock;
+        p.trueBlock = trueBranch;
+        p.falseBlock = falseBranch;
+        p.mergeBlock = mergeBlock;
+        p.ternaryTargetVar = targetVar;
+        return p;
+    }
+
+    /**
+     * Detects short-circuit evaluation patterns (&& and ||).
+     *
+     * <p>For AND: Block A has jeqz L; Block B (fall-through) also has
+     * jeqz L. Both false-paths go to the same target.
+     *
+     * <p>For OR: Block A has jnez L; Block B (fall-through) also has
+     * jnez L. Both true-paths go to the same target.
+     *
+     * @param block the first condition block
+     * @param trueBranch the true branch from block
+     * @param falseBranch the false branch from block
+     * @param cfg the control flow graph
+     * @param visited set of visited blocks
+     * @return the short-circuit pattern, or null if not detected
+     */
+    private ControlFlowPattern detectShortCircuitPattern(BasicBlock block,
+            BasicBlock trueBranch, BasicBlock falseBranch,
+            ControlFlowGraph cfg, Set<BasicBlock> visited) {
+
+        ArkInstruction lastInsn = block.getLastInstruction();
+        if (lastInsn == null) {
+            return null;
+        }
+        int opcode = lastInsn.getOpcode();
+
+        // For short-circuit AND (&&):
+        // Block ends with jeqz to some target. The fall-through (trueBranch)
+        // also ends with jeqz to the same target.
+        if (opcode == ArkOpcodesCompat.JEQZ_IMM8
+                || opcode == ArkOpcodesCompat.JEQZ_IMM16) {
+            int target1 = ControlFlowGraphAccessor.getJumpTarget(lastInsn);
+
+            // The fall-through is the "trueBranch" for jeqz (condition
+            // non-zero). Check if the fall-through block also ends with jeqz
+            // to the same target.
+            BasicBlock fallThrough = trueBranch;
+            // For jeqz: CONDITIONAL_TRUE means branch taken (acc==0),
+            // CONDITIONAL_FALSE means fall-through (acc!=0)
+            // Actually in the CFG, CONDITIONAL_TRUE is the branch target
+            // for jeqz. So the fall-through is falseBranch.
+            // Wait - let me re-check. jeqz branches when acc==0.
+            // In the CFG: CONDITIONAL_TRUE = branch target,
+            // CONDITIONAL_FALSE = fall-through.
+            // So for jeqz: trueBranch = where we jump when acc==0,
+            // falseBranch = fall-through.
+            // For && : a && b: if a is false, skip to end. If a is true,
+            // check b.
+            // jeqz skip (a is false -> skip); [check b]; jeqz skip
+            // (b is false -> skip)
+            // So the falseBranch (fall-through) should also end with jeqz
+            // to the same target.
+
+            BasicBlock nextCondBlock = falseBranch;
+            ArkInstruction nextLast = nextCondBlock.getLastInstruction();
+            if (nextLast != null
+                    && (nextLast.getOpcode() == ArkOpcodesCompat.JEQZ_IMM8
+                    || nextLast.getOpcode()
+                            == ArkOpcodesCompat.JEQZ_IMM16)) {
+                int target2 =
+                        ControlFlowGraphAccessor.getJumpTarget(nextLast);
+                if (target1 == target2) {
+                    // Short-circuit AND pattern detected
+                    ControlFlowPattern p = new ControlFlowPattern(
+                            PatternType.SHORT_CIRCUIT_AND);
+                    p.conditionBlock = block;
+                    p.trueBlock = falseBranch;
+                    p.falseBlock = trueBranch;
+                    p.mergeBlock = cfg.getBlockAt(target1);
+                    return p;
+                }
+            }
+        }
+
+        // For short-circuit OR (||):
+        // Block ends with jnez to some target. The fall-through
+        // also ends with jnez to the same target.
+        if (opcode == ArkOpcodesCompat.JNEZ_IMM8
+                || opcode == ArkOpcodesCompat.JNEZ_IMM16) {
+            int target1 = ControlFlowGraphAccessor.getJumpTarget(lastInsn);
+
+            // For jnez: trueBranch = where we jump when acc!=0,
+            // falseBranch = fall-through.
+            BasicBlock nextCondBlock = falseBranch;
+            ArkInstruction nextLast = nextCondBlock.getLastInstruction();
+            if (nextLast != null
+                    && (nextLast.getOpcode() == ArkOpcodesCompat.JNEZ_IMM8
+                    || nextLast.getOpcode()
+                            == ArkOpcodesCompat.JNEZ_IMM16)) {
+                int target2 =
+                        ControlFlowGraphAccessor.getJumpTarget(nextLast);
+                if (target1 == target2) {
+                    // Short-circuit OR pattern detected
+                    ControlFlowPattern p = new ControlFlowPattern(
+                            PatternType.SHORT_CIRCUIT_OR);
+                    p.conditionBlock = block;
+                    p.trueBlock = falseBranch;
+                    p.falseBlock = trueBranch;
+                    p.mergeBlock = cfg.getBlockAt(target1);
+                    return p;
+                }
+            }
+        }
+
+        return null;
     }
 
     private List<ArkTSStatement> processIfElse(BasicBlock condBlock,
@@ -1242,11 +1522,22 @@ public class ArkTSDecompiler {
                     new ArkTSExpression.UnaryExpression("!", condition, true);
         }
 
+        // Determine loop end offset for break/continue detection.
+        // The loop ends where the false branch goes (past the loop body).
+        int loopHeaderOffset = condBlock.getStartOffset();
+        int loopEndOffset = estimateLoopEndOffset(condBlock, pattern, cfg);
+
+        // Push loop context for break/continue detection
+        ctx.pushLoopContext(loopHeaderOffset, loopEndOffset);
+
         visited.add(pattern.trueBlock);
         List<ArkTSStatement> bodyStmts =
                 processBlockInstructions(pattern.trueBlock, ctx);
         ArkTSStatement bodyBlock =
                 new ArkTSStatement.BlockStatement(bodyStmts);
+
+        // Pop loop context
+        ctx.popLoopContext();
 
         ArkTSStatement.WhileStatement whileStmt =
                 new ArkTSStatement.WhileStatement(effectiveCondition,
@@ -1306,6 +1597,22 @@ public class ArkTSDecompiler {
 
         List<ArkTSStatement> stmts = new ArrayList<>();
 
+        // Determine loop end offset for break/continue detection.
+        int loopHeaderOffset = block.getStartOffset();
+        int loopEndOffset = block.getEndOffset();
+        if (pattern.conditionBlock != null) {
+            // The condition block's successors after the loop tell us where
+            // the loop ends
+            for (CFGEdge edge : pattern.conditionBlock.getSuccessors()) {
+                if (edge.getToOffset() > loopEndOffset) {
+                    loopEndOffset = edge.getToOffset();
+                }
+            }
+        }
+
+        // Push loop context for break/continue detection
+        ctx.pushLoopContext(loopHeaderOffset, loopEndOffset);
+
         List<ArkTSStatement> bodyStmts = processBlockInstructions(block, ctx);
 
         ArkTSExpression condition =
@@ -1324,11 +1631,321 @@ public class ArkTSDecompiler {
             }
         }
 
+        // Pop loop context
+        ctx.popLoopContext();
+
         ArkTSStatement bodyBlock =
                 new ArkTSStatement.BlockStatement(bodyStmts);
         ArkTSStatement.DoWhileStatement doWhile =
                 new ArkTSStatement.DoWhileStatement(bodyBlock, condition);
         stmts.add(doWhile);
+
+        return stmts;
+    }
+
+    /**
+     * Estimates the end offset of a while loop from its pattern and CFG.
+     * The loop ends where the false branch of the condition goes.
+     *
+     * @param condBlock the condition block
+     * @param pattern the detected pattern
+     * @param cfg the control flow graph
+     * @return the estimated loop end offset
+     */
+    private int estimateLoopEndOffset(BasicBlock condBlock,
+            ControlFlowPattern pattern, ControlFlowGraph cfg) {
+        // For while loops, one successor goes to the body (forward),
+        // the other goes past the loop (the exit).
+        // The exit is the loop end.
+        List<CFGEdge> successors = condBlock.getSuccessors();
+        if (successors.size() == 2) {
+            int target1 = successors.get(0).getToOffset();
+            int target2 = successors.get(1).getToOffset();
+            // The loop body target is the one with higher offset
+            // (forward branch). The exit is the one with lower offset
+            // (back branch or branch past loop).
+            if (target1 <= condBlock.getStartOffset()) {
+                // target1 is the back-edge, target2 is body, exit is past body
+                // Find where the body exits to
+                return findLoopExit(pattern.trueBlock, condBlock, cfg);
+            }
+            if (target2 <= condBlock.getStartOffset()) {
+                // target2 is the back-edge, target1 is body
+                return findLoopExit(pattern.trueBlock, condBlock, cfg);
+            }
+            // Both targets are forward. The exit is the one that doesn't
+            // eventually loop back.
+            return Math.max(target1, target2);
+        }
+        // Fallback: use the body block's end offset
+        if (pattern.trueBlock != null) {
+            return pattern.trueBlock.getEndOffset();
+        }
+        return condBlock.getEndOffset();
+    }
+
+    /**
+     * Finds the exit offset of a loop by walking successors until finding
+     * one that goes past the loop header.
+     *
+     * @param bodyBlock the loop body block
+     * @param headerBlock the loop header block
+     * @param cfg the control flow graph
+     * @return the estimated loop exit offset
+     */
+    private int findLoopExit(BasicBlock bodyBlock, BasicBlock headerBlock,
+            ControlFlowGraph cfg) {
+        if (bodyBlock == null) {
+            return headerBlock.getEndOffset();
+        }
+        // The exit is past the body. Use the body's end offset as a
+        // conservative estimate.
+        int maxOffset = bodyBlock.getEndOffset();
+        // Walk body's successors to find the furthest forward point
+        for (CFGEdge edge : bodyBlock.getSuccessors()) {
+            if (edge.getToOffset() > maxOffset) {
+                maxOffset = edge.getToOffset();
+            }
+        }
+        return maxOffset;
+    }
+
+    // --- Ternary expression processing ---
+
+    /**
+     * Processes a ternary expression pattern into a variable declaration.
+     *
+     * <p>Pattern: condition -> jeqz else; true_val; sta vN; jmp join;
+     * else: false_val; sta vN; join: ...
+     *
+     * @param condBlock the condition block
+     * @param pattern the ternary pattern
+     * @param ctx the decompilation context
+     * @param cfg the control flow graph
+     * @param visited set of visited blocks
+     * @return the list of statements
+     */
+    private List<ArkTSStatement> processTernary(BasicBlock condBlock,
+            ControlFlowPattern pattern, DecompilationContext ctx,
+            ControlFlowGraph cfg, Set<BasicBlock> visited) {
+
+        List<ArkTSStatement> stmts = new ArrayList<>();
+
+        // Process non-branch instructions in condition block
+        List<ArkTSStatement> preStmts = processBlockInstructionsExcluding(
+                condBlock, ctx, condBlock.getLastInstruction());
+        stmts.addAll(preStmts);
+
+        // Get condition
+        ArkTSExpression condition = getConditionExpression(
+                condBlock.getLastInstruction(), ctx);
+        if (condition == null) {
+            condition = new ArkTSExpression.VariableExpression(ACC);
+        }
+
+        // For jeqz-style branches, negate the condition
+        int lastOpcode = condBlock.getLastInstruction().getOpcode();
+        ArkTSExpression effectiveCondition = condition;
+        if (isBranchOnFalse(lastOpcode)) {
+            effectiveCondition = condition;
+            // The ternary already has the right polarity:
+            // jeqz else -> condition ? trueVal : falseVal
+        }
+
+        // Mark blocks as visited
+        visited.add(pattern.trueBlock);
+        visited.add(pattern.falseBlock);
+        if (pattern.mergeBlock != null) {
+            visited.add(pattern.mergeBlock);
+        }
+
+        // Get true value from trueBranch (excluding sta and jmp)
+        ArkTSExpression trueValue =
+                extractBlockValue(pattern.trueBlock, ctx);
+
+        // Get false value from falseBranch (excluding sta)
+        ArkTSExpression falseValue =
+                extractBlockValue(pattern.falseBlock, ctx);
+
+        if (trueValue != null && falseValue != null) {
+            ArkTSExpression ternaryExpr =
+                    new ArkTSExpression.ConditionalExpression(
+                            effectiveCondition, trueValue, falseValue);
+            String targetVar = pattern.ternaryTargetVar;
+            ArkTSStatement decl = new ArkTSStatement.VariableDeclaration(
+                    "let", targetVar, null, ternaryExpr);
+            stmts.add(decl);
+        } else {
+            // Fallback to if/else if we can't extract values
+            List<ArkTSStatement> thenStmts =
+                    processBlockInstructions(pattern.trueBlock, ctx);
+            List<ArkTSStatement> elseStmts =
+                    processBlockInstructions(pattern.falseBlock, ctx);
+            ArkTSStatement thenBlock =
+                    new ArkTSStatement.BlockStatement(thenStmts);
+            ArkTSStatement elseBlock =
+                    new ArkTSStatement.BlockStatement(elseStmts);
+            stmts.add(new ArkTSStatement.IfStatement(
+                    effectiveCondition, thenBlock, elseBlock));
+        }
+
+        return stmts;
+    }
+
+    /**
+     * Extracts the accumulator value produced by a block, excluding
+     * sta/jmp instructions.
+     *
+     * @param block the block
+     * @param ctx the decompilation context
+     * @return the last accumulator value, or null
+     */
+    private ArkTSExpression extractBlockValue(BasicBlock block,
+            DecompilationContext ctx) {
+        ArkTSExpression accValue = null;
+        TypeInference typeInf = new TypeInference();
+        Set<String> declaredVars = new HashSet<>();
+        for (int i = 0; i < ctx.numArgs; i++) {
+            declaredVars.add("v" + i);
+        }
+
+        for (ArkInstruction insn : block.getInstructions()) {
+            int opcode = insn.getOpcode();
+            // Skip sta, jmp, conditional branches
+            if (opcode == ArkOpcodesCompat.STA) {
+                continue;
+            }
+            if (ArkOpcodesCompat.isUnconditionalJump(opcode)) {
+                continue;
+            }
+            if (ArkOpcodesCompat.isConditionalBranch(opcode)) {
+                continue;
+            }
+            StatementResult result = processInstruction(
+                    insn, ctx, accValue, declaredVars, typeInf);
+            if (result != null) {
+                accValue = result.newAccValue != null
+                        ? result.newAccValue : accValue;
+            }
+        }
+        return accValue;
+    }
+
+    // --- Short-circuit processing ---
+
+    /**
+     * Processes a short-circuit AND pattern (a && b).
+     *
+     * @param condBlock the first condition block
+     * @param pattern the short-circuit AND pattern
+     * @param ctx the decompilation context
+     * @param cfg the control flow graph
+     * @param visited set of visited blocks
+     * @return the list of statements
+     */
+    private List<ArkTSStatement> processShortCircuitAnd(BasicBlock condBlock,
+            ControlFlowPattern pattern, DecompilationContext ctx,
+            ControlFlowGraph cfg, Set<BasicBlock> visited) {
+
+        List<ArkTSStatement> stmts = new ArrayList<>();
+
+        // Process non-branch instructions in first condition block
+        List<ArkTSStatement> preStmts = processBlockInstructionsExcluding(
+                condBlock, ctx, condBlock.getLastInstruction());
+        stmts.addAll(preStmts);
+
+        // Get left condition
+        ArkTSExpression leftCond = getConditionExpression(
+                condBlock.getLastInstruction(), ctx);
+        if (leftCond == null) {
+            leftCond = new ArkTSExpression.VariableExpression(ACC);
+        }
+
+        // Get right condition from the second block
+        BasicBlock secondCondBlock = pattern.trueBlock;
+        visited.add(secondCondBlock);
+        List<ArkTSStatement> midStmts = processBlockInstructionsExcluding(
+                secondCondBlock, ctx, secondCondBlock.getLastInstruction());
+        stmts.addAll(midStmts);
+
+        ArkTSExpression rightCond = getConditionExpression(
+                secondCondBlock.getLastInstruction(), ctx);
+        if (rightCond == null) {
+            rightCond = new ArkTSExpression.VariableExpression(ACC);
+        }
+
+        // Mark other blocks as visited
+        visited.add(pattern.falseBlock);
+        if (pattern.mergeBlock != null) {
+            visited.add(pattern.mergeBlock);
+        }
+
+        // Build combined condition: left && right
+        ArkTSExpression combined = new ArkTSExpression.BinaryExpression(
+                leftCond, "&&", rightCond);
+
+        // The "body" of the combined condition is whatever comes after
+        // the merge. For now, emit as an if statement with the combined
+        // condition if there's content in the merge block.
+        // If the short-circuit is used as a guard (no body after merge),
+        // just emit the expression.
+        stmts.add(new ArkTSStatement.ExpressionStatement(combined));
+
+        return stmts;
+    }
+
+    /**
+     * Processes a short-circuit OR pattern (a || b).
+     *
+     * @param condBlock the first condition block
+     * @param pattern the short-circuit OR pattern
+     * @param ctx the decompilation context
+     * @param cfg the control flow graph
+     * @param visited set of visited blocks
+     * @return the list of statements
+     */
+    private List<ArkTSStatement> processShortCircuitOr(BasicBlock condBlock,
+            ControlFlowPattern pattern, DecompilationContext ctx,
+            ControlFlowGraph cfg, Set<BasicBlock> visited) {
+
+        List<ArkTSStatement> stmts = new ArrayList<>();
+
+        // Process non-branch instructions in first condition block
+        List<ArkTSStatement> preStmts = processBlockInstructionsExcluding(
+                condBlock, ctx, condBlock.getLastInstruction());
+        stmts.addAll(preStmts);
+
+        // Get left condition
+        ArkTSExpression leftCond = getConditionExpression(
+                condBlock.getLastInstruction(), ctx);
+        if (leftCond == null) {
+            leftCond = new ArkTSExpression.VariableExpression(ACC);
+        }
+
+        // Get right condition from the second block
+        BasicBlock secondCondBlock = pattern.trueBlock;
+        visited.add(secondCondBlock);
+        List<ArkTSStatement> midStmts = processBlockInstructionsExcluding(
+                secondCondBlock, ctx, secondCondBlock.getLastInstruction());
+        stmts.addAll(midStmts);
+
+        ArkTSExpression rightCond = getConditionExpression(
+                secondCondBlock.getLastInstruction(), ctx);
+        if (rightCond == null) {
+            rightCond = new ArkTSExpression.VariableExpression(ACC);
+        }
+
+        // Mark other blocks as visited
+        visited.add(pattern.falseBlock);
+        if (pattern.mergeBlock != null) {
+            visited.add(pattern.mergeBlock);
+        }
+
+        // Build combined condition: left || right
+        ArkTSExpression combined = new ArkTSExpression.BinaryExpression(
+                leftCond, "||", rightCond);
+
+        stmts.add(new ArkTSStatement.ExpressionStatement(combined));
 
         return stmts;
     }
@@ -1563,16 +2180,28 @@ public class ArkTSDecompiler {
 
     private boolean isBreakJump(ArkInstruction insn, BasicBlock block,
             DecompilationContext ctx) {
-        // A jump that goes beyond the current loop body is a break
-        // For now, we detect by checking if the jump target is beyond the
-        // block structure
-        return false;
+        int[] loopCtx = ctx.getCurrentLoopContext();
+        if (loopCtx == null) {
+            return false;
+        }
+        int loopEnd = loopCtx[1];
+        int target = ControlFlowGraphAccessor.getJumpTarget(insn);
+        // A break jumps to or past the loop end
+        return target >= loopEnd;
     }
 
     private boolean isContinueJump(ArkInstruction insn, BasicBlock block,
             DecompilationContext ctx) {
-        // A jump back to the loop header is a continue
-        return false;
+        int[] loopCtx = ctx.getCurrentLoopContext();
+        if (loopCtx == null) {
+            return false;
+        }
+        int loopHeader = loopCtx[0];
+        int loopEnd = loopCtx[1];
+        int target = ControlFlowGraphAccessor.getJumpTarget(insn);
+        // A continue jumps back to the loop header, but is not the
+        // natural back-edge from the last block (not a break)
+        return target == loopHeader && target < loopEnd;
     }
 
     // --- CFG helpers ---
@@ -2745,6 +3374,12 @@ public class ArkTSDecompiler {
         boolean isAsync;
         ArkTSExpression currentAccValue;
 
+        /**
+         * Stack of loop contexts for break/continue detection.
+         * Each entry is [loopHeaderOffset, loopEndOffset].
+         */
+        final List<int[]> loopContextStack;
+
         DecompilationContext(AbcMethod method, AbcCode code,
                 AbcProto proto, AbcFile abcFile,
                 ControlFlowGraph cfg,
@@ -2758,6 +3393,38 @@ public class ArkTSDecompiler {
             this.numArgs = code != null ? (int) code.getNumArgs() : 0;
             this.isAsync = false;
             this.currentAccValue = null;
+            this.loopContextStack = new ArrayList<>();
+        }
+
+        /**
+         * Pushes a loop context onto the stack.
+         *
+         * @param headerOffset the loop header (condition) offset
+         * @param endOffset the offset just past the loop end
+         */
+        void pushLoopContext(int headerOffset, int endOffset) {
+            loopContextStack.add(new int[] {headerOffset, endOffset});
+        }
+
+        /**
+         * Pops the most recent loop context from the stack.
+         */
+        void popLoopContext() {
+            if (!loopContextStack.isEmpty()) {
+                loopContextStack.remove(loopContextStack.size() - 1);
+            }
+        }
+
+        /**
+         * Returns the current innermost loop context, or null.
+         *
+         * @return [headerOffset, endOffset] or null
+         */
+        int[] getCurrentLoopContext() {
+            if (loopContextStack.isEmpty()) {
+                return null;
+            }
+            return loopContextStack.get(loopContextStack.size() - 1);
         }
 
         /**
