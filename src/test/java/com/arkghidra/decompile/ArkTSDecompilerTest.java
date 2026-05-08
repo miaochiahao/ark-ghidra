@@ -319,7 +319,7 @@ class ArkTSDecompilerTest {
                         AbcProto.ShortyType.I32),
                 Collections.emptyList());
         String sig = MethodSignatureBuilder.buildSignature(method, proto, 2);
-        assertEquals("function add(p0: number, p1: number): number", sig);
+        assertEquals("function add(param_0: number, param_1: number): number", sig);
     }
 
     @Test
@@ -341,7 +341,7 @@ class ArkTSDecompilerTest {
                 List.of(AbcProto.ShortyType.VOID, AbcProto.ShortyType.REF),
                 Collections.emptyList());
         String sig = MethodSignatureBuilder.buildSignature(method, proto, 1);
-        assertEquals("function process(p0: Object)", sig);
+        assertEquals("function process(param_0: Object)", sig);
     }
 
     // --- CFG tests ---
@@ -633,7 +633,7 @@ class ArkTSDecompilerTest {
         AbcMethod method = new AbcMethod(0, 0, "empty",
                 AbcAccessFlags.ACC_PUBLIC, 0, 0);
         String result = decompiler.decompileMethod(method, null, null);
-        assertEquals("function empty() { }", result);
+        assertEquals("function empty(): void { }", result);
     }
 
     @Test
@@ -1806,7 +1806,7 @@ class ArkTSDecompilerTest {
                         AbcProto.ShortyType.I32),
                 Collections.emptyList());
         String sig = MethodSignatureBuilder.buildSignature(method, proto, 2);
-        assertEquals("function add(p0: number, p1: number): number", sig);
+        assertEquals("function add(param_0: number, param_1: number): number", sig);
     }
 
     // --- Edge case: empty block ---
@@ -2671,5 +2671,384 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertNotNull(result);
         assertTrue(result.contains("undefined"));
+    }
+
+    // ======== DECOMPILER ACCURACY IMPROVEMENT TESTS ========
+
+    // --- 1. Try/catch decompilation ---
+
+    @Test
+    void testTryCatchStatement_withFinally() {
+        ArkTSStatement tryBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("doSomething()"))));
+        ArkTSStatement catchBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("handleError()"))));
+        ArkTSStatement finallyBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("cleanup()"))));
+        ArkTSStatement.TryCatchStatement stmt =
+                new ArkTSStatement.TryCatchStatement(tryBody, "e",
+                        catchBody, finallyBody);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.startsWith("try {"));
+        assertTrue(result.contains("catch (e) {"));
+        assertTrue(result.contains("finally {"));
+        assertTrue(result.contains("cleanup()"));
+    }
+
+    @Test
+    void testTryCatchStatement_withCatchType() {
+        ArkTSStatement tryBody = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSStatement catchBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.CallExpression(
+                                new ArkTSExpression.VariableExpression("console.log"),
+                                List.of(new ArkTSExpression.VariableExpression("e"))))));
+        ArkTSStatement.TryCatchStatement stmt =
+                new ArkTSStatement.TryCatchStatement(tryBody, "e",
+                        catchBody, null);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.contains("catch (e)"));
+    }
+
+    // --- 2. Switch statement AST ---
+
+    @Test
+    void testSwitchStatement_basic() {
+        ArkTSExpression disc = new ArkTSExpression.VariableExpression("x");
+        ArkTSStatement.SwitchStatement.SwitchCase case1 =
+                new ArkTSStatement.SwitchStatement.SwitchCase(
+                        new ArkTSExpression.LiteralExpression("1",
+                                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER),
+                        List.of(new ArkTSStatement.BreakStatement()));
+        ArkTSStatement.SwitchStatement.SwitchCase case2 =
+                new ArkTSStatement.SwitchStatement.SwitchCase(
+                        new ArkTSExpression.LiteralExpression("2",
+                                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER),
+                        List.of(new ArkTSStatement.BreakStatement()));
+        ArkTSStatement defaultBlock = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.BreakStatement()));
+        ArkTSStatement.SwitchStatement stmt =
+                new ArkTSStatement.SwitchStatement(disc,
+                        List.of(case1, case2), defaultBlock);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.startsWith("switch (x) {"));
+        assertTrue(result.contains("case 1:"));
+        assertTrue(result.contains("case 2:"));
+        assertTrue(result.contains("default:"));
+        assertTrue(result.endsWith("}"));
+    }
+
+    @Test
+    void testSwitchStatement_withIndentation() {
+        ArkTSExpression disc = new ArkTSExpression.VariableExpression("color");
+        ArkTSStatement.SwitchStatement.SwitchCase case1 =
+                new ArkTSStatement.SwitchStatement.SwitchCase(
+                        new ArkTSExpression.LiteralExpression("red",
+                                ArkTSExpression.LiteralExpression.LiteralKind.STRING),
+                        List.of(new ArkTSStatement.BreakStatement()));
+        ArkTSStatement.SwitchStatement stmt =
+                new ArkTSStatement.SwitchStatement(disc,
+                        List.of(case1), null);
+        String result = stmt.toArkTS(1);
+        assertTrue(result.startsWith("    switch (color) {"));
+        assertTrue(result.contains("        case \"red\":"));
+        assertTrue(result.contains("            break;"));
+    }
+
+    // --- 3. Parameter naming (param_N instead of pN) ---
+
+    @Test
+    void testMethodSignatureBuilder_paramNaming() {
+        AbcMethod method = new AbcMethod(0, 0, "test",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        AbcProto proto = new AbcProto(
+                List.of(AbcProto.ShortyType.VOID, AbcProto.ShortyType.I32,
+                        AbcProto.ShortyType.REF),
+                Collections.emptyList());
+        String sig = MethodSignatureBuilder.buildSignature(method, proto, 2);
+        assertEquals("function test(param_0: number, param_1: Object)", sig);
+    }
+
+    @Test
+    void testMethodSignatureBuilder_paramNamingNoProto() {
+        AbcMethod method = new AbcMethod(0, 0, "test",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        String sig = MethodSignatureBuilder.buildSignature(method, null, 3);
+        assertEquals("function test(param_0, param_1, param_2)", sig);
+    }
+
+    // --- 4. String constant resolution ---
+
+    @Test
+    void testLiteralExpression_stringWithEscapeSequences() {
+        // Test that escape sequences are properly handled
+        ArkTSExpression.LiteralExpression tab =
+                new ArkTSExpression.LiteralExpression("hello\tworld",
+                        ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        assertEquals("\"hello\\tworld\"", tab.toArkTS());
+
+        ArkTSExpression.LiteralExpression backslash =
+                new ArkTSExpression.LiteralExpression("path\\to\\file",
+                        ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        assertEquals("\"path\\\\to\\\\file\"", backslash.toArkTS());
+
+        ArkTSExpression.LiteralExpression quote =
+                new ArkTSExpression.LiteralExpression("say \"hello\"",
+                        ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        assertEquals("\"say \\\"hello\\\"\"", quote.toArkTS());
+    }
+
+    @Test
+    void testLiteralExpression_emptyString() {
+        ArkTSExpression.LiteralExpression expr =
+                new ArkTSExpression.LiteralExpression("",
+                        ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        assertEquals("\"\"", expr.toArkTS());
+    }
+
+    @Test
+    void testDecompile_ldaStrInstruction() {
+        // lda.str 0; sta v0; return
+        byte[] code = concat(
+                bytes(0x3E, 0x00, 0x00),  // lda.str 0
+                bytes(0x61, 0x00),         // sta v0
+                bytes(0x64)                // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        // Without an ABC file, it should still produce a placeholder
+        assertTrue(result.contains("str_0"));
+        assertTrue(result.contains("let v0: string"));
+    }
+
+    // --- 5. Cross-method reference resolution ---
+
+    @Test
+    void testDecompile_callWithNamedMethod() {
+        // Test that call expressions produce readable output
+        // lda v0; callarg0 0; sta v1; return
+        byte[] code = concat(
+                bytes(0x60, 0x00),       // lda v0
+                bytes(0x29, 0x00),       // callarg0 0
+                bytes(0x61, 0x01),       // sta v1
+                bytes(0x64)              // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0()"));
+    }
+
+    // --- 6. Output formatting improvements ---
+
+    @Test
+    void testClassDeclaration_blankLinesBetweenMembers() {
+        ArkTSStatement field = new ArkTSStatement.ClassFieldDeclaration(
+                "data", "number", null, false, null);
+        ArkTSStatement methodBody = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSStatement method = new ArkTSStatement.ClassMethodDeclaration(
+                "getValue", Collections.emptyList(), "number",
+                methodBody, false, "public");
+        ArkTSStatement.ClassDeclaration cls =
+                new ArkTSStatement.ClassDeclaration("MyClass", null,
+                        List.of(field, method));
+        String result = cls.toArkTS(0);
+        // Verify blank line separates field from method
+        assertTrue(result.contains("data: number;\n"));
+        assertTrue(result.contains("\n\n"));
+        assertTrue(result.contains("public getValue(): number"));
+    }
+
+    @Test
+    void testClassDeclaration_memberGrouping() {
+        // Verify fields come before methods in the output
+        ArkTSStatement field1 = new ArkTSStatement.ClassFieldDeclaration(
+                "x", "number", null, false, null);
+        ArkTSStatement field2 = new ArkTSStatement.ClassFieldDeclaration(
+                "y", "number", null, false, null);
+        ArkTSStatement methodBody = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSStatement method = new ArkTSStatement.ClassMethodDeclaration(
+                "calc", Collections.emptyList(), null,
+                methodBody, false, null);
+        ArkTSStatement.ClassDeclaration cls =
+                new ArkTSStatement.ClassDeclaration("Point", null,
+                        List.of(field1, field2, method));
+        String result = cls.toArkTS(0);
+        int field1Idx = result.indexOf("x: number;");
+        int field2Idx = result.indexOf("y: number;");
+        int methodIdx = result.indexOf("calc()");
+        assertTrue(field1Idx < field2Idx);
+        assertTrue(field2Idx < methodIdx);
+    }
+
+    @Test
+    void testIndentation_consistentFourSpaces() {
+        ArkTSStatement inner = new ArkTSStatement.ReturnStatement(
+                new ArkTSExpression.LiteralExpression("42",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER));
+        ArkTSStatement outer = new ArkTSStatement.BlockStatement(List.of(inner));
+        String result = outer.toArkTS(1);
+        // Verify 4-space indent for the outer block body
+        assertTrue(result.contains("    return 42;"));
+    }
+
+    // --- 7. Edge case handling ---
+
+    @Test
+    void testDecompile_emptyInstructionsReturnsEmpty() {
+        String result = decompiler.decompileInstructions(
+                Collections.emptyList());
+        assertEquals("", result);
+    }
+
+    @Test
+    void testDecompileMethod_onlyReturnUndefined() {
+        // returnundefined
+        byte[] codeBytes = bytes(0x65);
+        AbcCode code = new AbcCode(0, 0, codeBytes.length, codeBytes,
+                Collections.emptyList(), 0);
+        AbcMethod method = new AbcMethod(0, 0, "doNothing",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        String result = decompiler.decompileMethod(method, code, null);
+        assertNotNull(result);
+        assertTrue(result.contains("function doNothing()"));
+    }
+
+    @Test
+    void testDecompileMethod_trailingReturnUndefinedStripped() {
+        // ldai 42; sta v0; returnundefined
+        byte[] codeBytes = concat(
+                bytes(0x62), le32(42),
+                bytes(0x61, 0x00),
+                bytes(0x65)   // returnundefined
+        );
+        AbcCode code = new AbcCode(2, 0, codeBytes.length, codeBytes,
+                Collections.emptyList(), 0);
+        AbcMethod method = new AbcMethod(0, 0, "simpleMethod",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        String result = decompiler.decompileMethod(method, code, null);
+        assertNotNull(result);
+        assertTrue(result.contains("let v0: number = 42"));
+        // The trailing return; should be stripped
+        assertFalse(result.contains("return;"));
+    }
+
+    @Test
+    void testDecompileMethod_returnWithValuePreserved() {
+        // ldai 42; return
+        byte[] codeBytes = concat(
+                bytes(0x62), le32(42),
+                bytes(0x64)
+        );
+        AbcCode code = new AbcCode(1, 0, codeBytes.length, codeBytes,
+                Collections.emptyList(), 0);
+        AbcMethod method = new AbcMethod(0, 0, "getValue",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        String result = decompiler.decompileMethod(method, code, null);
+        assertNotNull(result);
+        assertTrue(result.contains("return 42"));
+    }
+
+    @Test
+    void testCfg_emptyCodeProducesNoBlocks() {
+        ControlFlowGraph cfg = ControlFlowGraph.build(
+                Collections.emptyList());
+        assertTrue(cfg.getBlocks().isEmpty());
+    }
+
+    @Test
+    void testDecompile_infiniteLoopJmpToSelf() {
+        // jmp -2 (infinite loop to self: offset 0, length 2, target = 0+2-2 = 0)
+        // opcode 0x4D = jmp_imm8, signed offset -2 = 0xFE
+        byte[] code = bytes(0x4D, (byte) 0xFE);
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        // Should produce a while (true) { }
+        assertTrue(result.contains("while (true)"));
+    }
+
+    @Test
+    void testDecompile_deadCodeAfterReturn() {
+        // ldai 1; return; ldai 2; sta v0
+        // The code after return should be dead code
+        byte[] code = concat(
+                bytes(0x62), le32(1),   // ldai 1
+                bytes(0x64),             // return
+                bytes(0x62), le32(2),   // ldai 2 (dead code)
+                bytes(0x61, 0x00)        // sta v0 (dead code)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        // The dead code after return may or may not appear,
+        // but the method should not crash
+        assertNotNull(result);
+        assertTrue(result.contains("return 1"));
+    }
+
+    @Test
+    void testDecompile_emptyBodyWithMethodSignature() {
+        AbcCode code = new AbcCode(0, 0, 0, new byte[0],
+                Collections.emptyList(), 0);
+        AbcMethod method = new AbcMethod(0, 0, "init",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        String result = decompiler.decompileMethod(method, code, null);
+        assertEquals("function init(): void { }", result);
+    }
+
+    // --- 8. MUTF-8 string resolution ---
+
+    @Test
+    void testDecompileContext_readMutf8At_ascii() {
+        byte[] data = "Hello World\0rest".getBytes(
+                java.nio.charset.StandardCharsets.UTF_8);
+        String result = ArkTSDecompiler.DecompilationContext
+                .readMutf8At(data, 0);
+        assertEquals("Hello World", result);
+    }
+
+    @Test
+    void testDecompileContext_readMutf8At_empty() {
+        byte[] data = {0};
+        String result = ArkTSDecompiler.DecompilationContext
+                .readMutf8At(data, 0);
+        assertEquals("", result);
+    }
+
+    // --- 9. File output formatting ---
+
+    @Test
+    void testFileModule_blankLinesBetweenDeclarations() {
+        ArkTSStatement cls1 = new ArkTSStatement.ClassDeclaration("First",
+                null, Collections.emptyList());
+        ArkTSStatement cls2 = new ArkTSStatement.ClassDeclaration("Second",
+                null, Collections.emptyList());
+        ArkTSStatement.FileModule fileModule =
+                new ArkTSStatement.FileModule(Collections.emptyList(),
+                        List.of(cls1, cls2),
+                        Collections.emptyList());
+        String result = fileModule.toArkTS(0);
+        assertTrue(result.contains("class First"));
+        assertTrue(result.contains("class Second"));
+        assertTrue(result.contains("}\n\nclass Second"));
+    }
+
+    @Test
+    void testFileModule_importsBeforeDeclarations() {
+        ArkTSStatement imp = new ArkTSStatement.ImportStatement(
+                List.of("Base"), "./base", false, null, null);
+        ArkTSStatement cls = new ArkTSStatement.ClassDeclaration("Child",
+                "Base", Collections.emptyList());
+        ArkTSStatement.FileModule fileModule =
+                new ArkTSStatement.FileModule(List.of(imp), List.of(cls),
+                        Collections.emptyList());
+        String result = fileModule.toArkTS(0);
+        int importIdx = result.indexOf("import");
+        int classIdx = result.indexOf("class Child");
+        assertTrue(importIdx < classIdx);
     }
 }

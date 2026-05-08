@@ -184,6 +184,17 @@ public class ControlFlowGraph {
 
     /**
      * Returns the jump target offset for a branch instruction, or -1 if not a branch.
+     * Public accessor for use by the decompiler.
+     *
+     * @param insn the instruction
+     * @return the absolute target offset, or -1
+     */
+    public static int getJumpTargetPublic(ArkInstruction insn) {
+        return getJumpTarget(insn);
+    }
+
+    /**
+     * Returns the jump target offset for a branch instruction, or -1 if not a branch.
      *
      * @param insn the instruction
      * @return the absolute target offset, or -1

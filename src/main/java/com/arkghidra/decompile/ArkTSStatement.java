@@ -675,8 +675,12 @@ public abstract class ArkTSStatement {
                 sb.append(" extends ").append(superClass);
             }
             sb.append(" {\n");
-            for (ArkTSStatement member : members) {
-                sb.append(member.toArkTS(indent + 1)).append("\n");
+            for (int i = 0; i < members.size(); i++) {
+                sb.append(members.get(i).toArkTS(indent + 1)).append("\n");
+                // Add blank line between methods/constructors
+                if (i < members.size() - 1) {
+                    sb.append("\n");
+                }
             }
             sb.append(indent(indent)).append("}");
             return sb.toString();
@@ -1232,8 +1236,11 @@ public abstract class ArkTSStatement {
             }
             sb.append(indent(indent)).append("struct ").append(name)
                     .append(" {\n");
-            for (ArkTSStatement member : members) {
-                sb.append(member.toArkTS(indent + 1)).append("\n");
+            for (int i = 0; i < members.size(); i++) {
+                sb.append(members.get(i).toArkTS(indent + 1)).append("\n");
+                if (i < members.size() - 1) {
+                    sb.append("\n");
+                }
             }
             sb.append(indent(indent)).append("}");
             return sb.toString();
@@ -1388,8 +1395,11 @@ public abstract class ArkTSStatement {
                 sb.append(" extends ").append(superClass);
             }
             sb.append(" {\n");
-            for (ArkTSStatement member : members) {
-                sb.append(member.toArkTS(indent + 1)).append("\n");
+            for (int i = 0; i < members.size(); i++) {
+                sb.append(members.get(i).toArkTS(indent + 1)).append("\n");
+                if (i < members.size() - 1) {
+                    sb.append("\n");
+                }
             }
             sb.append(indent(indent)).append("}");
             return sb.toString();
@@ -1491,6 +1501,93 @@ public abstract class ArkTSStatement {
                     }
                 }
             }
+            return sb.toString();
+        }
+    }
+
+    // --- Switch statement ---
+
+    /**
+     * A switch/case statement.
+     */
+    public static class SwitchStatement extends ArkTSStatement {
+        private final ArkTSExpression discriminant;
+        private final List<SwitchCase> cases;
+        private final ArkTSStatement defaultBlock;
+
+        /**
+         * A single case clause in a switch statement.
+         */
+        public static class SwitchCase {
+            private final ArkTSExpression test;
+            private final List<ArkTSStatement> body;
+
+            /**
+             * Constructs a switch case.
+             *
+             * @param test the test expression (null for default)
+             * @param body the case body statements
+             */
+            public SwitchCase(ArkTSExpression test,
+                    List<ArkTSStatement> body) {
+                this.test = test;
+                this.body = Collections.unmodifiableList(
+                        new ArrayList<>(body));
+            }
+
+            public ArkTSExpression getTest() {
+                return test;
+            }
+
+            public List<ArkTSStatement> getBody() {
+                return body;
+            }
+        }
+
+        /**
+         * Constructs a switch statement.
+         *
+         * @param discriminant the expression being switched on
+         * @param cases the case clauses
+         * @param defaultBlock the default block (may be null)
+         */
+        public SwitchStatement(ArkTSExpression discriminant,
+                List<SwitchCase> cases, ArkTSStatement defaultBlock) {
+            this.discriminant = discriminant;
+            this.cases = Collections.unmodifiableList(
+                    new ArrayList<>(cases));
+            this.defaultBlock = defaultBlock;
+        }
+
+        public ArkTSExpression getDiscriminant() {
+            return discriminant;
+        }
+
+        public List<SwitchCase> getCases() {
+            return cases;
+        }
+
+        public ArkTSStatement getDefaultBlock() {
+            return defaultBlock;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(indent(indent)).append("switch (")
+                    .append(discriminant.toArkTS()).append(") {\n");
+            for (SwitchCase c : cases) {
+                sb.append(indent(indent + 1)).append("case ")
+                        .append(c.test.toArkTS()).append(":\n");
+                for (ArkTSStatement stmt : c.body) {
+                    sb.append(stmt.toArkTS(indent + 2)).append("\n");
+                }
+            }
+            if (defaultBlock != null) {
+                sb.append(indent(indent + 1)).append("default:\n");
+                appendBlockBody(sb, defaultBlock, indent + 2);
+            }
+            sb.append(indent(indent)).append("}");
             return sb.toString();
         }
     }

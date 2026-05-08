@@ -11,12 +11,14 @@ import com.arkghidra.disasm.ArkDisassembler;
 import com.arkghidra.disasm.ArkInstruction;
 import com.arkghidra.disasm.ArkOperand;
 import com.arkghidra.format.AbcAccessFlags;
+import com.arkghidra.format.AbcCatchBlock;
 import com.arkghidra.format.AbcClass;
 import com.arkghidra.format.AbcCode;
 import com.arkghidra.format.AbcField;
 import com.arkghidra.format.AbcFile;
 import com.arkghidra.format.AbcMethod;
 import com.arkghidra.format.AbcProto;
+import com.arkghidra.format.AbcTryBlock;
 
 /**
  * Decompiles Ark bytecode methods into ArkTS source code.
@@ -56,6 +58,22 @@ public class ArkTSDecompiler {
 
         if (instructions.isEmpty()) {
             return buildEmptyMethod(method, null);
+        }
+
+        // Handle trivial single-instruction bodies
+        if (instructions.size() == 1) {
+            ArkInstruction only = instructions.get(0);
+            if (only.getOpcode() == ArkOpcodesCompat.RETURNUNDEFINED) {
+                return buildEmptyMethod(method, resolveProto(method, abcFile));
+            }
+            if (only.getOpcode() == ArkOpcodesCompat.RETURN) {
+                AbcProto proto = resolveProto(method, abcFile);
+                ArkTSExpression val =
+                        new ArkTSExpression.VariableExpression(ACC);
+                List<ArkTSStatement> stmts = List.of(
+                        new ArkTSStatement.ReturnStatement(val));
+                return buildMethodSource(method, proto, code, stmts);
+            }
         }
 
         ControlFlowGraph cfg = ControlFlowGraph.build(instructions,
@@ -142,13 +160,53 @@ public class ArkTSDecompiler {
                     Collections.emptyList(), moduleRef, false, null, null));
         }
 
-        ArkTSStatement.FileModule fileModule =
-                new ArkTSStatement.FileModule(imports, declarations, exports);
-        return fileModule.toArkTS(0);
+        // Build output with blank lines between classes
+        return buildFileOutput(imports, declarations, exports);
+    }
+
+    /**
+     * Builds the final output string for a decompiled file.
+     * Adds blank lines between top-level declarations for readability.
+     *
+     * @param imports the import statements
+     * @param declarations the top-level declarations
+     * @param exports the export statements
+     * @return the formatted source file string
+     */
+    private String buildFileOutput(List<ArkTSStatement> imports,
+            List<ArkTSStatement> declarations,
+            List<ArkTSStatement> exports) {
+        StringBuilder sb = new StringBuilder();
+        for (ArkTSStatement imp : imports) {
+            sb.append(imp.toArkTS(0)).append("\n");
+        }
+        if (!imports.isEmpty() && (!declarations.isEmpty()
+                || !exports.isEmpty())) {
+            sb.append("\n");
+        }
+        for (int i = 0; i < declarations.size(); i++) {
+            sb.append(declarations.get(i).toArkTS(0));
+            if (i < declarations.size() - 1) {
+                sb.append("\n\n");
+            }
+        }
+        if (!exports.isEmpty()) {
+            sb.append("\n\n");
+            for (int i = 0; i < exports.size(); i++) {
+                sb.append(exports.get(i).toArkTS(0));
+                if (i < exports.size() - 1) {
+                    sb.append("\n");
+                }
+            }
+        }
+        return sb.toString();
     }
 
     /**
      * Builds a class declaration from an ABC class definition.
+     *
+     * <p>Members are grouped in order: fields first, then constructor,
+     * then regular methods, with blank-line separation between them.
      *
      * @param abcClass the ABC class
      * @param abcFile the parent ABC file for resolving references
@@ -158,7 +216,6 @@ public class ArkTSDecompiler {
     private ArkTSStatement buildClassDeclaration(AbcClass abcClass,
             AbcFile abcFile, Set<String> seenImports) {
         String className = sanitizeClassName(abcClass.getName());
-        long flags = abcClass.getAccessFlags();
 
         // Determine if this is a struct (ArkTS UI component)
         List<String> decorators = detectDecorators(abcClass);
@@ -176,20 +233,31 @@ public class ArkTSDecompiler {
 
         List<ArkTSStatement> members = new ArrayList<>();
 
-        // Add fields
+        // Group 1: fields first
         for (AbcField field : abcClass.getFields()) {
             ArkTSStatement fieldDecl = buildFieldDeclaration(field);
             members.add(fieldDecl);
         }
 
-        // Add methods, detecting constructor
+        // Group 2: constructor, then regular methods
+        ArkTSStatement constructorDecl = null;
+        List<ArkTSStatement> methodDecls = new ArrayList<>();
         for (AbcMethod method : abcClass.getMethods()) {
-            ArkTSStatement methodDecl = buildMethodDeclaration(
-                    method, abcFile, className);
-            if (methodDecl != null) {
-                members.add(methodDecl);
+            if (isConstructorMethod(method, className)) {
+                constructorDecl = buildMethodDeclaration(
+                        method, abcFile, className);
+            } else {
+                ArkTSStatement methodDecl = buildMethodDeclaration(
+                        method, abcFile, className);
+                if (methodDecl != null) {
+                    methodDecls.add(methodDecl);
+                }
             }
         }
+        if (constructorDecl != null) {
+            members.add(constructorDecl);
+        }
+        members.addAll(methodDecls);
 
         // Determine type parameters from class metadata
         List<ArkTSStatement.TypeParameter> typeParams =
@@ -323,6 +391,239 @@ public class ArkTSDecompiler {
     }
 
     // --- Class reconstruction helpers ---
+
+    // --- Try/catch handling ---
+
+    /**
+     * Represents a try/catch region in the bytecode.
+     */
+    private static class TryCatchRegion {
+        final int startPc;
+        final int endPc;
+        final List<CatchHandler> handlers;
+        boolean processed;
+
+        TryCatchRegion(int startPc, int endPc,
+                List<CatchHandler> handlers) {
+            this.startPc = startPc;
+            this.endPc = endPc;
+            this.handlers = handlers;
+            this.processed = false;
+        }
+
+        boolean isProcessed() {
+            return processed;
+        }
+
+        void markProcessed() {
+            processed = true;
+        }
+    }
+
+    /**
+     * Represents a single catch handler within a try/catch region.
+     */
+    private static class CatchHandler {
+        final String typeName;
+        final int handlerPc;
+
+        CatchHandler(String typeName, int handlerPc) {
+            this.typeName = typeName;
+            this.handlerPc = handlerPc;
+        }
+    }
+
+    /**
+     * Builds try/catch regions from the AbcCode try blocks.
+     *
+     * @param ctx the decompilation context
+     * @param cfg the control flow graph
+     * @return the list of try/catch regions
+     */
+    private List<TryCatchRegion> buildTryCatchRegions(
+            DecompilationContext ctx, ControlFlowGraph cfg) {
+        List<TryCatchRegion> regions = new ArrayList<>();
+        if (ctx.code == null || ctx.code.getTryBlocks() == null) {
+            return regions;
+        }
+        for (AbcTryBlock tryBlock : ctx.code.getTryBlocks()) {
+            int startPc = (int) tryBlock.getStartPc();
+            int endPc = startPc + (int) tryBlock.getLength();
+            List<CatchHandler> handlers = new ArrayList<>();
+            CatchHandler finallyHandler = null;
+            for (AbcCatchBlock catchBlock : tryBlock.getCatchBlocks()) {
+                String typeName = null;
+                if (catchBlock.getTypeIdx() > 0 && ctx.abcFile != null) {
+                    typeName = resolveTypeName(
+                            (int) catchBlock.getTypeIdx(), ctx.abcFile);
+                }
+                if (catchBlock.isCatchAll()) {
+                    finallyHandler = new CatchHandler(
+                            typeName, (int) catchBlock.getHandlerPc());
+                } else {
+                    handlers.add(new CatchHandler(
+                            typeName, (int) catchBlock.getHandlerPc()));
+                }
+            }
+            // If there's a catchAll with no typed handlers, treat as finally
+            if (finallyHandler != null && handlers.isEmpty()) {
+                handlers.add(finallyHandler);
+            }
+            if (!handlers.isEmpty()) {
+                TryCatchRegion region = new TryCatchRegion(
+                        startPc, endPc, handlers);
+                regions.add(region);
+            }
+        }
+        return regions;
+    }
+
+    /**
+     * Finds a try/catch region that starts at the given offset.
+     *
+     * @param offset the byte offset
+     * @param regions the list of try/catch regions
+     * @return the matching region, or null
+     */
+    private TryCatchRegion findTryCatchRegion(int offset,
+            List<TryCatchRegion> regions) {
+        for (TryCatchRegion region : regions) {
+            if (region.startPc == offset && !region.isProcessed()) {
+                return region;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Processes a try/catch region into structured statements.
+     *
+     * @param tcr the try/catch region
+     * @param ctx the decompilation context
+     * @param cfg the control flow graph
+     * @param visited set of visited blocks
+     * @return the list of statements representing the try/catch
+     */
+    private List<ArkTSStatement> processTryCatch(TryCatchRegion tcr,
+            DecompilationContext ctx, ControlFlowGraph cfg,
+            Set<BasicBlock> visited) {
+
+        List<ArkTSStatement> stmts = new ArrayList<>();
+
+        // Collect all blocks within the try range
+        List<ArkTSStatement> tryBodyStmts = new ArrayList<>();
+        for (BasicBlock block : cfg.getBlocks()) {
+            if (block.getStartOffset() >= tcr.startPc
+                    && block.getStartOffset() < tcr.endPc
+                    && !visited.contains(block)) {
+                visited.add(block);
+                tryBodyStmts.addAll(processBlockInstructions(block, ctx));
+            }
+        }
+        ArkTSStatement tryBody =
+                new ArkTSStatement.BlockStatement(tryBodyStmts);
+
+        // Process the first typed handler as the catch block
+        ArkTSStatement catchBody = null;
+        String catchParam = "e";
+        if (!tcr.handlers.isEmpty()) {
+            CatchHandler firstHandler = tcr.handlers.get(0);
+            catchParam = firstHandler.typeName != null
+                    ? "e" : "e";
+            List<ArkTSStatement> catchBodyStmts = new ArrayList<>();
+            BasicBlock handlerBlock =
+                    cfg.getBlockAt(firstHandler.handlerPc);
+            if (handlerBlock != null
+                    && !visited.contains(handlerBlock)) {
+                visited.add(handlerBlock);
+                catchBodyStmts.addAll(
+                        processBlockInstructions(handlerBlock, ctx));
+            }
+            if (!catchBodyStmts.isEmpty()) {
+                catchBody = new ArkTSStatement.BlockStatement(
+                        catchBodyStmts);
+            }
+        }
+
+        ArkTSStatement.TryCatchStatement tryCatch =
+                new ArkTSStatement.TryCatchStatement(
+                        tryBody, catchParam, catchBody, null);
+        stmts.add(tryCatch);
+        return stmts;
+    }
+
+    /**
+     * Resolves a type index to a type name from the ABC file.
+     *
+     * @param typeIdx the type index
+     * @param abcFile the ABC file
+     * @return the type name, or null
+     */
+    private String resolveTypeName(int typeIdx, AbcFile abcFile) {
+        if (abcFile == null) {
+            return null;
+        }
+        // Try to resolve from the lnp index (string table)
+        try {
+            List<Long> lnpIndex = abcFile.getLnpIndex();
+            if (typeIdx >= 0 && typeIdx < lnpIndex.size()) {
+                long strOff = lnpIndex.get(typeIdx);
+                byte[] data = abcFile.getRawData();
+                if (data != null && strOff >= 0 && strOff < data.length) {
+                    return DecompilationContext.readMutf8At(
+                            data, (int) strOff);
+                }
+            }
+        } catch (Exception e) {
+            return null;
+        }
+        return null;
+    }
+
+    /**
+     * Determines if a block is dead code (unreachable).
+     * A block is dead if all its predecessors are already visited and
+     * end with an unconditional terminator (return, unconditional jump).
+     *
+     * @param block the block to check
+     * @param cfg the control flow graph
+     * @param visited set of visited blocks
+     * @return true if the block appears to be dead code
+     */
+    private boolean isDeadCode(BasicBlock block, ControlFlowGraph cfg,
+            Set<BasicBlock> visited) {
+        // The entry block is never dead code
+        if (block == cfg.getEntryBlock()) {
+            return false;
+        }
+        // Exception handler entry points are not dead code
+        for (CFGEdge pred : block.getPredecessors()) {
+            if (pred.getType() == EdgeType.EXCEPTION_HANDLER) {
+                return false;
+            }
+        }
+        // If there are no predecessors at all, it's dead
+        List<CFGEdge> preds = block.getPredecessors();
+        if (preds.isEmpty()) {
+            return true;
+        }
+        // Check if all predecessors are visited and end with terminators
+        // that don't reach this block
+        for (CFGEdge pred : preds) {
+            if (pred.getType() == EdgeType.EXCEPTION_HANDLER) {
+                return false;
+            }
+            BasicBlock predBlock = cfg.getBlockAt(pred.getFromOffset());
+            if (predBlock == null) {
+                continue;
+            }
+            if (!visited.contains(predBlock)) {
+                return false;
+            }
+        }
+        // All predecessors visited; if none actually flow here, it's dead
+        return true;
+    }
 
     /**
      * Sanitizes a raw ABC class name into a valid ArkTS identifier.
@@ -555,9 +856,36 @@ public class ArkTSDecompiler {
         ControlFlowGraph cfg = ctx.cfg;
         List<BasicBlock> blocks = cfg.getBlocks();
 
+        if (blocks.isEmpty()) {
+            return Collections.emptyList();
+        }
+
         if (blocks.size() == 1) {
             // Single block: linear code, no control flow
-            return processBlockInstructions(blocks.get(0), ctx);
+            // Check for infinite loop (jmp to self)
+            BasicBlock single = blocks.get(0);
+            ArkInstruction lastInsn = single.getLastInstruction();
+            if (lastInsn != null
+                    && ArkOpcodesCompat.isUnconditionalJump(
+                            lastInsn.getOpcode())) {
+                int target = ControlFlowGraphAccessor
+                        .getJumpTarget(lastInsn);
+                if (target == single.getStartOffset()) {
+                    // Infinite loop: jmp to self
+                    List<ArkTSStatement> bodyStmts =
+                            processBlockInstructionsExcluding(
+                                    single, ctx, lastInsn);
+                    ArkTSStatement body =
+                            new ArkTSStatement.BlockStatement(bodyStmts);
+                    ArkTSExpression trueCond =
+                            new ArkTSExpression.LiteralExpression("true",
+                                    ArkTSExpression.LiteralExpression
+                                            .LiteralKind.BOOLEAN);
+                    return List.of(new ArkTSStatement.WhileStatement(
+                            trueCond, body));
+                }
+            }
+            return processBlockInstructions(single, ctx);
         }
 
         // Use CFG-based decompilation with structured control flow
@@ -568,10 +896,20 @@ public class ArkTSDecompiler {
     // --- Control flow reconstruction ---
 
     /**
+     * Provides package-private access to jump target computation.
+     */
+    private static class ControlFlowGraphAccessor {
+        static int getJumpTarget(ArkInstruction insn) {
+            return ControlFlowGraph.getJumpTargetPublic(insn);
+        }
+    }
+
+    /**
      * Reconstructs structured control flow from the CFG.
      *
-     * <p>Walks the CFG in order, detecting if/else, while, for, and do/while
-     * patterns and producing structured ArkTS statements.
+     * <p>Walks the CFG in order, detecting if/else, while, for, do/while,
+     * try/catch, switch patterns and producing structured ArkTS statements.
+     * Also handles dead code after unconditional jumps and infinite loops.
      *
      * @param cfg the control flow graph
      * @param blocks the list of basic blocks
@@ -585,9 +923,55 @@ public class ArkTSDecompiler {
 
         List<ArkTSStatement> stmts = new ArrayList<>();
 
+        // First, detect try/catch blocks and build a lookup from try-block
+        // ranges to their handler info
+        List<TryCatchRegion> tryCatchRegions =
+                buildTryCatchRegions(ctx, cfg);
+
         for (BasicBlock block : blocks) {
             if (visited.contains(block)) {
                 continue;
+            }
+
+            // Check if this block is dead code (unreachable after a
+            // terminator in a prior block)
+            if (isDeadCode(block, cfg, visited)) {
+                visited.add(block);
+                continue;
+            }
+
+            // Check if this block starts a try/catch region
+            TryCatchRegion tcr = findTryCatchRegion(
+                    block.getStartOffset(), tryCatchRegions);
+            if (tcr != null && !tcr.isProcessed()) {
+                tcr.markProcessed();
+                visited.add(block);
+                stmts.addAll(processTryCatch(tcr, ctx, cfg, visited));
+                continue;
+            }
+
+            // Check for infinite loop (jmp to self)
+            ArkInstruction lastInsn = block.getLastInstruction();
+            if (lastInsn != null
+                    && ArkOpcodesCompat.isUnconditionalJump(
+                            lastInsn.getOpcode())) {
+                int target = ControlFlowGraphAccessor
+                        .getJumpTarget(lastInsn);
+                if (target == block.getStartOffset()) {
+                    visited.add(block);
+                    List<ArkTSStatement> bodyStmts =
+                            processBlockInstructionsExcluding(
+                                    block, ctx, lastInsn);
+                    ArkTSStatement body =
+                            new ArkTSStatement.BlockStatement(bodyStmts);
+                    ArkTSExpression trueCond =
+                            new ArkTSExpression.LiteralExpression("true",
+                                    ArkTSExpression.LiteralExpression
+                                            .LiteralKind.BOOLEAN);
+                    stmts.add(new ArkTSStatement.WhileStatement(
+                            trueCond, body));
+                    continue;
+                }
             }
 
             // Detect control flow pattern from this block
@@ -1890,6 +2274,12 @@ public class ArkTSDecompiler {
         ArkTSExpression callee;
         List<ArkTSExpression> args = new ArrayList<>();
 
+        // Try to resolve the callee method name from the ABC file
+        // For callthis* opcodes, the callee is already in the accumulator
+        // (loaded via ldobjbyname or similar)
+        // For callarg* opcodes, the callee is in the accumulator
+        // The first operand is typically a method index or unused
+
         switch (opcode) {
             case ArkOpcodesCompat.CALLARG0:
                 callee = accValue != null
@@ -2255,20 +2645,61 @@ public class ArkTSDecompiler {
     }
 
     private String buildEmptyMethod(AbcMethod method, AbcProto proto) {
-        String sig = MethodSignatureBuilder.buildSignature(method, proto, 0);
-        return sig + " { }";
-    }
-
-    private String buildMethodSource(AbcMethod method, AbcProto proto,
-            AbcCode code, List<ArkTSStatement> bodyStmts) {
         List<ArkTSStatement.FunctionDeclaration.FunctionParam> params =
-                MethodSignatureBuilder.buildParams(proto, code.getNumArgs());
+                MethodSignatureBuilder.buildParams(proto, 0);
         String returnType = MethodSignatureBuilder.getReturnType(proto);
-        ArkTSStatement body = new ArkTSStatement.BlockStatement(bodyStmts);
+        ArkTSStatement body =
+                new ArkTSStatement.BlockStatement(Collections.emptyList());
         ArkTSStatement.FunctionDeclaration func =
                 new ArkTSStatement.FunctionDeclaration(
                         method.getName(), params, returnType, body);
         return func.toArkTS(0);
+    }
+
+    private String buildMethodSource(AbcMethod method, AbcProto proto,
+            AbcCode code, List<ArkTSStatement> bodyStmts) {
+        // Filter out trailing return undefined for cleaner output
+        List<ArkTSStatement> filteredStmts =
+                filterTrivialReturnUndefined(bodyStmts);
+
+        List<ArkTSStatement.FunctionDeclaration.FunctionParam> params =
+                MethodSignatureBuilder.buildParams(proto, code.getNumArgs());
+        String returnType = MethodSignatureBuilder.getReturnType(proto);
+        ArkTSStatement body =
+                new ArkTSStatement.BlockStatement(filteredStmts);
+        ArkTSStatement.FunctionDeclaration func =
+                new ArkTSStatement.FunctionDeclaration(
+                        method.getName(), params, returnType, body);
+        return func.toArkTS(0);
+    }
+
+    /**
+     * Removes a trailing "return;" (return undefined) that is the last
+     * statement, as it adds no useful information to the decompiled output.
+     *
+     * @param stmts the list of statements
+     * @return the filtered list (may be the same list if no change needed)
+     */
+    private static List<ArkTSStatement> filterTrivialReturnUndefined(
+            List<ArkTSStatement> stmts) {
+        if (stmts.isEmpty()) {
+            return stmts;
+        }
+        ArkTSStatement last = stmts.get(stmts.size() - 1);
+        if (last instanceof ArkTSStatement.ReturnStatement) {
+            ArkTSExpression val =
+                    ((ArkTSStatement.ReturnStatement) last).getValue();
+            if (val == null) {
+                // return; (return undefined) at end is implicit
+                List<ArkTSStatement> filtered =
+                        new ArrayList<>(stmts.size() - 1);
+                for (int i = 0; i < stmts.size() - 1; i++) {
+                    filtered.add(stmts.get(i));
+                }
+                return filtered;
+            }
+        }
+        return stmts;
     }
 
     // --- Context ---
@@ -2276,7 +2707,11 @@ public class ArkTSDecompiler {
     /**
      * Holds shared state during decompilation of a single method.
      */
-    private static class DecompilationContext {
+    /**
+     * Holds shared state during decompilation of a single method.
+     * Package-private for testing.
+     */
+    static class DecompilationContext {
         final AbcMethod method;
         final AbcCode code;
         final AbcProto proto;
@@ -2311,8 +2746,6 @@ public class ArkTSDecompiler {
          */
         String resolveString(int stringIdx) {
             if (abcFile != null) {
-                // Attempt to resolve from the ABC file's raw data
-                // The string table is accessed through the lnp index
                 try {
                     List<Long> lnpIndex = abcFile.getLnpIndex();
                     if (stringIdx >= 0 && stringIdx < lnpIndex.size()) {
@@ -2330,18 +2763,52 @@ public class ArkTSDecompiler {
             return "str_" + stringIdx;
         }
 
-        private static String readMutf8At(byte[] data, int offset) {
+        /**
+         * Reads a Modified UTF-8 encoded string from raw bytecode data.
+         * Handles the null terminator and basic MUTF-8 multi-byte sequences.
+         *
+         * @param data the raw bytecode data
+         * @param offset the starting offset
+         * @return the decoded string
+         */
+        public static String readMutf8At(byte[] data, int offset) {
             int pos = offset;
-            int len = 0;
+            StringBuilder sb = new StringBuilder();
             while (pos < data.length && data[pos] != 0) {
-                len++;
-                pos++;
+                int b = data[pos] & 0xFF;
+                if (b < 0x80) {
+                    // Single byte (ASCII)
+                    sb.append((char) b);
+                    pos++;
+                } else if ((b & 0xE0) == 0xC0) {
+                    // Two-byte sequence
+                    if (pos + 1 < data.length) {
+                        int b2 = data[pos + 1] & 0xFF;
+                        char ch = (char) (((b & 0x1F) << 6)
+                                | (b2 & 0x3F));
+                        sb.append(ch);
+                        pos += 2;
+                    } else {
+                        break;
+                    }
+                } else if ((b & 0xF0) == 0xE0) {
+                    // Three-byte sequence
+                    if (pos + 2 < data.length) {
+                        int b2 = data[pos + 1] & 0xFF;
+                        int b3 = data[pos + 2] & 0xFF;
+                        char ch = (char) (((b & 0x0F) << 12)
+                                | ((b2 & 0x3F) << 6) | (b3 & 0x3F));
+                        sb.append(ch);
+                        pos += 3;
+                    } else {
+                        break;
+                    }
+                } else {
+                    // Unknown byte, skip
+                    pos++;
+                }
             }
-            if (len == 0) {
-                return "";
-            }
-            return new String(data, offset, len,
-                    java.nio.charset.StandardCharsets.UTF_8);
+            return sb.toString();
         }
     }
 }

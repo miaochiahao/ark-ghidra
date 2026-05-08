@@ -1,0 +1,63 @@
+# Build and Test CI for ark-ghidra
+#
+# NOTE: This workflow requires GHIDRA_INSTALL_DIR to be available.
+# Ghidra JARs are not published to Maven Central -- they come from a local
+# Ghidra installation.  To make CI work you must either:
+#   1. Cache a Ghidra install and set gradle.properties accordingly, or
+#   2. Vendor the required Ghidra JARs into a local Maven repo.
+#
+# The "Set up Ghidra" step below downloads a fresh copy for each run.
+# Adjust GHIDRA_VERSION if you target a different release.
+
+name: Build and Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      GHIDRA_VERSION: "12.0.4"
+      GHIDRA_DIR: ${{ github.workspace }}/ghidra
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Cache Ghidra
+        id: cache-ghidra
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.GHIDRA_DIR }}
+          key: ghidra-${{ env.GHIDRA_VERSION }}
+
+      - name: Download Ghidra
+        if: steps.cache-ghidra.outputs.cache-hit != 'true'
+        run: |
+          curl -sL "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_${GHIDRA_VERSION}_build/ghidra_${GHIDRA_VERSION}_PUBLIC.zip" -o ghidra.zip
+          unzip -q ghidra.zip
+          mv ghidra_${GHIDRA_VERSION}_PUBLIC "${GHIDRA_DIR}"
+          rm ghidra.zip
+
+      - name: Build
+        run: |
+          echo "ghidra.install.dir=${GHIDRA_DIR}" > gradle.properties
+          ./gradlew build
+
+      - name: Lint
+        run: ./gradlew lint
+
+      - name: Upload extension ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: ark-ghidra-extension
+          path: build/dist/*.zip

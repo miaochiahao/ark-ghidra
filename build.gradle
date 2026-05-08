@@ -44,32 +44,62 @@ tasks.register('lint') {
     dependsOn checkstyleMain, checkstyleTest
 }
 
-// Ghidra extension packaging
-tasks.register('buildExtension', Zip) {
-    dependsOn jar
-    archiveBaseName = project.name
-    archiveVersion = project.findProperty('extension.version') ?: '0.1.0'
+def extensionVersion = project.findProperty('extension.version') ?: '0.1.0'
 
-    from(jar.archiveFile) {
-        into "lib"
+// Process Extension.properties to substitute version tokens
+tasks.register('processExtensionProperties', Copy) {
+    from 'src/main/resources/Extension.properties'
+    into layout.buildDirectory.dir('extension-meta')
+    filter { line ->
+        line.replace('@extension.name@', project.name)
+            .replace('@extension.version@', extensionVersion)
     }
-    from('src/main/resources') {
-        include 'Extension.properties'
-        include 'Module.manifest'
+}
+
+// Ghidra extension packaging
+// Produces a ZIP with the layout Ghidra expects:
+//   ark-ghidra/
+//     lib/ark-ghidra.jar
+//     Extension.properties
+//     Module.manifest
+//     data/languages/...
+//     data/buildLanguage.xml
+//     data/sleighArgs.txt
+tasks.register('buildExtension', Zip) {
+    dependsOn jar, processExtensionProperties
+    archiveBaseName = project.name
+    archiveVersion = extensionVersion
+    destinationDirectory = layout.buildDirectory.dir('dist')
+
+    into(project.name) {
+        from(jar.archiveFile) {
+            into 'lib'
+        }
+        from(layout.buildDirectory.dir('extension-meta')) {
+            include 'Extension.properties'
+        }
+        from('src/main/resources') {
+            include 'Module.manifest'
+        }
+        from('data/languages') {
+            into 'data/languages'
+            include '*.ldefs'
+            include '*.cspec'
+            include '*.pspec'
+            include '*.opinion'
+            include '*.slaspec'
+            include '*.sinc'
+            include '*.sla'
+        }
+        from('data') {
+            into 'data'
+            include 'buildLanguage.xml'
+            include 'sleighArgs.txt'
+        }
     }
-    from('data/languages') {
-        into 'data/languages'
-        include '*.ldefs'
-        include '*.cspec'
-        include '*.pspec'
-        include '*.opinion'
-        include '*.slaspec'
-        include '*.sinc'
-        include '*.sla'
-    }
-    from('data') {
-        into 'data'
-        include 'buildLanguage.xml'
-        include 'sleighArgs.txt'
-    }
+}
+
+// Alias for convenience
+tasks.register('distZip') {
+    dependsOn buildExtension
 }

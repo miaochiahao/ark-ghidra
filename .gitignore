@@ -1,0 +1,23 @@
+# Build output
+build/
+out/
+
+# Gradle
+.gradle/
+
+# IDE
+.settings/
+.project
+.classpath
+bin/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~

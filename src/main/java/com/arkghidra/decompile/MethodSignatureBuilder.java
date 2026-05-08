@@ -30,9 +30,12 @@ public class MethodSignatureBuilder {
     /**
      * Builds the list of parameter names with type annotations.
      *
+     * <p>Parameters are named using the pattern "param_0", "param_1", etc.
+     * If no proto is available, parameters are still named "param_N".
+     *
      * @param proto the method prototype
      * @param numArgs the number of arguments from the code section
-     * @return the list of parameter strings like "p0: number"
+     * @return the list of parameter strings like "param_0: number"
      */
     public static List<ArkTSStatement.FunctionDeclaration.FunctionParam> buildParams(
             AbcProto proto, long numArgs) {
@@ -41,7 +44,7 @@ public class MethodSignatureBuilder {
         if (proto == null) {
             for (int i = 0; i < numArgs; i++) {
                 params.add(new ArkTSStatement.FunctionDeclaration.FunctionParam(
-                        "p" + i, null));
+                        "param_" + i, null));
             }
             return params;
         }
@@ -52,13 +55,13 @@ public class MethodSignatureBuilder {
         for (int i = 0; i < paramCount; i++) {
             String typeName = shortyToArkType(shorty.get(i + 1));
             params.add(new ArkTSStatement.FunctionDeclaration.FunctionParam(
-                    "p" + i, typeName));
+                    "param_" + i, typeName));
         }
 
         // If there are more args than shorty entries, add untyped params
         for (int i = paramCount; i < numArgs; i++) {
             params.add(new ArkTSStatement.FunctionDeclaration.FunctionParam(
-                    "p" + i, null));
+                    "param_" + i, null));
         }
 
         return params;
