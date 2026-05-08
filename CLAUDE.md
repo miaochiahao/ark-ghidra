@@ -164,6 +164,10 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **SLEIGH compilation:** Ghidra 12.0 can compile SLEIGH at runtime or via `sleigh` tool. The `.sla` binary must be in `data/languages/` alongside `.slaspec`. Include it in the extension ZIP.
 - **Type inference in decompiler:** Track types per register. Arithmetic ops → `number`, comparisons → `boolean`, ldtrue/ldfalse → `boolean`, ldai → `number`, lda.str → `string`. Skip `Object` annotation to reduce noise.
 - **Stale build artifacts:** If tests fail after agent changes, run `clean` first. Gradle incremental compilation can produce stale class files.
+- **Ghidra Plugin API (12.0):** Extend `Plugin(PluginTool)`. Use `DockingAction` for menu/toolbar actions. Use `ComponentProvider` for panels. Register actions in plugin constructor via `tool.addAction()`. Position providers with `getWindowInstance()` and Ghidra window areas.
+- **UI testing without Ghidra runtime:** Test static helper methods and constants from plugin/action classes. Avoid testing code that calls Ghidra APIs (requires `Application.initializeApplication()`). Package-private access helps testability.
+- **ArkTS decompilation pipeline:** Full method: disassemble → CFG → control flow reconstruction → type inference → expression tree → statement generation → pretty-print. Full file: iterate classes → decompile methods → resolve imports → generate output.
+- **ArkTS-specific syntax:** Use `struct` for decorated classes, `let`/`const` (never `var`), no `any` type, `as` for casting, `@Decorator` syntax, `enum` with optional values, `interface` with optional properties (`prop?: type`).
 <!-- LINT_RULES_END -->
 
 ---
