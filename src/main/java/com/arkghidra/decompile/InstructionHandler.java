@@ -274,13 +274,10 @@ class InstructionHandler {
                     new ArkTSAccessExpressions.SpreadExpression(
                             new ArkTSExpression.VariableExpression(
                                     "v" + srcReg));
-            List<ArkTSAccessExpressions.ObjectLiteralExpression
-                    .ObjectProperty> props = new ArrayList<>();
-            props.add(
-                    new ArkTSAccessExpressions.ObjectLiteralExpression
-                            .ObjectProperty(null, spreadExpr));
+            List<ArkTSExpression> props = new ArrayList<>();
+            props.add(spreadExpr);
             return new StatementResult(null,
-                    new ArkTSAccessExpressions.ObjectLiteralExpression(
+                    new ArkTSAccessExpressions.SpreadObjectExpression(
                             props));
         }
 
@@ -592,6 +589,7 @@ class InstructionHandler {
         int reg = (int) operands.get(0).getValue();
         String varName = "v" + reg;
         if (accValue != null) {
+            accValue = tryReconstructTemplateLiteral(accValue);
             String accType =
                     OperatorHandler.getAccType(accValue, typeInf);
             typeInf.setRegisterType(varName, accType);
@@ -703,19 +701,27 @@ class InstructionHandler {
                 condition, trueValue, falseValue);
     }
 
-    ArkTSStatement tryDetectArrayDestructuring(
+    /**
+     * Attempts to detect an array destructuring pattern starting at
+     * the given instruction index within a basic block.
+     */
+    ObjectCreationHandler.DestructuringResult
+            tryDetectArrayDestructuringInBlock(
             List<ArkInstruction> instructions, int startIndex,
-            DecompilationContext ctx, Set<String> declaredVars,
-            List<ArkTSStatement> stmts) {
-        return objectCreationHandler.tryDetectArrayDestructuring(
-                instructions, startIndex, ctx, declaredVars, stmts);
+            DecompilationContext ctx, Set<String> declaredVars) {
+        return objectCreationHandler.tryDetectArrayDestructuringInBlock(
+                instructions, startIndex, ctx, declaredVars);
     }
 
-    ArkTSStatement tryDetectObjectDestructuring(
+    /**
+     * Attempts to detect an object destructuring pattern starting at
+     * the given instruction index within a basic block.
+     */
+    ObjectCreationHandler.DestructuringResult
+            tryDetectObjectDestructuringInBlock(
             List<ArkInstruction> instructions, int startIndex,
-            DecompilationContext ctx, Set<String> declaredVars,
-            List<ArkTSStatement> stmts) {
-        return objectCreationHandler.tryDetectObjectDestructuring(
-                instructions, startIndex, ctx, declaredVars, stmts);
+            DecompilationContext ctx, Set<String> declaredVars) {
+        return objectCreationHandler.tryDetectObjectDestructuringInBlock(
+                instructions, startIndex, ctx, declaredVars);
     }
 }

@@ -188,6 +188,196 @@ public class ArkTSAccessExpressions {
         }
     }
 
+    // --- Rest parameter expression ---
+
+    /**
+     * A rest parameter expression used in function signatures: ...args.
+     * Represents the rest parameter binding itself, not a spread usage.
+     */
+    public static class RestParameterExpression extends ArkTSExpression {
+        private final String name;
+        private final String typeName;
+
+        /**
+         * Constructs a rest parameter expression.
+         *
+         * @param name the parameter name
+         * @param typeName the type annotation (may be null)
+         */
+        public RestParameterExpression(String name, String typeName) {
+            this.name = name;
+            this.typeName = typeName;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public String getTypeName() {
+            return typeName;
+        }
+
+        @Override
+        public String toArkTS() {
+            if (typeName != null) {
+                return "..." + name + ": " + typeName;
+            }
+            return "..." + name;
+        }
+    }
+
+    // --- Spread call expression ---
+
+    /**
+     * A function call with spread arguments: fn(a, ...args, b).
+     * Used when some arguments are spread from an iterable.
+     */
+    public static class SpreadCallExpression extends ArkTSExpression {
+        private final ArkTSExpression callee;
+        private final List<ArkTSExpression> arguments;
+
+        /**
+         * Constructs a spread call expression.
+         *
+         * @param callee the callee expression
+         * @param arguments the argument expressions (may contain
+         *                  SpreadExpression elements)
+         */
+        public SpreadCallExpression(ArkTSExpression callee,
+                List<ArkTSExpression> arguments) {
+            this.callee = callee;
+            this.arguments = Collections.unmodifiableList(
+                    new ArrayList<>(arguments));
+        }
+
+        public ArkTSExpression getCallee() {
+            return callee;
+        }
+
+        public List<ArkTSExpression> getArguments() {
+            return arguments;
+        }
+
+        @Override
+        public String toArkTS() {
+            StringJoiner joiner = new StringJoiner(", ");
+            for (ArkTSExpression arg : arguments) {
+                joiner.add(arg.toArkTS());
+            }
+            return callee.toArkTS() + "(" + joiner + ")";
+        }
+    }
+
+    // --- Spread new expression ---
+
+    /**
+     * A new expression with spread arguments: new Ctor(a, ...args).
+     */
+    public static class SpreadNewExpression extends ArkTSExpression {
+        private final ArkTSExpression callee;
+        private final List<ArkTSExpression> arguments;
+
+        /**
+         * Constructs a spread new expression.
+         *
+         * @param callee the constructor expression
+         * @param arguments the argument expressions (may contain
+         *                  SpreadExpression elements)
+         */
+        public SpreadNewExpression(ArkTSExpression callee,
+                List<ArkTSExpression> arguments) {
+            this.callee = callee;
+            this.arguments = Collections.unmodifiableList(
+                    new ArrayList<>(arguments));
+        }
+
+        public ArkTSExpression getCallee() {
+            return callee;
+        }
+
+        public List<ArkTSExpression> getArguments() {
+            return arguments;
+        }
+
+        @Override
+        public String toArkTS() {
+            StringJoiner joiner = new StringJoiner(", ");
+            for (ArkTSExpression arg : arguments) {
+                joiner.add(arg.toArkTS());
+            }
+            return "new " + callee.toArkTS() + "(" + joiner + ")";
+        }
+    }
+
+    // --- Spread array expression ---
+
+    /**
+     * An array literal with spread elements: [1, ...arr, 2].
+     * Used when a mix of regular and spread elements appear.
+     */
+    public static class SpreadArrayExpression extends ArkTSExpression {
+        private final List<ArkTSExpression> elements;
+
+        /**
+         * Constructs a spread array expression.
+         *
+         * @param elements the element expressions (may contain
+         *                 SpreadExpression elements)
+         */
+        public SpreadArrayExpression(List<ArkTSExpression> elements) {
+            this.elements = Collections.unmodifiableList(
+                    new ArrayList<>(elements));
+        }
+
+        public List<ArkTSExpression> getElements() {
+            return elements;
+        }
+
+        @Override
+        public String toArkTS() {
+            StringJoiner joiner = new StringJoiner(", ");
+            for (ArkTSExpression elem : elements) {
+                joiner.add(elem.toArkTS());
+            }
+            return "[" + joiner + "]";
+        }
+    }
+
+    // --- Spread object expression ---
+
+    /**
+     * An object literal with spread properties: { ...obj, key: val }.
+     * Supports mixing spread and regular properties.
+     */
+    public static class SpreadObjectExpression extends ArkTSExpression {
+        private final List<ArkTSExpression> properties;
+
+        /**
+         * Constructs a spread object expression.
+         *
+         * @param properties the property expressions (may be
+         *                   SpreadExpression for spreads, or
+         *                   ObjectProperty for key-value pairs)
+         */
+        public SpreadObjectExpression(List<ArkTSExpression> properties) {
+            this.properties = Collections.unmodifiableList(
+                    new ArrayList<>(properties));
+        }
+
+        public List<ArkTSExpression> getProperties() {
+            return properties;
+        }
+
+        @Override
+        public String toArkTS() {
+            StringJoiner joiner = new StringJoiner(", ");
+            for (ArkTSExpression prop : properties) {
+                joiner.add(prop.toArkTS());
+            }
+            return "{ " + joiner + " }";
+        }
+    }
+
     // --- Condition (ternary) ---
 
     /**

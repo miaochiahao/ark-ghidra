@@ -26,6 +26,18 @@ public class DecompilationContext {
     ArkTSExpression currentAccValue;
 
     /**
+     * Index of the rest parameter in the parameter list, or -1 if none.
+     * Detected by scanning instructions for COPYRESTARGS opcode.
+     */
+    int restParamIndex;
+
+    /**
+     * The register number that receives the rest parameter array,
+     * or -1 if not detected.
+     */
+    int restParamRegister;
+
+    /**
      * Accumulated warnings during decompilation.
      */
     final List<String> warnings;
@@ -49,6 +61,8 @@ public class DecompilationContext {
         this.numArgs = code != null ? (int) code.getNumArgs() : 0;
         this.isAsync = false;
         this.currentAccValue = null;
+        this.restParamIndex = -1;
+        this.restParamRegister = -1;
         this.loopContextStack = new ArrayList<>();
         this.warnings = new ArrayList<>();
     }

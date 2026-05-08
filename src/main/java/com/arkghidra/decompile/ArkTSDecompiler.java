@@ -115,6 +115,11 @@ public class ArkTSDecompiler {
         DecompilationContext ctx = new DecompilationContext(
                 method, code, proto, abcFile, cfg, instructions);
 
+        // Detect rest parameter from COPYRESTARGS instruction
+        int restParamIndex = detectRestParamIndex(instructions,
+                (int) code.getNumArgs());
+        ctx.restParamIndex = restParamIndex;
+
         List<ArkTSStatement> bodyStmts;
         try {
             bodyStmts = generateStatements(ctx);
@@ -136,7 +141,7 @@ public class ArkTSDecompiler {
         }
 
         return buildMethodSource(method, proto, code, bodyStmts,
-                abcFile);
+                abcFile, restParamIndex);
     }
 
     /**
@@ -490,13 +495,21 @@ public class ArkTSDecompiler {
     private String buildMethodSource(AbcMethod method, AbcProto proto,
             AbcCode code, List<ArkTSStatement> bodyStmts,
             AbcFile abcFile) {
+        return buildMethodSource(method, proto, code, bodyStmts,
+                abcFile, -1);
+    }
+
+    private String buildMethodSource(AbcMethod method, AbcProto proto,
+            AbcCode code, List<ArkTSStatement> bodyStmts,
+            AbcFile abcFile, int restParamIndex) {
         List<ArkTSStatement> filteredStmts =
                 filterTrivialReturnUndefined(bodyStmts);
 
         List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
                 MethodSignatureBuilder.buildParams(proto,
                         code.getNumArgs(),
-                        getDebugParamNames(method, abcFile));
+                        getDebugParamNames(method, abcFile),
+                        restParamIndex);
         String returnType = MethodSignatureBuilder.getReturnType(proto);
         ArkTSStatement body =
                 new ArkTSStatement.BlockStatement(filteredStmts);
@@ -528,6 +541,27 @@ public class ArkTSDecompiler {
     }
 
     // --- Resolver helpers ---
+
+    /**
+     * Detects the rest parameter index by scanning instructions for
+     * COPYRESTARGS. In Ark bytecode, COPYRESTARGS stores the rest
+     * arguments into a register. The rest parameter is the last
+     * parameter when this opcode is present.
+     *
+     * @param instructions the method instructions
+     * @param numArgs the number of declared arguments
+     * @return the rest parameter index, or -1 if no rest parameter
+     */
+    static int detectRestParamIndex(
+            List<ArkInstruction> instructions, int numArgs) {
+        for (ArkInstruction insn : instructions) {
+            if (insn.getOpcode() == ArkOpcodesCompat.COPYRESTARGS) {
+                // Rest parameter is the last parameter
+                return Math.max(0, numArgs - 1);
+            }
+        }
+        return -1;
+    }
 
     AbcProto resolveProto(AbcMethod method, AbcFile abcFile) {
         if (abcFile == null || method.getProtoIdx() < 0) {

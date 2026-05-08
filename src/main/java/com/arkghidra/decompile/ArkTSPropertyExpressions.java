@@ -229,12 +229,63 @@ public class ArkTSPropertyExpressions {
      * An array destructuring expression: [a, b, ...rest] = source.
      */
     public static class ArrayDestructuringExpression extends ArkTSExpression {
-        private final List<String> bindings;
+        private final List<ArrayBinding> bindings;
         private final String restBinding;
         private final ArkTSExpression source;
 
         /**
-         * Constructs an array destructuring expression.
+         * A single binding in an array destructuring pattern.
+         */
+        public static class ArrayBinding {
+            private final String name;
+            private final ArkTSExpression defaultValue;
+
+            /**
+             * Constructs an array binding without a default value.
+             *
+             * @param name the variable name
+             */
+            public ArrayBinding(String name) {
+                this.name = name;
+                this.defaultValue = null;
+            }
+
+            /**
+             * Constructs an array binding with a default value.
+             *
+             * @param name the variable name
+             * @param defaultValue the default value (may be null)
+             */
+            public ArrayBinding(String name,
+                    ArkTSExpression defaultValue) {
+                this.name = name;
+                this.defaultValue = defaultValue;
+            }
+
+            public String getName() {
+                return name;
+            }
+
+            public ArkTSExpression getDefaultValue() {
+                return defaultValue;
+            }
+
+            /**
+             * Returns the ArkTS source text for this binding.
+             *
+             * @return the binding string
+             */
+            public String toArkTS() {
+                if (defaultValue != null) {
+                    return name + " = " + defaultValue.toArkTS();
+                }
+                return name;
+            }
+        }
+
+        /**
+         * Constructs an array destructuring expression with simple
+         * string bindings (no defaults).
          *
          * @param bindings the variable names for positional bindings
          * @param restBinding the rest variable name (may be null)
@@ -242,13 +293,34 @@ public class ArkTSPropertyExpressions {
          */
         public ArrayDestructuringExpression(List<String> bindings,
                 String restBinding, ArkTSExpression source) {
+            List<ArrayBinding> converted = new ArrayList<>();
+            for (String b : bindings) {
+                converted.add(new ArrayBinding(b));
+            }
+            this.bindings = Collections.unmodifiableList(converted);
+            this.restBinding = restBinding;
+            this.source = source;
+        }
+
+        /**
+         * Constructs an array destructuring expression with structured
+         * bindings (supports defaults).
+         *
+         * @param bindings the array bindings
+         * @param restBinding the rest variable name (may be null)
+         * @param source the source expression being destructured
+         */
+        public ArrayDestructuringExpression(
+                List<ArrayBinding> bindings,
+                String restBinding, ArkTSExpression source,
+                boolean useStructuredBindings) {
             this.bindings = Collections.unmodifiableList(
                     new ArrayList<>(bindings));
             this.restBinding = restBinding;
             this.source = source;
         }
 
-        public List<String> getBindings() {
+        public List<ArrayBinding> getBindings() {
             return bindings;
         }
 
@@ -268,7 +340,7 @@ public class ArkTSPropertyExpressions {
                 if (i > 0) {
                     sb.append(", ");
                 }
-                sb.append(bindings.get(i));
+                sb.append(bindings.get(i).toArkTS());
             }
             if (restBinding != null) {
                 if (!bindings.isEmpty()) {
@@ -338,9 +410,10 @@ public class ArkTSPropertyExpressions {
         public static class DestructuringBinding {
             private final String property;
             private final String alias;
+            private final ArkTSExpression defaultValue;
 
             /**
-             * Constructs a destructuring binding.
+             * Constructs a destructuring binding without a default value.
              *
              * @param property the property name
              * @param alias the alias (may be null if same as property)
@@ -348,6 +421,21 @@ public class ArkTSPropertyExpressions {
             public DestructuringBinding(String property, String alias) {
                 this.property = property;
                 this.alias = alias;
+                this.defaultValue = null;
+            }
+
+            /**
+             * Constructs a destructuring binding with a default value.
+             *
+             * @param property the property name
+             * @param alias the alias (may be null if same as property)
+             * @param defaultValue the default value expression (may be null)
+             */
+            public DestructuringBinding(String property, String alias,
+                    ArkTSExpression defaultValue) {
+                this.property = property;
+                this.alias = alias;
+                this.defaultValue = defaultValue;
             }
 
             public String getProperty() {
@@ -358,16 +446,26 @@ public class ArkTSPropertyExpressions {
                 return alias;
             }
 
+            public ArkTSExpression getDefaultValue() {
+                return defaultValue;
+            }
+
             /**
              * Returns the ArkTS source text for this binding.
              *
              * @return the binding string
              */
             public String toArkTS() {
+                StringBuilder sb = new StringBuilder();
                 if (alias != null && !alias.equals(property)) {
-                    return property + ": " + alias;
+                    sb.append(property).append(": ").append(alias);
+                } else {
+                    sb.append(property);
                 }
-                return property;
+                if (defaultValue != null) {
+                    sb.append(" = ").append(defaultValue.toArkTS());
+                }
+                return sb.toString();
             }
         }
     }

@@ -37,6 +37,7 @@ public class ArkTSDeclarations {
         public static class FunctionParam {
             private final String name;
             private final String typeName;
+            private final boolean isRest;
 
             /**
              * Constructs a function parameter.
@@ -45,8 +46,21 @@ public class ArkTSDeclarations {
              * @param typeName the type annotation (may be null)
              */
             public FunctionParam(String name, String typeName) {
+                this(name, typeName, false);
+            }
+
+            /**
+             * Constructs a function parameter with rest flag.
+             *
+             * @param name the parameter name
+             * @param typeName the type annotation (may be null)
+             * @param isRest true if this is a rest parameter
+             */
+            public FunctionParam(String name, String typeName,
+                    boolean isRest) {
                 this.name = name;
                 this.typeName = typeName;
+                this.isRest = isRest;
             }
 
             public String getName() {
@@ -57,10 +71,24 @@ public class ArkTSDeclarations {
                 return typeName;
             }
 
+            public boolean isRest() {
+                return isRest;
+            }
+
             @Override
             public String toString() {
-                if (typeName != null) {
-                    return name + ": " + typeName;
+                String resolvedType = typeName;
+                if (isRest && typeName == null) {
+                    resolvedType = "any[]";
+                }
+                if (isRest) {
+                    if (resolvedType != null) {
+                        return "..." + name + ": " + resolvedType;
+                    }
+                    return "..." + name;
+                }
+                if (resolvedType != null) {
+                    return name + ": " + resolvedType;
                 }
                 return name;
             }
@@ -477,6 +505,422 @@ public class ArkTSDeclarations {
         public String toArkTS(int indent) {
             StringJoiner paramJoiner = new StringJoiner(", ");
             for (FunctionDeclaration.FunctionParam p : params) {
+                paramJoiner.add(p.toString());
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.append(indent(indent)).append("constructor(")
+                    .append(paramJoiner).append(") ");
+            if (body instanceof ArkTSStatement.BlockStatement) {
+                sb.append(((ArkTSStatement.BlockStatement) body)
+                        .toArkTS(indent));
+            } else {
+                sb.append("{\n");
+                sb.append(body.toArkTS(indent + 1)).append("\n");
+                sb.append(indent(indent)).append("}");
+            }
+            return sb.toString();
+        }
+    }
+
+    // --- Getter declaration ---
+
+    /**
+     * A getter accessor declaration within a class body.
+     */
+    public static class GetterDeclaration extends ArkTSStatement {
+        private final String name;
+        private final String returnType;
+        private final ArkTSStatement body;
+        private final boolean isStatic;
+        private final String accessModifier;
+
+        /**
+         * Constructs a getter declaration.
+         *
+         * @param name the property name
+         * @param returnType the return type (may be null)
+         * @param body the getter body
+         * @param isStatic true if static
+         * @param accessModifier the access modifier (may be null)
+         */
+        public GetterDeclaration(String name, String returnType,
+                ArkTSStatement body, boolean isStatic,
+                String accessModifier) {
+            this.name = name;
+            this.returnType = returnType;
+            this.body = body;
+            this.isStatic = isStatic;
+            this.accessModifier = accessModifier;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public String getReturnType() {
+            return returnType;
+        }
+
+        public ArkTSStatement getBody() {
+            return body;
+        }
+
+        public boolean isStatic() {
+            return isStatic;
+        }
+
+        public String getAccessModifier() {
+            return accessModifier;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(indent(indent));
+            if (accessModifier != null) {
+                sb.append(accessModifier).append(" ");
+            }
+            if (isStatic) {
+                sb.append("static ");
+            }
+            sb.append("get ").append(name).append("()");
+            if (returnType != null) {
+                sb.append(": ").append(returnType);
+            }
+            sb.append(" ");
+            if (body instanceof ArkTSStatement.BlockStatement) {
+                sb.append(((ArkTSStatement.BlockStatement) body)
+                        .toArkTS(indent));
+            } else {
+                sb.append("{\n");
+                sb.append(body.toArkTS(indent + 1)).append("\n");
+                sb.append(indent(indent)).append("}");
+            }
+            return sb.toString();
+        }
+    }
+
+    // --- Setter declaration ---
+
+    /**
+     * A setter accessor declaration within a class body.
+     */
+    public static class SetterDeclaration extends ArkTSStatement {
+        private final String name;
+        private final FunctionDeclaration.FunctionParam valueParam;
+        private final ArkTSStatement body;
+        private final boolean isStatic;
+        private final String accessModifier;
+
+        /**
+         * Constructs a setter declaration.
+         *
+         * @param name the property name
+         * @param valueParam the setter value parameter
+         * @param body the setter body
+         * @param isStatic true if static
+         * @param accessModifier the access modifier (may be null)
+         */
+        public SetterDeclaration(String name,
+                FunctionDeclaration.FunctionParam valueParam,
+                ArkTSStatement body, boolean isStatic,
+                String accessModifier) {
+            this.name = name;
+            this.valueParam = valueParam;
+            this.body = body;
+            this.isStatic = isStatic;
+            this.accessModifier = accessModifier;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public FunctionDeclaration.FunctionParam getValueParam() {
+            return valueParam;
+        }
+
+        public ArkTSStatement getBody() {
+            return body;
+        }
+
+        public boolean isStatic() {
+            return isStatic;
+        }
+
+        public String getAccessModifier() {
+            return accessModifier;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(indent(indent));
+            if (accessModifier != null) {
+                sb.append(accessModifier).append(" ");
+            }
+            if (isStatic) {
+                sb.append("static ");
+            }
+            sb.append("set ").append(name).append("(");
+            if (valueParam != null) {
+                sb.append(valueParam);
+            }
+            sb.append(") ");
+            if (body instanceof ArkTSStatement.BlockStatement) {
+                sb.append(((ArkTSStatement.BlockStatement) body)
+                        .toArkTS(indent));
+            } else {
+                sb.append("{\n");
+                sb.append(body.toArkTS(indent + 1)).append("\n");
+                sb.append(indent(indent)).append("}");
+            }
+            return sb.toString();
+        }
+    }
+
+    // --- Abstract method declaration ---
+
+    /**
+     * An abstract method declaration within a class body.
+     */
+    public static class AbstractMethodDeclaration extends ArkTSStatement {
+        private final String name;
+        private final List<FunctionDeclaration.FunctionParam> params;
+        private final String returnType;
+        private final String accessModifier;
+
+        /**
+         * Constructs an abstract method declaration.
+         *
+         * @param name the method name
+         * @param params the parameters
+         * @param returnType the return type (may be null)
+         * @param accessModifier the access modifier (may be null)
+         */
+        public AbstractMethodDeclaration(String name,
+                List<FunctionDeclaration.FunctionParam> params,
+                String returnType, String accessModifier) {
+            this.name = name;
+            this.params = Collections.unmodifiableList(
+                    new ArrayList<>(params));
+            this.returnType = returnType;
+            this.accessModifier = accessModifier;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public List<FunctionDeclaration.FunctionParam> getParams() {
+            return params;
+        }
+
+        public String getReturnType() {
+            return returnType;
+        }
+
+        public String getAccessModifier() {
+            return accessModifier;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(indent(indent));
+            if (accessModifier != null) {
+                sb.append(accessModifier).append(" ");
+            }
+            sb.append("abstract ");
+            StringJoiner paramJoiner = new StringJoiner(", ");
+            for (FunctionDeclaration.FunctionParam p : params) {
+                paramJoiner.add(p.toString());
+            }
+            sb.append(name).append("(").append(paramJoiner).append(")");
+            if (returnType != null) {
+                sb.append(": ").append(returnType);
+            }
+            sb.append(";");
+            return sb.toString();
+        }
+    }
+
+    // --- Static block declaration ---
+
+    /**
+     * A static initialization block within a class body.
+     */
+    public static class StaticBlockDeclaration extends ArkTSStatement {
+        private final ArkTSStatement body;
+
+        /**
+         * Constructs a static block declaration.
+         *
+         * @param body the static block body
+         */
+        public StaticBlockDeclaration(ArkTSStatement body) {
+            this.body = body;
+        }
+
+        public ArkTSStatement getBody() {
+            return body;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(indent(indent)).append("static ");
+            if (body instanceof ArkTSStatement.BlockStatement) {
+                ArkTSStatement.BlockStatement block =
+                        (ArkTSStatement.BlockStatement) body;
+                if (block.getBody().isEmpty()) {
+                    sb.append("{ }");
+                } else {
+                    sb.append("{\n");
+                    for (ArkTSStatement stmt : block.getBody()) {
+                        sb.append(stmt.toArkTS(indent + 1)).append("\n");
+                    }
+                    sb.append(indent(indent)).append("}");
+                }
+            } else {
+                sb.append("{\n");
+                sb.append(body.toArkTS(indent + 1)).append("\n");
+                sb.append(indent(indent)).append("}");
+            }
+            return sb.toString();
+        }
+    }
+
+    // --- Decorated method declaration ---
+
+    /**
+     * A class method declaration with decorator annotations.
+     */
+    public static class DecoratedMethodDeclaration extends ArkTSStatement {
+        private final List<String> decorators;
+        private final ClassMethodDeclaration method;
+
+        /**
+         * Constructs a decorated method declaration.
+         *
+         * @param decorators the decorator names
+         * @param method the underlying method declaration
+         */
+        public DecoratedMethodDeclaration(List<String> decorators,
+                ClassMethodDeclaration method) {
+            this.decorators = Collections.unmodifiableList(
+                    new ArrayList<>(decorators));
+            this.method = method;
+        }
+
+        public List<String> getDecorators() {
+            return decorators;
+        }
+
+        public ClassMethodDeclaration getMethod() {
+            return method;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringBuilder sb = new StringBuilder();
+            for (String dec : decorators) {
+                sb.append(indent(indent)).append("@").append(dec)
+                        .append("\n");
+            }
+            sb.append(method.toArkTS(indent));
+            return sb.toString();
+        }
+    }
+
+    // --- Constructor declaration with parameter properties ---
+
+    /**
+     * A constructor declaration that supports parameter properties.
+     *
+     * <p>Parameters with access modifiers (public/private/protected/readonly)
+     * are rendered inline in the constructor signature rather than as separate
+     * field declarations.
+     */
+    public static class ConstructorWithPropertiesDeclaration
+            extends ArkTSStatement {
+        private final List<ConstructorParam> params;
+        private final ArkTSStatement body;
+
+        /**
+         * A constructor parameter, potentially with a property modifier.
+         */
+        public static class ConstructorParam {
+            private final String name;
+            private final String typeName;
+            private final String propertyModifier;
+
+            /**
+             * Constructs a constructor parameter.
+             *
+             * @param name the parameter name
+             * @param typeName the type annotation (may be null)
+             * @param propertyModifier the property modifier
+             *        ("public", "private", "protected", "readonly", or null)
+             */
+            public ConstructorParam(String name, String typeName,
+                    String propertyModifier) {
+                this.name = name;
+                this.typeName = typeName;
+                this.propertyModifier = propertyModifier;
+            }
+
+            public String getName() {
+                return name;
+            }
+
+            public String getTypeName() {
+                return typeName;
+            }
+
+            public String getPropertyModifier() {
+                return propertyModifier;
+            }
+
+            @Override
+            public String toString() {
+                StringBuilder sb = new StringBuilder();
+                if (propertyModifier != null) {
+                    sb.append(propertyModifier).append(" ");
+                }
+                sb.append(name);
+                if (typeName != null) {
+                    sb.append(": ").append(typeName);
+                }
+                return sb.toString();
+            }
+        }
+
+        /**
+         * Constructs a constructor declaration with parameter properties.
+         *
+         * @param params the constructor parameters (with property modifiers)
+         * @param body the constructor body
+         */
+        public ConstructorWithPropertiesDeclaration(
+                List<ConstructorParam> params, ArkTSStatement body) {
+            this.params = Collections.unmodifiableList(
+                    new ArrayList<>(params));
+            this.body = body;
+        }
+
+        public List<ConstructorParam> getParams() {
+            return params;
+        }
+
+        public ArkTSStatement getBody() {
+            return body;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringJoiner paramJoiner = new StringJoiner(", ");
+            for (ConstructorParam p : params) {
                 paramJoiner.add(p.toString());
             }
             StringBuilder sb = new StringBuilder();

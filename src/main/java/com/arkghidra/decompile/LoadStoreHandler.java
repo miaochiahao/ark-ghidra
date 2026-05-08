@@ -67,7 +67,7 @@ class LoadStoreHandler {
             ArkTSStatement superCall =
                     new ArkTSControlFlow.SuperCallStatement(args);
             return new InstructionHandler.StatementResult(superCall,
-                    new ArkTSExpression.CallExpression(
+                    new ArkTSAccessExpressions.SpreadCallExpression(
                             new ArkTSExpression.VariableExpression("super"),
                             args));
         }
@@ -261,9 +261,12 @@ class LoadStoreHandler {
         }
         if (opcode == ArkOpcodesCompat.COPYRESTARGS) {
             int restIdx = (int) operands.get(0).getValue();
+            String restName = "rest_" + restIdx;
+            if (ctx != null && ctx.restParamIndex >= 0) {
+                restName = "param_" + ctx.restParamIndex;
+            }
             return new InstructionHandler.StatementResult(null,
-                    new ArkTSExpression.VariableExpression(
-                            "rest_" + restIdx));
+                    new ArkTSExpression.VariableExpression(restName));
         }
 
         // --- Iterator result ---
@@ -345,12 +348,21 @@ class LoadStoreHandler {
             applyArgs.add(new ArkTSExpression.VariableExpression(
                     "v" + (firstReg + a)));
         }
-        ArkTSExpression spreadArg =
+        // When apply has a single array arg, emit fn(...args)
+        if (applyArgs.size() == 1) {
+            ArkTSExpression spreadArg =
+                    new ArkTSAccessExpressions.SpreadExpression(applyArgs.get(0));
+            return new InstructionHandler.StatementResult(null,
+                    new ArkTSAccessExpressions.SpreadCallExpression(func,
+                            List.of(spreadArg)));
+        }
+        // Multiple args: fn(...[v0, v1, ...])
+        ArkTSExpression spreadArr =
                 new ArkTSAccessExpressions.ArrayLiteralExpression(applyArgs);
         return new InstructionHandler.StatementResult(null,
-                new ArkTSExpression.CallExpression(func,
+                new ArkTSAccessExpressions.SpreadCallExpression(func,
                         List.of(new ArkTSAccessExpressions
-                                .SpreadExpression(spreadArg))));
+                                .SpreadExpression(spreadArr))));
     }
 
     private static InstructionHandler.StatementResult handleNewObjApply(
@@ -365,12 +377,21 @@ class LoadStoreHandler {
             applyArgs.add(new ArkTSExpression.VariableExpression(
                     "v" + (firstReg + a)));
         }
-        ArkTSExpression spreadArg =
+        // When apply has a single arg, emit new Ctor(...args)
+        if (applyArgs.size() == 1) {
+            ArkTSExpression spreadArg =
+                    new ArkTSAccessExpressions.SpreadExpression(applyArgs.get(0));
+            return new InstructionHandler.StatementResult(null,
+                    new ArkTSAccessExpressions.SpreadNewExpression(ctor,
+                            List.of(spreadArg)));
+        }
+        // Multiple args: new Ctor(...[v0, v1, ...])
+        ArkTSExpression spreadArr =
                 new ArkTSAccessExpressions.ArrayLiteralExpression(applyArgs);
         return new InstructionHandler.StatementResult(null,
-                new ArkTSExpression.NewExpression(ctor,
+                new ArkTSAccessExpressions.SpreadNewExpression(ctor,
                         List.of(new ArkTSAccessExpressions
-                                .SpreadExpression(spreadArg))));
+                                .SpreadExpression(spreadArr))));
     }
 
     private static InstructionHandler.StatementResult handleLdSuperByValue(

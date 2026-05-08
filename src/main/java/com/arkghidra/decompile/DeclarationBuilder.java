@@ -54,6 +54,10 @@ class DeclarationBuilder {
 
         List<ArkTSStatement> members = new ArrayList<>();
 
+        boolean isAbstractClass =
+                (abcClass.getAccessFlags()
+                        & AbcAccessFlags.ACC_ABSTRACT) != 0;
+
         for (AbcField field : abcClass.getFields()) {
             ArkTSStatement fieldDecl = buildFieldDeclaration(
                     field, abcFile);
@@ -67,8 +71,8 @@ class DeclarationBuilder {
                 constructorDecl = buildMethodDeclaration(
                         method, abcFile, className);
             } else {
-                ArkTSStatement methodDecl = buildMethodDeclaration(
-                        method, abcFile, className);
+                ArkTSStatement methodDecl = buildMethodOrAccessor(
+                        method, abcFile, className, isAbstractClass);
                 if (methodDecl != null) {
                     methodDecls.add(methodDecl);
                 }
@@ -255,6 +259,235 @@ class DeclarationBuilder {
         return enums;
     }
 
+    /**
+     * Builds a method declaration, getter, setter, abstract method,
+     * decorated method, or static block as appropriate.
+     *
+     * @param method the ABC method
+     * @param abcFile the parent ABC file
+     * @param className the enclosing class name
+     * @param isAbstractClass true if the enclosing class is abstract
+     * @return the declaration statement, or null
+     */
+    ArkTSStatement buildMethodOrAccessor(AbcMethod method,
+            AbcFile abcFile, String className,
+            boolean isAbstractClass) {
+        String methodName = method.getName();
+
+        // Check for getter pattern: method name starts with "get_"
+        // or the method is annotated as a getter
+        if (isGetterMethod(methodName)) {
+            return buildGetterDeclaration(method, abcFile);
+        }
+
+        // Check for setter pattern: method name starts with "set_"
+        if (isSetterMethod(methodName)) {
+            return buildSetterDeclaration(method, abcFile);
+        }
+
+        // Check for static initialization block
+        if (isStaticInitMethod(methodName)) {
+            return buildStaticBlockDeclaration(method, abcFile);
+        }
+
+        // Check for abstract method
+        if (isAbstractClass
+                && (method.getAccessFlags()
+                        & AbcAccessFlags.ACC_NATIVE) != 0) {
+            return buildAbstractMethodDeclaration(method, abcFile);
+        }
+
+        // Build the regular method
+        ArkTSStatement methodDecl = buildMethodDeclaration(
+                method, abcFile, className);
+        if (methodDecl == null) {
+            return null;
+        }
+
+        // Check for method decorators
+        List<String> methodDecorators =
+                detectMethodDecorators(method, abcFile);
+        if (!methodDecorators.isEmpty()
+                && methodDecl
+                        instanceof ArkTSDeclarations.ClassMethodDeclaration) {
+            return new ArkTSDeclarations.DecoratedMethodDeclaration(
+                    methodDecorators,
+                    (ArkTSDeclarations.ClassMethodDeclaration) methodDecl);
+        }
+
+        return methodDecl;
+    }
+
+    /**
+     * Builds a getter declaration from an ABC method.
+     *
+     * @param method the ABC method
+     * @param abcFile the parent ABC file
+     * @return the getter declaration statement
+     */
+    private ArkTSStatement buildGetterDeclaration(AbcMethod method,
+            AbcFile abcFile) {
+        AbcCode code = abcFile != null
+                ? abcFile.getCodeForMethod(method) : null;
+        AbcProto proto = decompiler.resolveProto(method, abcFile);
+        String propertyName = extractAccessorPropertyName(method.getName());
+        String returnType = MethodSignatureBuilder.getReturnType(proto);
+        boolean isStatic = (method.getAccessFlags()
+                & AbcAccessFlags.ACC_STATIC) != 0;
+        String accessModifier = accessFlagsToModifier(
+                method.getAccessFlags());
+
+        List<ArkTSStatement> bodyStmts = Collections.emptyList();
+        if (code != null && code.getCodeSize() > 0) {
+            try {
+                bodyStmts = decompiler.decompileMethodBody(
+                        method, code, abcFile);
+            } catch (Exception e) {
+                bodyStmts = new ArrayList<>();
+                bodyStmts.add(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression(
+                                "/* decompilation failed: "
+                                        + e.getMessage() + " */")));
+            }
+        }
+        ArkTSStatement body =
+                new ArkTSStatement.BlockStatement(bodyStmts);
+
+        return new ArkTSDeclarations.GetterDeclaration(
+                propertyName, returnType, body, isStatic, accessModifier);
+    }
+
+    /**
+     * Builds a setter declaration from an ABC method.
+     *
+     * @param method the ABC method
+     * @param abcFile the parent ABC file
+     * @return the setter declaration statement
+     */
+    private ArkTSStatement buildSetterDeclaration(AbcMethod method,
+            AbcFile abcFile) {
+        AbcCode code = abcFile != null
+                ? abcFile.getCodeForMethod(method) : null;
+        AbcProto proto = decompiler.resolveProto(method, abcFile);
+        String propertyName = extractAccessorPropertyName(method.getName());
+        boolean isStatic = (method.getAccessFlags()
+                & AbcAccessFlags.ACC_STATIC) != 0;
+        String accessModifier = accessFlagsToModifier(
+                method.getAccessFlags());
+
+        String valueTypeName = null;
+        if (proto != null && proto.getShorty().size() > 1) {
+            valueTypeName = MethodSignatureBuilder.getReturnType(proto);
+        }
+
+        ArkTSDeclarations.FunctionDeclaration.FunctionParam valueParam =
+                new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
+                        "value", valueTypeName);
+
+        List<ArkTSStatement> bodyStmts = Collections.emptyList();
+        if (code != null && code.getCodeSize() > 0) {
+            try {
+                bodyStmts = decompiler.decompileMethodBody(
+                        method, code, abcFile);
+            } catch (Exception e) {
+                bodyStmts = new ArrayList<>();
+                bodyStmts.add(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression(
+                                "/* decompilation failed: "
+                                        + e.getMessage() + " */")));
+            }
+        }
+        ArkTSStatement body =
+                new ArkTSStatement.BlockStatement(bodyStmts);
+
+        return new ArkTSDeclarations.SetterDeclaration(
+                propertyName, valueParam, body, isStatic, accessModifier);
+    }
+
+    /**
+     * Builds a static block declaration from an ABC method.
+     *
+     * @param method the ABC method
+     * @param abcFile the parent ABC file
+     * @return the static block declaration statement
+     */
+    private ArkTSStatement buildStaticBlockDeclaration(AbcMethod method,
+            AbcFile abcFile) {
+        AbcCode code = abcFile != null
+                ? abcFile.getCodeForMethod(method) : null;
+
+        List<ArkTSStatement> bodyStmts = Collections.emptyList();
+        if (code != null && code.getCodeSize() > 0) {
+            try {
+                bodyStmts = decompiler.decompileMethodBody(
+                        method, code, abcFile);
+            } catch (Exception e) {
+                bodyStmts = new ArrayList<>();
+                bodyStmts.add(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression(
+                                "/* decompilation failed: "
+                                        + e.getMessage() + " */")));
+            }
+        }
+        ArkTSStatement body =
+                new ArkTSStatement.BlockStatement(bodyStmts);
+        return new ArkTSDeclarations.StaticBlockDeclaration(body);
+    }
+
+    /**
+     * Builds an abstract method declaration from an ABC method.
+     *
+     * @param method the ABC method
+     * @param abcFile the parent ABC file
+     * @return the abstract method declaration statement
+     */
+    private ArkTSStatement buildAbstractMethodDeclaration(
+            AbcMethod method, AbcFile abcFile) {
+        AbcProto proto = decompiler.resolveProto(method, abcFile);
+        AbcCode code = abcFile != null
+                ? abcFile.getCodeForMethod(method) : null;
+
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                MethodSignatureBuilder.buildParams(proto,
+                        code != null ? code.getNumArgs() : 0,
+                        decompiler.getDebugParamNames(method, abcFile));
+        String returnType = MethodSignatureBuilder.getReturnType(proto);
+        String accessModifier = accessFlagsToModifier(
+                method.getAccessFlags());
+
+        return new ArkTSDeclarations.AbstractMethodDeclaration(
+                method.getName(), params, returnType, accessModifier);
+    }
+
+    /**
+     * Detects decorators for a method from annotations.
+     *
+     * @param method the ABC method
+     * @param abcFile the parent ABC file
+     * @return the list of decorator strings
+     */
+    private List<String> detectMethodDecorators(AbcMethod method,
+            AbcFile abcFile) {
+        List<String> decorators = new ArrayList<>();
+        if (abcFile == null) {
+            return decorators;
+        }
+        List<AbcAnnotation> annotations =
+                abcFile.getAnnotationsForMethod(method.getOffset());
+        for (AbcAnnotation ann : annotations) {
+            String simpleName = ann.getSimpleTypeName();
+            if (!simpleName.isEmpty()
+                    && !decorators.contains(simpleName)) {
+                if (ann.getElements().isEmpty()) {
+                    decorators.add(simpleName);
+                } else {
+                    decorators.add(ann.toDecoratorString());
+                }
+            }
+        }
+        return decorators;
+    }
+
     // --- Class helpers ---
 
     boolean isConstructorMethod(AbcMethod method, String className) {
@@ -408,5 +641,58 @@ class DeclarationBuilder {
             return rawName.substring(lastSlash + 1);
         }
         return rawName;
+    }
+
+    /**
+     * Returns true if the method name indicates a getter accessor.
+     * Getter methods in Ark bytecode are named "get_PropertyName".
+     *
+     * @param methodName the method name
+     * @return true if this is a getter
+     */
+    static boolean isGetterMethod(String methodName) {
+        return methodName != null
+                && methodName.startsWith("get_")
+                && methodName.length() > 4;
+    }
+
+    /**
+     * Returns true if the method name indicates a setter accessor.
+     * Setter methods in Ark bytecode are named "set_PropertyName".
+     *
+     * @param methodName the method name
+     * @return true if this is a setter
+     */
+    static boolean isSetterMethod(String methodName) {
+        return methodName != null
+                && methodName.startsWith("set_")
+                && methodName.length() > 4;
+    }
+
+    /**
+     * Returns true if the method name indicates a static initialization
+     * block. Static init methods in Ark bytecode are named
+     * "&lt;static_init&gt;" or "&lt;clinit&gt;".
+     *
+     * @param methodName the method name
+     * @return true if this is a static init block
+     */
+    static boolean isStaticInitMethod(String methodName) {
+        return "<static_init>".equals(methodName)
+                || "<clinit>".equals(methodName);
+    }
+
+    /**
+     * Extracts the property name from an accessor method name.
+     * "get_value" becomes "value", "set_name" becomes "name".
+     *
+     * @param accessorName the accessor method name
+     * @return the property name
+     */
+    static String extractAccessorPropertyName(String accessorName) {
+        if (accessorName != null && accessorName.length() > 4) {
+            return accessorName.substring(4);
+        }
+        return accessorName;
     }
 }

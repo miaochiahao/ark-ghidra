@@ -68,6 +68,10 @@ class OperatorHandler {
         if (expr instanceof ArkTSExpression.CallExpression) {
             return null;
         }
+        if (expr instanceof ArkTSAccessExpressions
+                .TemplateLiteralExpression) {
+            return "string";
+        }
         if (expr instanceof ArkTSExpression.NewExpression) {
             return null;
         }

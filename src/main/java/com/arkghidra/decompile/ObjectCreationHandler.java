@@ -67,8 +67,15 @@ class ObjectCreationHandler {
         if (accValue == null) {
             return null;
         }
+        if (accValue instanceof ArkTSAccessExpressions
+                .TemplateLiteralExpression) {
+            return accValue;
+        }
         List<ArkTSExpression> parts = new ArrayList<>();
         flattenAddChain(accValue, parts);
+        if (parts.size() < 2) {
+            return accValue;
+        }
         List<String> quasis = new ArrayList<>();
         List<ArkTSExpression> expressions = new ArrayList<>();
         buildTemplateFromParts(parts, quasis, expressions);
@@ -98,7 +105,29 @@ class ObjectCreationHandler {
                 return;
             }
         }
+        if (expr instanceof ArkTSAccessExpressions
+                .TemplateLiteralExpression) {
+            flattenTemplateLiteral(
+                    (ArkTSAccessExpressions.TemplateLiteralExpression) expr,
+                    parts);
+            return;
+        }
         parts.add(expr);
+    }
+
+    private void flattenTemplateLiteral(
+            ArkTSAccessExpressions.TemplateLiteralExpression tmpl,
+            List<ArkTSExpression> parts) {
+        List<String> quasis = tmpl.getQuasis();
+        List<ArkTSExpression> exprs = tmpl.getExpressions();
+        for (int i = 0; i < quasis.size(); i++) {
+            String quasi = quasis.get(i);
+            parts.add(new ArkTSExpression.LiteralExpression(quasi,
+                    ArkTSExpression.LiteralExpression.LiteralKind.STRING));
+            if (i < exprs.size()) {
+                parts.add(exprs.get(i));
+            }
+        }
     }
 
     private void buildTemplateFromParts(List<ArkTSExpression> parts,
@@ -131,12 +160,41 @@ class ObjectCreationHandler {
 
     // --- Array destructuring detection ---
 
-    ArkTSStatement tryDetectArrayDestructuring(
-            List<ArkInstruction> instructions, int startIndex,
-            DecompilationContext ctx, Set<String> declaredVars,
-            List<ArkTSStatement> stmts) {
+    /**
+     * Result holder for destructuring detection, containing the number
+     * of instructions consumed and the resulting statement.
+     */
+    static class DestructuringResult {
+        final int instructionsConsumed;
+        final ArkTSStatement statement;
 
-        List<String> bindings = new ArrayList<>();
+        DestructuringResult(int consumed, ArkTSStatement statement) {
+            this.instructionsConsumed = consumed;
+            this.statement = statement;
+        }
+    }
+
+    /**
+     * Attempts to detect an array destructuring pattern starting at
+     * the given instruction index within a basic block.
+     *
+     * <p>Pattern: lda srcReg; ldobjbyindex imm, idx; sta dstReg
+     * repeated with consecutive indices from the same source register.
+     * After all positional bindings, a rest element may follow via
+     * createarraywithbuffer/starrayspread or similar patterns.
+     *
+     * @param instructions the instruction list for the block
+     * @param startIndex the index to start scanning from
+     * @param ctx the decompilation context
+     * @param declaredVars the set of already-declared variables
+     * @return a DestructuringResult if pattern found, null otherwise
+     */
+    DestructuringResult tryDetectArrayDestructuringInBlock(
+            List<ArkInstruction> instructions, int startIndex,
+            DecompilationContext ctx, Set<String> declaredVars) {
+
+        List<ArkTSPropertyExpressions.ArrayDestructuringExpression
+                .ArrayBinding> bindings = new ArrayList<>();
         String restBinding = null;
         String sourceVar = null;
         int consecutiveIdx = 0;
@@ -151,6 +209,7 @@ class ObjectCreationHandler {
                 continue;
             }
 
+            // Main pattern: lda src; ldobjbyindex imm, idx; sta dst
             if (opcode == ArkOpcodesCompat.LDA
                     && scanIdx + 2 < instructions.size()) {
                 ArkInstruction nextInsn = instructions.get(scanIdx + 1);
@@ -175,11 +234,33 @@ class ObjectCreationHandler {
 
                     if (currentSource.equals(sourceVar)
                             && index == consecutiveIdx) {
-                        bindings.add(targetVar);
+                        bindings.add(
+                                new ArkTSPropertyExpressions
+                                        .ArrayDestructuringExpression
+                                        .ArrayBinding(targetVar));
                         declaredVars.add(targetVar);
                         consecutiveIdx++;
                         scanIdx += 3;
                         continue;
+                    }
+                }
+
+                // Rest element pattern: after positional bindings,
+                // look for spread/slice pattern into a rest variable.
+                if (bindings.size() >= 1 && sourceVar != null
+                        && restBinding == null) {
+                    int restResult = tryDetectRestElement(
+                            instructions, scanIdx, sourceVar,
+                            consecutiveIdx);
+                    if (restResult >= 0) {
+                        String restVar = findRestTarget(
+                                instructions, scanIdx, restResult);
+                        if (restVar != null) {
+                            restBinding = restVar;
+                            declaredVars.add(restVar);
+                            scanIdx += restResult;
+                            continue;
+                        }
                     }
                 }
             }
@@ -192,19 +273,84 @@ class ObjectCreationHandler {
             ArkTSExpression destrExpr =
                     new ArkTSPropertyExpressions
                             .ArrayDestructuringExpression(
-                            bindings, restBinding, source);
-            return new ArkTSTypeDeclarations.DestructuringDeclaration(
-                    "const", destrExpr);
+                            bindings, restBinding, source, true);
+            ArkTSStatement stmt =
+                    new ArkTSTypeDeclarations.DestructuringDeclaration(
+                            "const", destrExpr);
+            return new DestructuringResult(
+                    scanIdx - startIndex, stmt);
+        }
+        return null;
+    }
+
+    /**
+     * Attempts to detect a rest element pattern after positional
+     * array destructuring bindings.
+     *
+     * <p>Looks for patterns where a spread or slice operation
+     * captures the remaining elements after positional bindings.
+     *
+     * @return number of instructions consumed, or -1 if not detected
+     */
+    private int tryDetectRestElement(
+            List<ArkInstruction> instructions, int scanIdx,
+            String sourceVar, int startIdx) {
+        if (scanIdx + 2 < instructions.size()) {
+            ArkInstruction insn = instructions.get(scanIdx);
+            ArkInstruction nextInsn = instructions.get(scanIdx + 1);
+            ArkInstruction afterNext = instructions.get(scanIdx + 2);
+
+            // Pattern: lda srcReg; some_spread_op; sta restReg
+            if (insn.getOpcode() == ArkOpcodesCompat.LDA
+                    && afterNext.getOpcode() == ArkOpcodesCompat.STA) {
+                int midOpcode = nextInsn.getOpcode();
+                if (midOpcode == ArkOpcodesCompat.STARRAYSPREAD
+                        || midOpcode
+                                == ArkOpcodesCompat.CREATEARRAYWITHBUFFER
+                        || midOpcode
+                                == ArkOpcodesCompat.CREATEEMPTYARRAY) {
+                    return 3;
+                }
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Finds the target variable from the last STA in a rest pattern.
+     */
+    private String findRestTarget(List<ArkInstruction> instructions,
+            int startIdx, int count) {
+        for (int i = startIdx; i < startIdx + count
+                && i < instructions.size(); i++) {
+            ArkInstruction insn = instructions.get(i);
+            if (insn.getOpcode() == ArkOpcodesCompat.STA) {
+                int reg = (int) insn.getOperands().get(0).getValue();
+                return "v" + reg;
+            }
         }
         return null;
     }
 
     // --- Object destructuring detection ---
 
-    ArkTSStatement tryDetectObjectDestructuring(
+    /**
+     * Attempts to detect an object destructuring pattern starting at
+     * the given instruction index.
+     *
+     * <p>Pattern: lda srcReg; ldobjbyname imm, stringIdx; sta dstReg
+     * repeated from the same source register. Supports renamed
+     * properties (when property name != target variable).
+     *
+     * @param instructions the instruction list for the block
+     * @param startIndex the index to start scanning from
+     * @param ctx the decompilation context
+     * @param declaredVars the set of already-declared variables
+     * @return a DestructuringResult if pattern found, null otherwise
+     */
+    DestructuringResult tryDetectObjectDestructuringInBlock(
             List<ArkInstruction> instructions, int startIndex,
-            DecompilationContext ctx, Set<String> declaredVars,
-            List<ArkTSStatement> stmts) {
+            DecompilationContext ctx, Set<String> declaredVars) {
 
         List<ArkTSPropertyExpressions.ObjectDestructuringExpression
                 .DestructuringBinding> bindings = new ArrayList<>();
@@ -245,11 +391,22 @@ class ObjectCreationHandler {
                     }
 
                     if (currentSource.equals(sourceVar)) {
+                        // Determine if this is a rename
+                        // (prop: alias) vs shorthand (prop).
+                        // If the target register is not a simple vN
+                        // that matches propName, use alias syntax.
+                        String alias = null;
+                        // The resolved property name from string table
+                        // becomes the property. The target register
+                        // name is the alias if different.
+                        if (!targetVar.equals(propName)) {
+                            alias = targetVar;
+                        }
                         bindings.add(
                                 new ArkTSPropertyExpressions
                                         .ObjectDestructuringExpression
                                         .DestructuringBinding(
-                                                propName, null));
+                                                propName, alias));
                         declaredVars.add(targetVar);
                         propertyCount++;
                         scanIdx += 3;
@@ -267,8 +424,11 @@ class ObjectCreationHandler {
                     new ArkTSPropertyExpressions
                             .ObjectDestructuringExpression(
                             bindings, source);
-            return new ArkTSTypeDeclarations.DestructuringDeclaration(
-                    "const", destrExpr);
+            ArkTSStatement stmt =
+                    new ArkTSTypeDeclarations.DestructuringDeclaration(
+                            "const", destrExpr);
+            return new DestructuringResult(
+                    scanIdx - startIndex, stmt);
         }
         return null;
     }

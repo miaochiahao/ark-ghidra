@@ -40,7 +40,7 @@ public class MethodSignatureBuilder {
      */
     public static List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> buildParams(
             AbcProto proto, long numArgs) {
-        return buildParams(proto, numArgs, null);
+        return buildParams(proto, numArgs, null, -1);
     }
 
     /**
@@ -57,13 +57,37 @@ public class MethodSignatureBuilder {
      */
     public static List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> buildParams(
             AbcProto proto, long numArgs, List<String> debugNames) {
+        return buildParams(proto, numArgs, debugNames, -1);
+    }
+
+    /**
+     * Builds the list of parameter names with type annotations,
+     * using debug parameter names when available, and marking a
+     * parameter as a rest parameter.
+     *
+     * <p>When debugNames is provided and has an entry for a given parameter
+     * index, that name is used instead of "param_N". When restParamIndex
+     * is non-negative, that parameter is marked as a rest parameter
+     * ({@code ...name: type[]}).
+     *
+     * @param proto the method prototype
+     * @param numArgs the number of arguments from the code section
+     * @param debugNames the debug parameter names (may be null or contain nulls)
+     * @param restParamIndex the index of the rest parameter, or -1 if none
+     * @return the list of parameter strings
+     */
+    public static List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> buildParams(
+            AbcProto proto, long numArgs, List<String> debugNames,
+            int restParamIndex) {
         List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
                 new ArrayList<>();
         if (proto == null) {
             for (int i = 0; i < numArgs; i++) {
                 String name = resolveParamName(i, debugNames);
-                params.add(new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
-                        name, null));
+                boolean isRest = (i == restParamIndex);
+                String type = isRest ? "any[]" : null;
+                params.add(new ArkTSDeclarations.FunctionDeclaration
+                        .FunctionParam(name, type, isRest));
             }
             return params;
         }
@@ -74,18 +98,40 @@ public class MethodSignatureBuilder {
         for (int i = 0; i < paramCount; i++) {
             String typeName = shortyToArkType(shorty.get(i + 1));
             String name = resolveParamName(i, debugNames);
-            params.add(new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
-                    name, typeName));
+            boolean isRest = (i == restParamIndex);
+            String resolvedType = isRest
+                    ? restifyType(typeName) : typeName;
+            params.add(new ArkTSDeclarations.FunctionDeclaration
+                    .FunctionParam(name, resolvedType, isRest));
         }
 
         // If there are more args than shorty entries, add untyped params
         for (int i = paramCount; i < numArgs; i++) {
             String name = resolveParamName(i, debugNames);
-            params.add(new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
-                    name, null));
+            boolean isRest = (i == restParamIndex);
+            String type = isRest ? "any[]" : null;
+            params.add(new ArkTSDeclarations.FunctionDeclaration
+                    .FunctionParam(name, type, isRest));
         }
 
         return params;
+    }
+
+    /**
+     * Converts a type to its array form for rest parameters.
+     * For example, "number" becomes "number[]", "string" becomes "string[]".
+     *
+     * @param baseType the base type
+     * @return the array type string
+     */
+    private static String restifyType(String baseType) {
+        if (baseType == null) {
+            return "any[]";
+        }
+        if (baseType.endsWith("[]")) {
+            return baseType;
+        }
+        return baseType + "[]";
     }
 
     /**

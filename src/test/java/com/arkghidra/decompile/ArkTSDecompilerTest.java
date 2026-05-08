@@ -6096,4 +6096,480 @@ class ArkTSDecompilerTest {
                 "Should contain operand values: " + result);
     }
 
+    // --- Template literal end-to-end decompilation tests ---
+
+    @Test
+    void testTemplateLiteral_simple() {
+        // "str_0" + v0 -> `str_0${v0}`
+        // String stays directly in accumulator through the add chain
+        byte[] code = concat(
+                bytes(0x3E), le16(0),        // lda.str 0 -> acc = "str_0"
+                bytes(0x0A, 0x00, 0x00),     // add2 0, v0 -> acc = "str_0" + v0
+                bytes(0x61, 0x01),           // sta v1
+                bytes(0x60, 0x01),           // lda v1
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("`"),
+                "Should produce template literal: " + result);
+        assertTrue(result.contains("str_0"),
+                "Should contain string part: " + result);
+        assertTrue(result.contains("${v0}"),
+                "Should contain variable interpolation: " + result);
+    }
+
+    @Test
+    void testTemplateLiteral_multipleInterpolations() {
+        // "str_0" + v1 + v2 -> `str_0${v1}${v2}`
+        // All adds chained with string literal at start of chain
+        byte[] code = concat(
+                bytes(0x3E), le16(0),        // lda.str 0 -> acc = "str_0"
+                bytes(0x0A, 0x00, 0x01),     // add2 0, v1 -> acc = "str_0" + v1
+                bytes(0x0A, 0x00, 0x02),     // add2 0, v2 -> acc = ("str_0"+v1) + v2
+                bytes(0x61, 0x03),           // sta v3
+                bytes(0x60, 0x03),           // lda v3
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("`"),
+                "Should produce template literal: " + result);
+        assertTrue(result.contains("${v1}"),
+                "Should interpolate v1: " + result);
+        assertTrue(result.contains("${v2}"),
+                "Should interpolate v2: " + result);
+    }
+
+    @Test
+    void testTemplateLiteral_nestedExpression() {
+        // "str_0" + v1() -> `str_0${v1()}`
+        // String literal in acc, add with a call result stored in register
+        byte[] code = concat(
+                bytes(0x60, 0x01),           // lda v1
+                bytes(0x29, 0x00),           // callarg0 0 -> acc = v1()
+                bytes(0x61, 0x02),           // sta v2 -> v2 = v1()
+                bytes(0x3E), le16(0),        // lda.str 0 -> acc = "str_0"
+                bytes(0x0A, 0x00, 0x02),     // add2 0, v2 -> acc = "str_0" + v2
+                bytes(0x61, 0x03),           // sta v3
+                bytes(0x60, 0x03),           // lda v3
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("`"),
+                "Should produce template literal with call expr: " + result);
+        assertTrue(result.contains("${"),
+                "Should contain interpolation: " + result);
+    }
+
+    @Test
+    void testTemplateLiteral_withBoolean() {
+        // "str_0" + v1 -> `str_0${v1}` where v1 holds boolean
+        // String literal in acc, boolean variable in register
+        byte[] code = concat(
+                bytes(0x3E), le16(0),        // lda.str 0 -> acc = "str_0"
+                bytes(0x0A, 0x00, 0x01),     // add2 0, v1 -> acc = "str_0" + v1
+                bytes(0x61, 0x02),           // sta v2
+                bytes(0x60, 0x02),           // lda v2
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("`"),
+                "Should produce template literal with boolean var: " + result);
+    }
+
+    @Test
+    void testTemplateLiteral_withNumberExpression() {
+        // "str_0" + v3 -> `str_0${v3}` where v3 = v1 + v2
+        // The inner (v1+v2) is stored to v3 first, then string + v3
+        byte[] code = concat(
+                bytes(0x60, 0x01),           // lda v1
+                bytes(0x0A, 0x00, 0x02),     // add2 0, v2 -> acc = v1 + v2
+                bytes(0x61, 0x03),           // sta v3 -> v3 = v1 + v2
+                bytes(0x3E), le16(0),        // lda.str 0 -> acc = "str_0"
+                bytes(0x0A, 0x00, 0x03),     // add2 0, v3 -> acc = "str_0" + v3
+                bytes(0x61, 0x04),           // sta v4
+                bytes(0x60, 0x04),           // lda v4
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("`"),
+                "Should produce template literal with number expr: " + result);
+    }
+
+    @Test
+    void testTemplateLiteral_returnValue() {
+        // return "str_0" + v0 -> return `str_0${v0}`
+        // String in acc, add with register, return directly
+        byte[] code = concat(
+                bytes(0x3E), le16(0),        // lda.str 0 -> acc = "str_0"
+                bytes(0x0A, 0x00, 0x00),     // add2 0, v0 -> acc = "str_0" + v0
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("return `"),
+                "Should return template literal: " + result);
+        assertTrue(result.contains("${"),
+                "Should contain interpolation: " + result);
+    }
+
+    // ======== ISSUE #46: Class feature decompilation tests ========
+
+    @Test
+    void testClassDeclaration_withGetter() {
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.VariableExpression("x"))));
+        ArkTSStatement getter =
+                new ArkTSDeclarations.GetterDeclaration("x", "number",
+                        body, false, "public");
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("Point", null,
+                        List.of(getter));
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("class Point"),
+                "Expected class header: " + result);
+        assertTrue(result.contains("public get x(): number"),
+                "Expected getter declaration: " + result);
+        assertTrue(result.contains("return x;"),
+                "Expected return in getter body: " + result);
+    }
+
+    @Test
+    void testClassDeclaration_withSetter() {
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSDeclarations.FunctionDeclaration.FunctionParam valueParam =
+                new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
+                        "value", "number");
+        ArkTSStatement setter =
+                new ArkTSDeclarations.SetterDeclaration("x", valueParam,
+                        body, false, "public");
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("Point", null,
+                        List.of(setter));
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("class Point"),
+                "Expected class header: " + result);
+        assertTrue(result.contains("public set x(value: number)"),
+                "Expected setter declaration: " + result);
+    }
+
+    @Test
+    void testClassDeclaration_withStaticGetter() {
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.LiteralExpression("1",
+                                ArkTSExpression.LiteralExpression
+                                        .LiteralKind.NUMBER))));
+        ArkTSStatement getter =
+                new ArkTSDeclarations.GetterDeclaration("count", "number",
+                        body, true, null);
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("Container", null,
+                        List.of(getter));
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("static get count(): number"),
+                "Expected static getter: " + result);
+    }
+
+    @Test
+    void testClassDeclaration_withAbstractMethod() {
+        ArkTSDeclarations.FunctionDeclaration.FunctionParam param =
+                new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
+                        "x", "number");
+        ArkTSStatement abstractMethod =
+                new ArkTSDeclarations.AbstractMethodDeclaration("calculate",
+                        List.of(param), "number", "public");
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("BaseClass", null,
+                        List.of(abstractMethod));
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("class BaseClass"),
+                "Expected class header: " + result);
+        assertTrue(result.contains("public abstract calculate(x: number): number;"),
+                "Expected abstract method: " + result);
+    }
+
+    @Test
+    void testClassDeclaration_withStaticBlock() {
+        ArkTSStatement staticBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.AssignExpression(
+                                new ArkTSExpression.VariableExpression(
+                                        "instanceCount"),
+                                new ArkTSExpression.LiteralExpression("0",
+                                        ArkTSExpression.LiteralExpression
+                                                .LiteralKind.NUMBER)))));
+        ArkTSStatement staticBlock =
+                new ArkTSDeclarations.StaticBlockDeclaration(staticBody);
+        ArkTSStatement field = new ArkTSDeclarations.ClassFieldDeclaration(
+                "instanceCount", "number",
+                new ArkTSExpression.LiteralExpression("0",
+                        ArkTSExpression.LiteralExpression
+                                .LiteralKind.NUMBER),
+                true, null);
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("Service", null,
+                        List.of(field, staticBlock));
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("class Service"),
+                "Expected class header: " + result);
+        assertTrue(result.contains("static {"),
+                "Expected static block: " + result);
+    }
+
+    @Test
+    void testClassDeclaration_withDecoratedMethod() {
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSDeclarations.ClassMethodDeclaration innerMethod =
+                new ArkTSDeclarations.ClassMethodDeclaration("onInit",
+                        Collections.emptyList(), "void", body, false,
+                        "public");
+        ArkTSStatement decoratedMethod =
+                new ArkTSDeclarations.DecoratedMethodDeclaration(
+                        List.of("Entry"), innerMethod);
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("MyPage", null,
+                        List.of(decoratedMethod));
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("@Entry"),
+                "Expected decorator: " + result);
+        assertTrue(result.contains("public onInit(): void"),
+                "Expected method declaration after decorator: " + result);
+    }
+
+    @Test
+    void testClassDeclaration_withParameterProperties() {
+        ArkTSStatement constructorBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSControlFlow.SuperCallStatement(
+                        Collections.emptyList())));
+        List<ArkTSDeclarations.ConstructorWithPropertiesDeclaration
+                .ConstructorParam> params = List.of(
+                        new ArkTSDeclarations.ConstructorWithPropertiesDeclaration
+                                .ConstructorParam("x", "number", "public"),
+                        new ArkTSDeclarations.ConstructorWithPropertiesDeclaration
+                                .ConstructorParam("y", "number", "public"));
+        ArkTSStatement constructor =
+                new ArkTSDeclarations.ConstructorWithPropertiesDeclaration(
+                        params, constructorBody);
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("Point", null,
+                        List.of(constructor));
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("constructor(public x: number, public y: number)"),
+                "Expected constructor with parameter properties: " + result);
+        assertTrue(result.contains("super();"),
+                "Expected super call: " + result);
+    }
+
+    @Test
+    void testClassDeclaration_withPrivateParameterProperty() {
+        ArkTSStatement constructorBody = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        List<ArkTSDeclarations.ConstructorWithPropertiesDeclaration
+                .ConstructorParam> params = List.of(
+                        new ArkTSDeclarations.ConstructorWithPropertiesDeclaration
+                                .ConstructorParam("secret", "string",
+                                        "private"));
+        ArkTSStatement constructor =
+                new ArkTSDeclarations.ConstructorWithPropertiesDeclaration(
+                        params, constructorBody);
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("Vault", null,
+                        List.of(constructor));
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("constructor(private secret: string)"),
+                "Expected constructor with private parameter property: "
+                        + result);
+    }
+
+    @Test
+    void testClassDeclaration_fullFeatured() {
+        ArkTSStatement field = new ArkTSDeclarations.ClassFieldDeclaration(
+                "name", "string", null, false, "private");
+        ArkTSStatement constructorBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSControlFlow.SuperCallStatement(
+                        Collections.emptyList())));
+        ArkTSStatement constructor =
+                new ArkTSDeclarations.ConstructorDeclaration(
+                        List.of(new ArkTSDeclarations.FunctionDeclaration
+                                .FunctionParam("name", "string")),
+                        constructorBody);
+        ArkTSStatement getterBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.VariableExpression("name"))));
+        ArkTSStatement getter =
+                new ArkTSDeclarations.GetterDeclaration("name", "string",
+                        getterBody, false, "public");
+        ArkTSDeclarations.FunctionDeclaration.FunctionParam valueParam =
+                new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
+                        "value", "string");
+        ArkTSStatement setter =
+                new ArkTSDeclarations.SetterDeclaration("name", valueParam,
+                        new ArkTSStatement.BlockStatement(
+                                Collections.emptyList()),
+                        false, "public");
+        ArkTSStatement staticMethod =
+                new ArkTSDeclarations.ClassMethodDeclaration("create",
+                        Collections.emptyList(), "NamedEntity",
+                        new ArkTSStatement.BlockStatement(
+                                Collections.emptyList()),
+                        true, "public");
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("NamedEntity",
+                        "BaseEntity",
+                        List.of(field, constructor, getter, setter,
+                                staticMethod));
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("class NamedEntity extends BaseEntity"),
+                "Expected class with extends: " + result);
+        assertTrue(result.contains("private name: string;"),
+                "Expected private field: " + result);
+        assertTrue(result.contains("constructor(name: string)"),
+                "Expected constructor: " + result);
+        assertTrue(result.contains("public get name(): string"),
+                "Expected getter: " + result);
+        assertTrue(result.contains("public set name(value: string)"),
+                "Expected setter: " + result);
+        assertTrue(result.contains("public static create(): NamedEntity"),
+                "Expected static method: " + result);
+    }
+
+    @Test
+    void testDeclarationBuilder_isGetterMethod() {
+        assertTrue(DeclarationBuilder.isGetterMethod("get_value"));
+        assertTrue(DeclarationBuilder.isGetterMethod("get_name"));
+        assertFalse(DeclarationBuilder.isGetterMethod("getValue"));
+        assertFalse(DeclarationBuilder.isGetterMethod("get_"));
+        assertFalse(DeclarationBuilder.isGetterMethod(null));
+    }
+
+    @Test
+    void testDeclarationBuilder_isSetterMethod() {
+        assertTrue(DeclarationBuilder.isSetterMethod("set_value"));
+        assertTrue(DeclarationBuilder.isSetterMethod("set_name"));
+        assertFalse(DeclarationBuilder.isSetterMethod("setValue"));
+        assertFalse(DeclarationBuilder.isSetterMethod("set_"));
+        assertFalse(DeclarationBuilder.isSetterMethod(null));
+    }
+
+    @Test
+    void testDeclarationBuilder_isStaticInitMethod() {
+        assertTrue(DeclarationBuilder.isStaticInitMethod("<static_init>"));
+        assertTrue(DeclarationBuilder.isStaticInitMethod("<clinit>"));
+        assertFalse(DeclarationBuilder.isStaticInitMethod("init"));
+        assertFalse(DeclarationBuilder.isStaticInitMethod("<init>"));
+    }
+
+    @Test
+    void testDeclarationBuilder_extractAccessorPropertyName() {
+        assertEquals("value",
+                DeclarationBuilder.extractAccessorPropertyName("get_value"));
+        assertEquals("name",
+                DeclarationBuilder.extractAccessorPropertyName("set_name"));
+        assertEquals("x",
+                DeclarationBuilder.extractAccessorPropertyName("get_x"));
+    }
+
+    @Test
+    void testGetterDeclaration_staticAndPrivate() {
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSStatement getter =
+                new ArkTSDeclarations.GetterDeclaration("internalState",
+                        "number", body, true, "private");
+        String result = getter.toArkTS(0);
+        assertTrue(result.contains("private static get internalState(): number"),
+                "Expected private static getter: " + result);
+    }
+
+    @Test
+    void testSetterDeclaration_withNoModifier() {
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSDeclarations.FunctionDeclaration.FunctionParam valueParam =
+                new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
+                        "val", "string");
+        ArkTSStatement setter =
+                new ArkTSDeclarations.SetterDeclaration("label", valueParam,
+                        body, false, null);
+        String result = setter.toArkTS(0);
+        assertTrue(result.startsWith("set label(val: string)"),
+                "Expected setter without modifier: " + result);
+    }
+
+    @Test
+    void testAbstractMethodDeclaration_noModifierNoType() {
+        ArkTSStatement abstractMethod =
+                new ArkTSDeclarations.AbstractMethodDeclaration("doWork",
+                        Collections.emptyList(), null, null);
+        String result = abstractMethod.toArkTS(0);
+        assertEquals("abstract doWork();", result);
+    }
+
+    @Test
+    void testStaticBlockDeclaration_withStatements() {
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.VariableDeclaration("let",
+                        "cache",
+                        TypeInference.formatTypeAnnotation("cache", "Object"),
+                        new ArkTSExpression.VariableExpression("globalThis")),
+                        new ArkTSStatement.ExpressionStatement(
+                                new ArkTSExpression.VariableExpression(
+                                        "/* init */"))));
+        ArkTSStatement staticBlock =
+                new ArkTSDeclarations.StaticBlockDeclaration(body);
+        String result = staticBlock.toArkTS(0);
+        assertTrue(result.startsWith("static {"),
+                "Expected static block opening: " + result);
+        assertTrue(result.contains("let cache"),
+                "Expected cache declaration inside static block: " + result);
+        assertTrue(result.trim().endsWith("}"),
+                "Expected static block closing: " + result);
+    }
+
+    @Test
+    void testDecoratedMethodDeclaration_multipleDecorators() {
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSDeclarations.ClassMethodDeclaration innerMethod =
+                new ArkTSDeclarations.ClassMethodDeclaration("handleClick",
+                        Collections.emptyList(), "void", body, false,
+                        "public");
+        ArkTSStatement decoratedMethod =
+                new ArkTSDeclarations.DecoratedMethodDeclaration(
+                        List.of("OnClick", "Debounce(300)"), innerMethod);
+        String result = decoratedMethod.toArkTS(0);
+        assertTrue(result.contains("@OnClick"),
+                "Expected first decorator: " + result);
+        assertTrue(result.contains("@Debounce(300)"),
+                "Expected second decorator with args: " + result);
+        assertTrue(result.contains("public handleClick(): void"),
+                "Expected method after decorators: " + result);
+    }
+
+    @Test
+    void testConstructorWithPropertiesDeclaration_mixedParams() {
+        List<ArkTSDeclarations.ConstructorWithPropertiesDeclaration
+                .ConstructorParam> params = List.of(
+                        new ArkTSDeclarations.ConstructorWithPropertiesDeclaration
+                                .ConstructorParam("name", "string", "public"),
+                        new ArkTSDeclarations.ConstructorWithPropertiesDeclaration
+                                .ConstructorParam("age", "number", null));
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSStatement constructor =
+                new ArkTSDeclarations.ConstructorWithPropertiesDeclaration(
+                        params, body);
+        String result = constructor.toArkTS(0);
+        assertTrue(result.contains("constructor(public name: string, age: number)"),
+                "Expected mixed parameter properties: " + result);
+    }
+
 }

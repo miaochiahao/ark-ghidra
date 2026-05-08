@@ -12,8 +12,8 @@ import com.arkghidra.disasm.ArkInstruction;
  *
  * <p>Handles the instruction-by-instruction walk of a basic block,
  * tracking the accumulator value, producing statements, and
- * handling special cases like break/continue jumps and
- * iterator-specific instruction filtering.
+ * handling special cases like break/continue jumps, destructuring
+ * patterns, and iterator-specific instruction filtering.
  *
  * <p>Shared by {@link ControlFlowReconstructor} and the
  * pattern-specific processor classes.
@@ -43,8 +43,10 @@ class BlockInstructionProcessor {
 
         ArkTSExpression accValue = null;
         TypeInference typeInf = new TypeInference();
+        List<ArkInstruction> instructions = block.getInstructions();
 
-        for (ArkInstruction insn : block.getInstructions()) {
+        for (int idx = 0; idx < instructions.size(); idx++) {
+            ArkInstruction insn = instructions.get(idx);
             if (insn == excludeInsn) {
                 continue;
             }
@@ -73,6 +75,10 @@ class BlockInstructionProcessor {
             }
 
             if (opcode == ArkOpcodesCompat.RETURN) {
+                if (accValue != null) {
+                    accValue = instrHandler
+                            .tryReconstructTemplateLiteral(accValue);
+                }
                 stmts.add(new ArkTSStatement.ReturnStatement(accValue));
                 accValue = null;
                 continue;
@@ -81,6 +87,19 @@ class BlockInstructionProcessor {
                 stmts.add(new ArkTSStatement.ReturnStatement(null));
                 accValue = null;
                 continue;
+            }
+
+            // Try to detect destructuring patterns starting at LDA
+            if (opcode == ArkOpcodesCompat.LDA) {
+                ObjectCreationHandler.DestructuringResult destrResult =
+                        tryDetectDestructuring(instructions, idx,
+                                ctx, declaredVars);
+                if (destrResult != null) {
+                    stmts.add(destrResult.statement);
+                    accValue = null;
+                    idx += destrResult.instructionsConsumed - 1;
+                    continue;
+                }
             }
 
             InstructionHandler.StatementResult result;
@@ -164,6 +183,10 @@ class BlockInstructionProcessor {
                 continue;
             }
             if (opcode == ArkOpcodesCompat.RETURN) {
+                if (accValue != null) {
+                    accValue = instrHandler
+                            .tryReconstructTemplateLiteral(accValue);
+                }
                 stmts.add(new ArkTSStatement.ReturnStatement(accValue));
                 accValue = null;
                 continue;
@@ -173,6 +196,20 @@ class BlockInstructionProcessor {
                 accValue = null;
                 continue;
             }
+
+            // Try to detect destructuring patterns starting at LDA
+            if (opcode == ArkOpcodesCompat.LDA) {
+                ObjectCreationHandler.DestructuringResult destrResult =
+                        tryDetectDestructuring(instructions, idx,
+                                ctx, declaredVars);
+                if (destrResult != null) {
+                    stmts.add(destrResult.statement);
+                    accValue = null;
+                    idx += destrResult.instructionsConsumed - 1;
+                    continue;
+                }
+            }
+
             InstructionHandler.StatementResult result =
                     instrHandler.processInstruction(
                             insn, ctx, accValue, declaredVars, typeInf);
@@ -217,7 +254,58 @@ class BlockInstructionProcessor {
                         ? result.newAccValue : accValue;
             }
         }
+        if (accValue != null) {
+            accValue = instrHandler
+                    .tryReconstructTemplateLiteral(accValue);
+        }
         return accValue;
+    }
+
+    /**
+     * Attempts to detect either an array or object destructuring
+     * pattern starting at the given instruction index.
+     *
+     * @param instructions the instruction list
+     * @param idx the current instruction index
+     * @param ctx the decompilation context
+     * @param declaredVars the set of already-declared variables
+     * @return a DestructuringResult if detected, null otherwise
+     */
+    private ObjectCreationHandler.DestructuringResult
+            tryDetectDestructuring(List<ArkInstruction> instructions,
+                    int idx, DecompilationContext ctx,
+                    Set<String> declaredVars) {
+
+        // Need at least 3 instructions for a pattern:
+        // lda + ldobjby* + sta
+        if (idx + 2 >= instructions.size()) {
+            return null;
+        }
+
+        ArkInstruction nextInsn = instructions.get(idx + 1);
+        int nextOpcode = nextInsn.getOpcode();
+
+        // Try array destructuring first (ldobjbyindex pattern)
+        if (nextOpcode == ArkOpcodesCompat.LDOBJBYINDEX) {
+            ObjectCreationHandler.DestructuringResult result =
+                    instrHandler.tryDetectArrayDestructuringInBlock(
+                            instructions, idx, ctx, declaredVars);
+            if (result != null) {
+                return result;
+            }
+        }
+
+        // Try object destructuring (ldobjbyname pattern)
+        if (nextOpcode == ArkOpcodesCompat.LDOBJBYNAME) {
+            ObjectCreationHandler.DestructuringResult result =
+                    instrHandler.tryDetectObjectDestructuringInBlock(
+                            instructions, idx, ctx, declaredVars);
+            if (result != null) {
+                return result;
+            }
+        }
+
+        return null;
     }
 
     private boolean isBreakJump(ArkInstruction insn,
