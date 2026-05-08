@@ -343,9 +343,9 @@ attach variables reg4 [ v0 v1 v2 v3 v4 v5 v6 v7
 
 :createemptyarray i8_1   is opcode=0x05; i8_1 { acc = arkCreateArray(i8_1); }
 :getpropiterator  is opcode=0x66 { acc = arkGetPropIterator(); }
-:poplexenv        is opcode=0x69 { }
-:ldnan            is opcode=0x6A { acc = 0x7FF8000000000000; }
-:ldinfinity       is opcode=0x6B { acc = 0x7FF0000000000000; }
+:poplexenv        is opcode=0x69 { sp = sp + 4; }
+:ldnan            is opcode=0x6A { local nan_tmp:8 = 0x7FF8000000000000; acc64 = nan_tmp; }
+:ldinfinity       is opcode=0x6B { local inf_tmp:8 = 0x7FF0000000000000; acc64 = inf_tmp; }
 :getunmappedargs  is opcode=0x6C { acc = arkCallRuntime(); }
 :ldglobal         is opcode=0x6D { acc = arkLoadProperty(); }
 :ldnewtarget      is opcode=0x6E { acc = arkLoadProperty(); }
@@ -358,8 +358,12 @@ attach variables reg4 [ v0 v1 v2 v3 v4 v5 v6 v7
 :return           is opcode=0x64 { return [sp]; }
 :returnundefined  is opcode=0x65 { acc = 0; return [sp]; }
 :nop              is opcode=0xD5 { }
-:resumegenerator  is opcode=0xBF { }
-:getresumemode    is opcode=0xC0 { }
+
+# --- Throw instruction ---
+
+:throw            is opcode=0xFE { arkThrow(); }
+:resumegenerator  is opcode=0xBF { acc = arkCallRuntime(); }
+:getresumemode    is opcode=0xC0 { acc = arkCallRuntime(); }
 :istrue           is opcode=0x23 { acc = zext(acc != 0); }
 :isfalse          is opcode=0x24 { acc = zext(acc == 0); }
 :dynamicimport    is opcode=0xBD { acc = arkDynamicImport(); }
@@ -400,8 +404,8 @@ attach variables reg4 [ v0 v1 v2 v3 v4 v5 v6 v7
 # --- Unary operations (op_imm_8) ---
 
 :typeof i8_1    is opcode=0x1C; i8_1 { acc = arkTypeOf(); }
-:tonumber i8_1  is opcode=0x1D; i8_1 { }
-:tonumeric i8_1 is opcode=0x1E; i8_1 { }
+:tonumber i8_1  is opcode=0x1D; i8_1 { local tmp:4 = acc; acc = tmp; }
+:tonumeric i8_1 is opcode=0x1E; i8_1 { local tmp:4 = acc; acc = tmp; }
 :neg i8_1       is opcode=0x1F; i8_1 { acc = -acc; }
 :not i8_1       is opcode=0x20; i8_1 { acc = ~acc; }
 :inc i8_1       is opcode=0x21; i8_1 { acc = acc + 1; }
@@ -533,7 +537,7 @@ attach variables reg4 [ v0 v1 v2 v3 v4 v5 v6 v7
 :asyncfunctionreject vr1  is opcode=0xCE; vr1 { arkCallRuntime(); }
 :copyrestargs i8_1        is opcode=0xCF; i8_1 { acc = arkCallRuntime(); }
 :ldbigint i16_1           is opcode=0xD3; i16_1 { acc = zext(i16_1); }
-:setgeneratorstate i8_1   is opcode=0xD6; i8_1 { }
+:setgeneratorstate i8_1   is opcode=0xD6; i8_1 { arkCallRuntime(); }
 :getasynciterator i8_1    is opcode=0xD7; i8_1 { acc = arkGetIterator(); }
 
 # --- Newobj range ---

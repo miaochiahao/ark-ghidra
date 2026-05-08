@@ -55,6 +55,8 @@ public class AbcFile {
             throw new AbcFormatException("Invalid ABC magic");
         }
 
+        validateHeaderOffsets(header, r.capacity());
+
         List<Long> classIndex = parseIndexArray(r, header.getClassIdxOff(), header.getNumClasses());
         List<Long> lnpIndex = parseIndexArray(r, header.getLnpIdxOff(), header.getNumLnps());
         List<Long> literalArrayIndex = parseIndexArray(r, header.getLiteralArrayIdxOff(),
@@ -65,6 +67,10 @@ public class AbcFile {
 
         List<AbcClass> classes = new ArrayList<>();
         for (long classOff : classIndex) {
+            if (classOff < 0 || classOff >= r.capacity()) {
+                throw new AbcFormatException(
+                        "Class offset " + classOff + " out of range [0, " + r.capacity() + ")");
+            }
             r.position((int) classOff);
             classes.add(parseClass(r, (int) classOff, header));
         }
@@ -76,12 +82,45 @@ public class AbcFile {
 
         List<AbcLiteralArray> literalArrays = new ArrayList<>();
         for (long laOff : literalArrayIndex) {
+            if (laOff < 0 || laOff >= r.capacity()) {
+                throw new AbcFormatException(
+                        "Literal array offset " + laOff + " out of range [0, " + r.capacity() + ")");
+            }
             r.position((int) laOff);
             literalArrays.add(parseLiteralArray(r));
         }
 
         return new AbcFile(header, regionHeaders, classes, protos, literalArrays,
                 classIndex, lnpIndex, literalArrayIndex, data);
+    }
+
+    /**
+     * Validates that header offsets point within the file data bounds.
+     *
+     * @param header the parsed header
+     * @param dataLength the total length of the file data
+     * @throws AbcFormatException if any offset is out of range
+     */
+    private static void validateHeaderOffsets(AbcHeader header, int dataLength) {
+        if (header.getNumClasses() > 0) {
+            checkOffset("classIdxOff", header.getClassIdxOff(), dataLength);
+        }
+        if (header.getNumLnps() > 0) {
+            checkOffset("lnpIdxOff", header.getLnpIdxOff(), dataLength);
+        }
+        if (header.getNumLiteralArrays() > 0) {
+            checkOffset("literalArrayIdxOff", header.getLiteralArrayIdxOff(), dataLength);
+        }
+        if (header.getNumIndexRegions() > 0) {
+            checkOffset("indexSectionOff", header.getIndexSectionOff(), dataLength);
+        }
+    }
+
+    private static void checkOffset(String name, long offset, int dataLength) {
+        if (offset < 0 || offset >= dataLength) {
+            throw new AbcFormatException(
+                    "Header offset " + name + "=" + offset + " out of range [0, " + dataLength + ")");
+        }
     }
 
     private static AbcHeader parseHeader(AbcReader r) {
