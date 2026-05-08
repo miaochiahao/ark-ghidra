@@ -1152,6 +1152,58 @@ public abstract class ArkTSStatement {
         }
     }
 
+
+    // --- Const enum declaration ---
+
+    /**
+     * A const enum declaration statement.
+     */
+    public static class ConstEnumDeclaration extends ArkTSStatement {
+        private final String name;
+        private final List<EnumDeclaration.EnumMember> members;
+
+        /**
+         * Constructs a const enum declaration.
+         *
+         * @param name the enum name
+         * @param members the enum members
+         */
+        public ConstEnumDeclaration(String name,
+                List<EnumDeclaration.EnumMember> members) {
+            this.name = name;
+            this.members = Collections.unmodifiableList(
+                    new ArrayList<>(members));
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public List<EnumDeclaration.EnumMember> getMembers() {
+            return members;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(indent(indent)).append("const enum ").append(name)
+                    .append(" {\n");
+            for (int i = 0; i < members.size(); i++) {
+                EnumDeclaration.EnumMember m = members.get(i);
+                sb.append(indent(indent + 1)).append(m.getName());
+                if (m.getValue() != null) {
+                    sb.append(" = ").append(m.getValue().toArkTS());
+                }
+                if (i < members.size() - 1) {
+                    sb.append(",");
+                }
+                sb.append("\n");
+            }
+            sb.append(indent(indent)).append("}");
+            return sb.toString();
+        }
+    }
+
     // --- Interface declaration ---
 
     /**

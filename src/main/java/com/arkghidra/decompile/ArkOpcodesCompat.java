@@ -185,6 +185,29 @@ final class ArkOpcodesCompat {
 
     static final int THROW = ArkOpcodes.PREFIX_THROW;
 
+    static final int DEBUGGER = ArkOpcodes.DEBUGGER;
+    static final int POPLEXENV = ArkOpcodes.POPLEXENV;
+    static final int TONUMBER = ArkOpcodes.TONUMBER;
+    static final int TONUMERIC = ArkOpcodes.TONUMERIC;
+    static final int GETUNMAPPEDARGS = ArkOpcodes.GETUNMAPPEDARGS;
+    static final int CREATEITERRESULTOBJ = ArkOpcodes.CREATEITERRESULTOBJ;
+    static final int NEWLEXENVWITHNAME = ArkOpcodes.NEWLEXENVWITHNAME;
+    static final int APPLY = ArkOpcodes.APPLY;
+    static final int NEWOBJAPPLY = ArkOpcodes.NEWOBJAPPLY;
+    static final int CREATEREGEXPWITHLITERAL =
+            ArkOpcodes.CREATEREGEXPWITHLITERAL;
+    static final int LDBIGINT = ArkOpcodes.LDBIGINT;
+    static final int COPYRESTARGS = ArkOpcodes.COPYRESTARGS;
+    static final int GETTEMPLATEOBJECT = ArkOpcodes.GETTEMPLATEOBJECT;
+    static final int SETOBJECTWITHPROTO = ArkOpcodes.SETOBJECTWITHPROTO;
+    static final int GETASYNCITERATOR = ArkOpcodes.GETASYNCITERATOR;
+    static final int LDSUPERBYVALUE = ArkOpcodes.LDSUPERBYVALUE;
+    static final int STSUPERBYVALUE = ArkOpcodes.STSUPERBYVALUE;
+    static final int STOWNBYVALUEWITHNAMESET =
+            ArkOpcodes.STOWNBYVALUEWITHNAMESET;
+    static final int STOWNBYNAMEWITHNAMESET =
+            ArkOpcodes.STOWNBYNAMEWITHNAMESET;
+
     private ArkOpcodesCompat() {
     }
 

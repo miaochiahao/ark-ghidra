@@ -56,8 +56,14 @@ public class ArkTSDecompiler {
         }
 
         ArkDisassembler disasm = new ArkDisassembler();
-        List<ArkInstruction> instructions = disasm.disassemble(
-                code.getInstructions(), 0, (int) code.getCodeSize());
+        List<ArkInstruction> instructions;
+        try {
+            instructions = disasm.disassemble(
+                    code.getInstructions(), 0, (int) code.getCodeSize());
+        } catch (Exception e) {
+            return buildFallbackMethod(method, code, abcFile,
+                    "disassembly failed: " + e.getMessage());
+        }
 
         if (instructions.isEmpty()) {
             return buildEmptyMethod(method, null);
@@ -79,14 +85,37 @@ public class ArkTSDecompiler {
             }
         }
 
-        ControlFlowGraph cfg = ControlFlowGraph.build(instructions,
-                code.getTryBlocks());
+        ControlFlowGraph cfg;
+        try {
+            cfg = ControlFlowGraph.build(instructions,
+                    code.getTryBlocks());
+        } catch (Exception e) {
+            return buildFallbackMethod(method, code, abcFile,
+                    "CFG construction failed: " + e.getMessage());
+        }
 
         AbcProto proto = resolveProto(method, abcFile);
         DecompilationContext ctx = new DecompilationContext(
                 method, code, proto, abcFile, cfg, instructions);
 
-        List<ArkTSStatement> bodyStmts = generateStatements(ctx);
+        List<ArkTSStatement> bodyStmts;
+        try {
+            bodyStmts = generateStatements(ctx);
+        } catch (Exception e) {
+            List<ArkTSStatement> fallbackStmts = new ArrayList<>();
+            fallbackStmts.add(new ArkTSStatement.ExpressionStatement(
+                    new ArkTSExpression.VariableExpression(
+                            "/* decompilation failed: "
+                                    + e.getMessage() + " */")));
+            for (ArkInstruction insn : instructions) {
+                fallbackStmts.add(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression(
+                                "/* " + formatInstructionText(insn)
+                                        + " */")));
+            }
+            return buildMethodSource(method, proto, code,
+                    fallbackStmts, abcFile);
+        }
 
         return buildMethodSource(method, proto, code, bodyStmts, abcFile);
     }
@@ -440,7 +469,15 @@ public class ArkTSDecompiler {
         // Regular method
         List<ArkTSStatement> bodyStmts = Collections.emptyList();
         if (code != null && code.getCodeSize() > 0) {
-            bodyStmts = decompileMethodBody(method, code, abcFile);
+            try {
+                bodyStmts = decompileMethodBody(method, code, abcFile);
+            } catch (Exception e) {
+                bodyStmts = new ArrayList<>();
+                bodyStmts.add(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression(
+                                "/* decompilation failed: "
+                                        + e.getMessage() + " */")));
+            }
         }
 
         List<ArkTSStatement.FunctionDeclaration.FunctionParam> params =
@@ -471,7 +508,15 @@ public class ArkTSDecompiler {
             AbcMethod method, AbcCode code, AbcFile abcFile, AbcProto proto) {
         List<ArkTSStatement> bodyStmts = new ArrayList<>();
         if (code != null && code.getCodeSize() > 0) {
-            bodyStmts = decompileMethodBody(method, code, abcFile);
+            try {
+                bodyStmts = decompileMethodBody(method, code, abcFile);
+            } catch (Exception e) {
+                bodyStmts = new ArrayList<>();
+                bodyStmts.add(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression(
+                                "/* decompilation failed: "
+                                        + e.getMessage() + " */")));
+            }
         }
 
         List<ArkTSStatement.FunctionDeclaration.FunctionParam> params =
@@ -505,14 +550,73 @@ public class ArkTSDecompiler {
             return Collections.emptyList();
         }
 
-        ControlFlowGraph cfg = ControlFlowGraph.build(instructions,
-                code.getTryBlocks());
+        ControlFlowGraph cfg;
+        try {
+            cfg = ControlFlowGraph.build(instructions,
+                    code.getTryBlocks());
+        } catch (Exception e) {
+            return fallbackLinearListing(instructions,
+                    "CFG construction failed: " + e.getMessage());
+        }
 
         AbcProto proto = resolveProto(method, abcFile);
         DecompilationContext ctx = new DecompilationContext(
                 method, code, proto, abcFile, cfg, instructions);
 
-        return generateStatements(ctx);
+        try {
+            return generateStatements(ctx);
+        } catch (Exception e) {
+            ctx.warnings.add("Statement generation failed: "
+                    + e.getMessage());
+            return fallbackLinearListingWithWarnings(
+                    instructions, ctx.warnings);
+        }
+    }
+
+    private List<ArkTSStatement> fallbackLinearListing(
+            List<ArkInstruction> instructions, String reason) {
+        List<ArkTSStatement> stmts = new ArrayList<>();
+        stmts.add(new ArkTSStatement.ExpressionStatement(
+                new ArkTSExpression.VariableExpression(
+                        "/* linear fallback: " + reason + " */")));
+        for (ArkInstruction insn : instructions) {
+            stmts.add(new ArkTSStatement.ExpressionStatement(
+                    new ArkTSExpression.VariableExpression(
+                            "/* " + formatInstructionText(insn)
+                                    + " */")));
+        }
+        return stmts;
+    }
+
+    private List<ArkTSStatement> fallbackLinearListingWithWarnings(
+            List<ArkInstruction> instructions,
+            List<String> warnings) {
+        List<ArkTSStatement> stmts = new ArrayList<>();
+        for (String warning : warnings) {
+            stmts.add(new ArkTSStatement.ExpressionStatement(
+                    new ArkTSExpression.VariableExpression(
+                            "/* warning: " + warning + " */")));
+        }
+        stmts.add(new ArkTSStatement.ExpressionStatement(
+                new ArkTSExpression.VariableExpression(
+                        "/* linear fallback listing */")));
+        for (ArkInstruction insn : instructions) {
+            stmts.add(new ArkTSStatement.ExpressionStatement(
+                    new ArkTSExpression.VariableExpression(
+                            "/* " + formatInstructionText(insn)
+                                    + " */")));
+        }
+        return stmts;
+    }
+
+    private static String formatInstructionText(ArkInstruction insn) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("0x").append(Integer.toHexString(insn.getOffset()));
+        sb.append(": ").append(insn.getMnemonic());
+        for (ArkOperand op : insn.getOperands()) {
+            sb.append(" ").append(op.getValue());
+        }
+        return sb.toString();
     }
 
     // --- Class reconstruction helpers ---
@@ -3131,8 +3235,21 @@ public class ArkTSDecompiler {
                 continue;
             }
 
-            StatementResult result = processInstruction(
-                    insn, ctx, accValue, declaredVars, typeInf);
+            StatementResult result;
+            try {
+                result = processInstruction(
+                        insn, ctx, accValue, declaredVars, typeInf);
+            } catch (Exception e) {
+                String msg = "error at offset 0x"
+                        + Integer.toHexString(insn.getOffset())
+                        + ": " + e.getMessage();
+                ctx.warnings.add(msg);
+                stmts.add(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression(
+                                "/* " + msg + " */")));
+                accValue = null;
+                continue;
+            }
             if (result != null) {
                 if (result.statement != null) {
                     stmts.add(result.statement);
@@ -3969,11 +4086,407 @@ public class ArkTSDecompiler {
                     new ArkTSExpression.VariableExpression("propIterator"));
         }
 
-        // --- Fallback: emit a comment ---
+
+        // --- Accumulator-only loads (set acc, no statement) ---
+
+        if (opcode == ArkOpcodesCompat.LDSYMBOL) {
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression("Symbol"));
+        }
+        if (opcode == ArkOpcodesCompat.LDFUNCTION) {
+            int funcIdx = (int) operands.get(0).getValue();
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression("func_" + funcIdx));
+        }
+        if (opcode == ArkOpcodesCompat.LDNEWTARGET) {
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression("new.target"));
+        }
+        if (opcode == ArkOpcodesCompat.LDHOLE) {
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression("undefined"));
+        }
+        if (opcode == ArkOpcodesCompat.LDNAN) {
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression("NaN"));
+        }
+        if (opcode == ArkOpcodesCompat.LDINFINITY) {
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression("Infinity"));
+        }
+        if (opcode == ArkOpcodesCompat.LDBIGINT) {
+            int bigintIdx = (int) operands.get(0).getValue();
+            String bigintStr = ctx.resolveString(bigintIdx);
+            return new StatementResult(null,
+                    new ArkTSExpression.LiteralExpression(bigintStr + "n",
+                            ArkTSExpression.LiteralExpression.LiteralKind.NUMBER));
+        }
+
+        // --- Type conversion ---
+
+        if (opcode == ArkOpcodesCompat.TONUMBER) {
+            ArkTSExpression val = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            return new StatementResult(null,
+                    new ArkTSExpression.CallExpression(
+                            new ArkTSExpression.VariableExpression("Number"),
+                            List.of(val)));
+        }
+        if (opcode == ArkOpcodesCompat.TONUMERIC) {
+            ArkTSExpression val = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            return new StatementResult(null,
+                    new ArkTSExpression.CallExpression(
+                            new ArkTSExpression.VariableExpression("Number"),
+                            List.of(val)));
+        }
+
+        // --- Debugger ---
+
+        if (opcode == ArkOpcodesCompat.DEBUGGER) {
+            return new StatementResult(
+                    new ArkTSStatement.ExpressionStatement(
+                            new ArkTSExpression.VariableExpression("debugger")),
+                    accValue);
+        }
+
+        // --- Lexical environment ---
+
+        if (opcode == ArkOpcodesCompat.POPLEXENV) {
+            return null;
+        }
+        if (opcode == ArkOpcodesCompat.NEWLEXENVWITHNAME) {
+            return null;
+        }
+
+        // --- Argument handling ---
+
+        if (opcode == ArkOpcodesCompat.GETUNMAPPEDARGS) {
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression("arguments"));
+        }
+        if (opcode == ArkOpcodesCompat.COPYRESTARGS) {
+            int restIdx = (int) operands.get(0).getValue();
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression("rest_" + restIdx));
+        }
+
+        // --- Iterator result ---
+
+        if (opcode == ArkOpcodesCompat.CREATEITERRESULTOBJ) {
+            return new StatementResult(null,
+                    new ArkTSExpression.ObjectLiteralExpression(
+                            Collections.emptyList()));
+        }
+
+        // --- Apply/call ---
+
+        if (opcode == ArkOpcodesCompat.APPLY) {
+            ArkTSExpression func = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            int numArgs = (int) operands.get(0).getValue();
+            int firstReg = (int) operands.get(1).getValue();
+            List<ArkTSExpression> applyArgs = new ArrayList<>();
+            for (int a = 0; a < numArgs; a++) {
+                applyArgs.add(new ArkTSExpression.VariableExpression(
+                        "v" + (firstReg + a)));
+            }
+            ArkTSExpression spreadArg =
+                    new ArkTSExpression.ArrayLiteralExpression(applyArgs);
+            return new StatementResult(null,
+                    new ArkTSExpression.CallExpression(func,
+                            List.of(new ArkTSExpression.SpreadExpression(
+                                    spreadArg))));
+        }
+        if (opcode == ArkOpcodesCompat.NEWOBJAPPLY) {
+            ArkTSExpression ctor = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            int numArgs = (int) operands.get(0).getValue();
+            int firstReg = (int) operands.get(1).getValue();
+            List<ArkTSExpression> applyArgs = new ArrayList<>();
+            for (int a = 0; a < numArgs; a++) {
+                applyArgs.add(new ArkTSExpression.VariableExpression(
+                        "v" + (firstReg + a)));
+            }
+            ArkTSExpression spreadArg =
+                    new ArkTSExpression.ArrayLiteralExpression(applyArgs);
+            return new StatementResult(null,
+                    new ArkTSExpression.NewExpression(ctor,
+                            List.of(new ArkTSExpression.SpreadExpression(
+                                    spreadArg))));
+        }
+
+        // --- RegExp ---
+
+        if (opcode == ArkOpcodesCompat.CREATEREGEXPWITHLITERAL) {
+            int patternIdx = (int) operands.get(0).getValue();
+            String pattern = ctx.resolveString(patternIdx);
+            return new StatementResult(null,
+                    new ArkTSExpression.NewExpression(
+                            new ArkTSExpression.VariableExpression("RegExp"),
+                            List.of(new ArkTSExpression.LiteralExpression(pattern,
+                                    ArkTSExpression.LiteralExpression
+                                            .LiteralKind.STRING))));
+        }
+
+        // --- Template ---
+
+        if (opcode == ArkOpcodesCompat.GETTEMPLATEOBJECT) {
+            int templateIdx = (int) operands.get(0).getValue();
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression(
+                            "template_" + templateIdx));
+        }
+
+        // --- Object prototype ---
+
+        if (opcode == ArkOpcodesCompat.SETOBJECTWITHPROTO) {
+            return null;
+        }
+
+        // --- Async iterator ---
+
+        if (opcode == ArkOpcodesCompat.GETASYNCITERATOR) {
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression(
+                            "[Symbol.asyncIterator]"));
+        }
+
+        // --- Super by value ---
+
+        if (opcode == ArkOpcodesCompat.LDSUPERBYVALUE) {
+            int keyReg = (int) operands.get(operands.size() - 1).getValue();
+            ArkTSExpression prop =
+                    new ArkTSExpression.VariableExpression("v" + keyReg);
+            return new StatementResult(null,
+                    new ArkTSExpression.MemberExpression(
+                            new ArkTSExpression.VariableExpression("super"),
+                            prop, true));
+        }
+        if (opcode == ArkOpcodesCompat.STSUPERBYVALUE) {
+            int keyReg = (int) operands.get(operands.size() - 2).getValue();
+            ArkTSExpression prop =
+                    new ArkTSExpression.VariableExpression("v" + keyReg);
+            return new StatementResult(
+                    new ArkTSStatement.ExpressionStatement(
+                            new ArkTSExpression.AssignExpression(
+                                    new ArkTSExpression.MemberExpression(
+                                            new ArkTSExpression.VariableExpression(
+                                                    "super"),
+                                            prop, true),
+                                    accValue != null ? accValue
+                                            : new ArkTSExpression.VariableExpression(
+                                                    ACC))),
+                    accValue);
+        }
+
+        // --- Own property stores with name set ---
+
+        if (opcode == ArkOpcodesCompat.STOWNBYVALUEWITHNAMESET) {
+            int keyReg = (int) operands.get(operands.size() - 2).getValue();
+            int objReg = (int) operands.get(operands.size() - 1).getValue();
+            ArkTSExpression obj =
+                    new ArkTSExpression.VariableExpression("v" + objReg);
+            ArkTSExpression prop =
+                    new ArkTSExpression.VariableExpression("v" + keyReg);
+            return new StatementResult(
+                    new ArkTSStatement.ExpressionStatement(
+                            new ArkTSExpression.AssignExpression(
+                                    new ArkTSExpression.MemberExpression(
+                                            obj, prop, true),
+                                    accValue != null ? accValue
+                                            : new ArkTSExpression.VariableExpression(
+                                                    ACC))),
+                    accValue);
+        }
+        if (opcode == ArkOpcodesCompat.STOWNBYNAMEWITHNAMESET) {
+            int objReg = (int) operands.get(operands.size() - 1).getValue();
+            ArkTSExpression obj =
+                    new ArkTSExpression.VariableExpression("v" + objReg);
+            String pn = ctx.resolveString(
+                    (int) operands.get(1).getValue());
+            ArkTSExpression prop =
+                    new ArkTSExpression.VariableExpression(pn);
+            return new StatementResult(
+                    new ArkTSStatement.ExpressionStatement(
+                            new ArkTSExpression.AssignExpression(
+                                    new ArkTSExpression.MemberExpression(
+                                            obj, prop, false),
+                                    accValue != null ? accValue
+                                            : new ArkTSExpression.VariableExpression(
+                                                    ACC))),
+                    accValue);
+        }
+
+        // --- Class definition helpers ---
+
+        if (opcode == ArkOpcodesCompat.DEFINEMETHOD) {
+            int methodIdx = (int) operands.get(0).getValue();
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression(
+                            "method_" + methodIdx));
+        }
+        if (opcode == ArkOpcodesCompat.DEFINEFIELDBYNAME) {
+            int stringIdx = (int) operands.get(0).getValue();
+            String fieldName = ctx.resolveString(stringIdx);
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression(fieldName));
+        }
+        if (opcode == ArkOpcodesCompat.DEFINEPROPERTYBYNAME) {
+            int stringIdx = (int) operands.get(0).getValue();
+            String pn = ctx.resolveString(stringIdx);
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression(pn));
+        }
+
+        // --- Super calls ---
+
+        if (opcode == ArkOpcodesCompat.SUPERCALLTHISRANGE) {
+            int numArgs = (int) operands.get(0).getValue();
+            int firstReg = (int) operands.get(1).getValue();
+            List<ArkTSExpression> args = new ArrayList<>();
+            for (int a = 0; a < numArgs; a++) {
+                args.add(new ArkTSExpression.VariableExpression(
+                        "v" + (firstReg + a)));
+            }
+            return new StatementResult(null,
+                    new ArkTSExpression.CallExpression(
+                            new ArkTSExpression.VariableExpression("super"),
+                            args));
+        }
+        if (opcode == ArkOpcodesCompat.SUPERCALLSPREAD) {
+            return new StatementResult(null,
+                    new ArkTSExpression.CallExpression(
+                            new ArkTSExpression.VariableExpression("super"),
+                            List.of(new ArkTSExpression.SpreadExpression(
+                                    accValue != null ? accValue
+                                            : new ArkTSExpression.VariableExpression(
+                                                    ACC)))));
+        }
+        if (opcode == ArkOpcodesCompat.SUPERCALLARROWRANGE) {
+            int numArgs = (int) operands.get(0).getValue();
+            int firstReg = (int) operands.get(1).getValue();
+            List<ArkTSExpression> args = new ArrayList<>();
+            for (int a = 0; a < numArgs; a++) {
+                args.add(new ArkTSExpression.VariableExpression(
+                        "v" + (firstReg + a)));
+            }
+            return new StatementResult(null,
+                    new ArkTSExpression.CallExpression(
+                            new ArkTSExpression.VariableExpression("super"),
+                            args));
+        }
+
+        // --- Private property access ---
+
+        if (opcode == ArkOpcodesCompat.LDPRIVATEPROPERTY) {
+            int stringIdx = (int) operands.get(0).getValue();
+            String fieldName = ctx.resolveString(stringIdx);
+            return new StatementResult(null,
+                    new ArkTSExpression.MemberExpression(
+                            accValue != null ? accValue
+                                    : new ArkTSExpression.VariableExpression(ACC),
+                            new ArkTSExpression.VariableExpression(
+                                    "#" + fieldName),
+                            false));
+        }
+        if (opcode == ArkOpcodesCompat.STPRIVATEPROPERTY) {
+            int stringIdx = (int) operands.get(0).getValue();
+            String fieldName = ctx.resolveString(stringIdx);
+            return new StatementResult(
+                    new ArkTSStatement.ExpressionStatement(
+                            new ArkTSExpression.AssignExpression(
+                                    new ArkTSExpression.MemberExpression(
+                                            accValue != null ? accValue
+                                                    : new ArkTSExpression
+                                                            .VariableExpression(
+                                                                    ACC),
+                                            new ArkTSExpression.VariableExpression(
+                                                    "#" + fieldName),
+                                            false),
+                                    new ArkTSExpression.VariableExpression(ACC))),
+                    accValue);
+        }
+
+        // --- Testin ---
+
+        if (opcode == ArkOpcodesCompat.TESTIN) {
+            return new StatementResult(null,
+                    new ArkTSExpression.BinaryExpression(
+                            accValue != null ? accValue
+                                    : new ArkTSExpression.VariableExpression(ACC),
+                            "in",
+                            new ArkTSExpression.VariableExpression(ACC)));
+        }
+
+        // --- Object property deletion and copy ---
+
+        if (opcode == ArkOpcodesCompat.DELOBJPROP) {
+            return new StatementResult(
+                    new ArkTSStatement.ExpressionStatement(
+                            new ArkTSExpression.CallExpression(
+                                    new ArkTSExpression.MemberExpression(
+                                            new ArkTSExpression
+                                                    .VariableExpression("Object"),
+                                            new ArkTSExpression.VariableExpression(
+                                                    "deleteProperty"),
+                                            false),
+                                    List.of(accValue != null ? accValue
+                                            : new ArkTSExpression
+                                                    .VariableExpression(ACC)))),
+                    null);
+        }
+        if (opcode == ArkOpcodesCompat.COPYDATAPROPERTIES) {
+            return new StatementResult(null,
+                    new ArkTSExpression.CallExpression(
+                            new ArkTSExpression.MemberExpression(
+                                    new ArkTSExpression.VariableExpression(
+                                            "Object"),
+                                    new ArkTSExpression.VariableExpression("assign"),
+                                    false),
+                            Collections.emptyList()));
+        }
+
+        // --- Object with excluded keys ---
+
+        if (opcode == ArkOpcodesCompat.CREATEOBJECTWITHEXCLUDEDKEYS) {
+            return new StatementResult(null,
+                    new ArkTSExpression.ObjectLiteralExpression(
+                            Collections.emptyList()));
+        }
+
+        // --- Getter/setter by value ---
+
+        if (opcode == ArkOpcodesCompat.DEFINEGETTERSETTERBYVALUE) {
+            return null;
+        }
+
+        // --- Generator state management ---
+
+        if (opcode == ArkOpcodesCompat.SETGENERATORSTATE) {
+            return null;
+        }
+        if (opcode == ArkOpcodesCompat.CREATEASYNCGENERATOROBJ) {
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression("asyncGenerator"));
+        }
+        if (opcode == ArkOpcodesCompat.ASYNCGENERATORRESOLVE) {
+            return null;
+        }
+        if (opcode == ArkOpcodesCompat.ASYNCGENERATORREJECT) {
+            return null;
+        }
+
+        // --- Fallback: emit a comment for unhandled opcode ---
+        String fallbackMsg = "unhandled: " + insn.getMnemonic();
         return new StatementResult(
                 new ArkTSStatement.ExpressionStatement(
                         new ArkTSExpression.VariableExpression(
-                                "/* " + insn.getMnemonic() + " */")),
+                                "/* " + fallbackMsg + " */")),
                 null);
     }
 
@@ -4170,6 +4683,9 @@ public class ArkTSDecompiler {
         if (opcode == ArkOpcodesCompat.LDTHISBYNAME
                 || opcode == ArkOpcodesCompat.LDTHISBYVALUE) {
             obj = new ArkTSExpression.ThisExpression();
+        } else if (opcode == ArkOpcodesCompat.LDSUPERBYNAME
+                || opcode == ArkOpcodesCompat.LDSUPERBYVALUE) {
+            obj = new ArkTSExpression.VariableExpression("super");
         } else {
             obj = accValue != null
                     ? accValue
@@ -4177,7 +4693,8 @@ public class ArkTSDecompiler {
         }
 
         if (opcode == ArkOpcodesCompat.LDOBJBYVALUE
-                || opcode == ArkOpcodesCompat.LDTHISBYVALUE) {
+                || opcode == ArkOpcodesCompat.LDTHISBYVALUE
+                || opcode == ArkOpcodesCompat.LDSUPERBYVALUE) {
             int reg = (int) operands.get(operands.size() - 1).getValue();
             ArkTSExpression prop =
                     new ArkTSExpression.VariableExpression("v" + reg);
@@ -4209,6 +4726,9 @@ public class ArkTSDecompiler {
         if (opcode == ArkOpcodesCompat.STTHISBYNAME
                 || opcode == ArkOpcodesCompat.STTHISBYVALUE) {
             obj = new ArkTSExpression.ThisExpression();
+        } else if (opcode == ArkOpcodesCompat.STSUPERBYNAME
+                || opcode == ArkOpcodesCompat.STSUPERBYVALUE) {
+            obj = new ArkTSExpression.VariableExpression("super");
         } else {
             int objReg = (int) operands.get(operands.size() - 1).getValue();
             obj = new ArkTSExpression.VariableExpression("v" + objReg);
@@ -4217,7 +4737,8 @@ public class ArkTSDecompiler {
         ArkTSExpression prop;
         if (opcode == ArkOpcodesCompat.STOBJBYVALUE
                 || opcode == ArkOpcodesCompat.STTHISBYVALUE
-                || opcode == ArkOpcodesCompat.STOWNBYVALUE) {
+                || opcode == ArkOpcodesCompat.STOWNBYVALUE
+                || opcode == ArkOpcodesCompat.STSUPERBYVALUE) {
             int keyReg = (int) operands.get(operands.size() - 2).getValue();
             prop = new ArkTSExpression.VariableExpression("v" + keyReg);
             return new ArkTSExpression.AssignExpression(
@@ -4684,7 +5205,8 @@ public class ArkTSDecompiler {
                 || opcode == ArkOpcodesCompat.LDOBJBYINDEX
                 || opcode == ArkOpcodesCompat.LDTHISBYNAME
                 || opcode == ArkOpcodesCompat.LDTHISBYVALUE
-                || opcode == ArkOpcodesCompat.LDSUPERBYNAME;
+                || opcode == ArkOpcodesCompat.LDSUPERBYNAME
+                || opcode == ArkOpcodesCompat.LDSUPERBYVALUE;
     }
 
     private boolean isPropertyStoreOpcode(int opcode) {
@@ -4696,7 +5218,10 @@ public class ArkTSDecompiler {
                 || opcode == ArkOpcodesCompat.STOWNBYNAME
                 || opcode == ArkOpcodesCompat.STOWNBYVALUE
                 || opcode == ArkOpcodesCompat.STOWNBYINDEX
-                || opcode == ArkOpcodesCompat.STSUPERBYNAME;
+                || opcode == ArkOpcodesCompat.STSUPERBYNAME
+                || opcode == ArkOpcodesCompat.STSUPERBYVALUE
+                || opcode == ArkOpcodesCompat.STOWNBYVALUEWITHNAMESET
+                || opcode == ArkOpcodesCompat.STOWNBYNAMEWITHNAMESET;
     }
 
     private AbcProto resolveProto(AbcMethod method, AbcFile abcFile) {
@@ -4739,6 +5264,16 @@ public class ArkTSDecompiler {
                 new ArkTSStatement.FunctionDeclaration(
                         method.getName(), params, returnType, body);
         return func.toArkTS(0);
+    }
+
+    private String buildFallbackMethod(AbcMethod method, AbcCode code,
+            AbcFile abcFile, String reason) {
+        AbcProto proto = resolveProto(method, abcFile);
+        List<ArkTSStatement> bodyStmts = new ArrayList<>();
+        bodyStmts.add(new ArkTSStatement.ExpressionStatement(
+                new ArkTSExpression.VariableExpression(
+                        "/* decompilation failed: " + reason + " */")));
+        return buildMethodSource(method, proto, code, bodyStmts, abcFile);
     }
 
     private String buildMethodSource(AbcMethod method, AbcProto proto,
@@ -4810,6 +5345,11 @@ public class ArkTSDecompiler {
         ArkTSExpression currentAccValue;
 
         /**
+         * Accumulated warnings during decompilation.
+         */
+        final List<String> warnings;
+
+        /**
          * Stack of loop contexts for break/continue detection.
          * Each entry is [loopHeaderOffset, loopEndOffset].
          */
@@ -4829,6 +5369,7 @@ public class ArkTSDecompiler {
             this.isAsync = false;
             this.currentAccValue = null;
             this.loopContextStack = new ArrayList<>();
+            this.warnings = new ArrayList<>();
         }
 
         /**

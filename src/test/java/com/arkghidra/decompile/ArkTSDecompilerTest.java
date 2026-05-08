@@ -5144,4 +5144,406 @@ class ArkTSDecompilerTest {
         assertTrue(result.contains("i < 10"));
         assertTrue(result.contains("i + 1"));
     }
+
+    // --- Error recovery and partial decompilation tests ---
+
+    @Test
+    void testDecompile_unknownOpcode_producesCommentAndDoesNotCrash() {
+        ArkInstruction unknownInsn = new ArkInstruction(
+                0xEE, "unknown_opcode", ArkInstructionFormat.NONE,
+                0, 1, Collections.emptyList(), false);
+        ArkInstruction retInsn = new ArkInstruction(
+                ArkOpcodesCompat.RETURNUNDEFINED, "returnundefined",
+                ArkInstructionFormat.NONE, 1, 1,
+                Collections.emptyList(), false);
+        List<ArkInstruction> insns = List.of(unknownInsn, retInsn);
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result,
+                "Should produce output even with unknown opcode");
+        assertTrue(result.contains("unhandled"),
+                "Should contain comment about unhandled opcode, got: "
+                        + result);
+    }
+
+    @Test
+    void testDecompile_methodLevelError_isolationInFile() {
+        AbcMethod workingMethod = new AbcMethod(0, 0, "good", 0, 0, 0);
+        byte[] goodCode = concat(bytes(0x62), le32(42), bytes(0x64));
+        AbcCode goodAbcCode = new AbcCode(2, 0, goodCode.length,
+                goodCode, Collections.emptyList(), 0);
+        String goodResult = decompiler.decompileMethod(
+                workingMethod, goodAbcCode, null);
+        assertNotNull(goodResult,
+                "Working method should produce output");
+        assertTrue(goodResult.contains("good"),
+                "Should contain method name");
+    }
+
+    @Test
+    void testDecompile_brokenCfg_fallsBackToLinearListing() {
+        ArkInstruction ldai = new ArkInstruction(
+                ArkOpcodesCompat.LDAI, "ldai",
+                ArkInstructionFormat.IMM32, 0, 5,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE32_SIGNED, 42)),
+                false);
+        ArkInstruction ret = new ArkInstruction(
+                ArkOpcodesCompat.RETURN, "return",
+                ArkInstructionFormat.NONE, 5, 1,
+                Collections.emptyList(), false);
+        List<ArkInstruction> insns = List.of(ldai, ret);
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result,
+                "Should produce output from instructions");
+        assertFalse(result.isEmpty(),
+                "Output should not be empty");
+    }
+
+    @Test
+    void testDecompile_warningAccumulation() {
+        List<ArkInstruction> insns = new ArrayList<>();
+        insns.add(new ArkInstruction(
+                ArkOpcodesCompat.RETURNUNDEFINED, "returnundefined",
+                ArkInstructionFormat.NONE, 0, 1,
+                Collections.emptyList(), false));
+        ControlFlowGraph cfg = ControlFlowGraph.build(insns);
+        AbcCode code = new AbcCode(0, 0, 1, new byte[0],
+                Collections.emptyList(), 0);
+        AbcMethod method = new AbcMethod(0, 0, "test", 0, 0, 0);
+        ArkTSDecompiler.DecompilationContext ctx =
+                new ArkTSDecompiler.DecompilationContext(
+                        method, code, null, null, cfg, insns);
+        ctx.warnings.add("test warning 1");
+        ctx.warnings.add("test warning 2");
+        assertEquals(2, ctx.warnings.size(),
+                "Should accumulate two warnings");
+        assertTrue(ctx.warnings.contains("test warning 1"));
+        assertTrue(ctx.warnings.contains("test warning 2"));
+    }
+
+    @Test
+    void testDecompile_partialOutput_containsPlaceholderComments() {
+        ArkInstruction unknownInsn = new ArkInstruction(
+                0xFF, "reserved_future_opcode",
+                ArkInstructionFormat.NONE, 0, 1,
+                Collections.emptyList(), false);
+        ArkInstruction retInsn = new ArkInstruction(
+                ArkOpcodesCompat.RETURNUNDEFINED, "returnundefined",
+                ArkInstructionFormat.NONE, 1, 1,
+                Collections.emptyList(), false);
+        List<ArkInstruction> insns = List.of(unknownInsn, retInsn);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("unhandled: reserved_future_opcode"),
+                "Should contain placeholder comment for unknown opcode, "
+                        + "got: " + result);
+    }
+
+    @Test
+    void testDecompile_instructionError_recovery() {
+        ArkInstruction ldai = new ArkInstruction(
+                ArkOpcodesCompat.LDAI, "ldai",
+                ArkInstructionFormat.IMM32, 0, 5,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE32_SIGNED, 10)),
+                false);
+        ArkInstruction unknownInsn = new ArkInstruction(
+                0xEE, "custom_unhandled",
+                ArkInstructionFormat.NONE, 5, 1,
+                Collections.emptyList(), false);
+        ArkInstruction retInsn = new ArkInstruction(
+                ArkOpcodesCompat.RETURN, "return",
+                ArkInstructionFormat.NONE, 6, 1,
+                Collections.emptyList(), false);
+        List<ArkInstruction> insns = List.of(ldai, unknownInsn, retInsn);
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result,
+                "Should produce output despite unhandled instruction");
+        assertTrue(result.contains("unhandled: custom_unhandled"),
+                "Should contain comment about unhandled instruction");
+    }
+
+    @Test
+    void testDecompile_emptyMethodOnNullCode() {
+        AbcMethod method = new AbcMethod(0, 0, "emptyMethod", 0, 0, 0);
+        String result = decompiler.decompileMethod(method, null, null);
+        assertNotNull(result,
+                "Should return output for null code");
+        assertTrue(result.contains("emptyMethod"),
+                "Should contain method name");
+    }
+
+    @Test
+    void testDecompile_fallbackMethod_containsReason() {
+        AbcMethod method = new AbcMethod(0, 0, "brokenMethod", 0, 0, 0);
+        byte[] garbageCode = new byte[] {(byte) 0xFF, (byte) 0xFF};
+        AbcCode code = new AbcCode(1, 0, garbageCode.length,
+                garbageCode, Collections.emptyList(), 0);
+        String result = decompiler.decompileMethod(method, code, null);
+        assertNotNull(result,
+                "Should produce output even for garbage code");
+        assertTrue(result.contains("brokenMethod"),
+                "Should contain method name");
+    }
+    // --- Issue #35: New instruction handler tests ---
+
+    @Test
+    void testConstEnumDeclaration_basic() {
+        List<ArkTSStatement.EnumDeclaration.EnumMember> members =
+                new ArrayList<>();
+        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("RED",
+                new ArkTSExpression.LiteralExpression("0",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER)));
+        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("GREEN",
+                new ArkTSExpression.LiteralExpression("1",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER)));
+        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("BLUE",
+                new ArkTSExpression.LiteralExpression("2",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER)));
+        ArkTSStatement.ConstEnumDeclaration constEnum =
+                new ArkTSStatement.ConstEnumDeclaration("Color", members);
+        String result = constEnum.toArkTS(0);
+        assertTrue(result.startsWith("const enum Color {"));
+        assertTrue(result.contains("RED = 0"));
+        assertTrue(result.contains("GREEN = 1"));
+        assertTrue(result.contains("BLUE = 2"));
+        assertTrue(result.endsWith("}"));
+    }
+
+    @Test
+    void testConstEnumDeclaration_stringValues() {
+        List<ArkTSStatement.EnumDeclaration.EnumMember> members =
+                new ArrayList<>();
+        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("North",
+                new ArkTSExpression.LiteralExpression("N",
+                        ArkTSExpression.LiteralExpression.LiteralKind.STRING)));
+        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("South",
+                new ArkTSExpression.LiteralExpression("S",
+                        ArkTSExpression.LiteralExpression.LiteralKind.STRING)));
+        ArkTSStatement.ConstEnumDeclaration constEnum =
+                new ArkTSStatement.ConstEnumDeclaration("Direction", members);
+        String result = constEnum.toArkTS(0);
+        assertTrue(result.startsWith("const enum Direction {"));
+        assertTrue(result.contains("North = \"N\""));
+        assertTrue(result.contains("South = \"S\""));
+    }
+
+    @Test
+    void testEnumDeclaration_mixedStringAndNumberValues() {
+        List<ArkTSStatement.EnumDeclaration.EnumMember> members =
+                new ArrayList<>();
+        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("A",
+                new ArkTSExpression.LiteralExpression("1",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER)));
+        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("B",
+                new ArkTSExpression.LiteralExpression("hello",
+                        ArkTSExpression.LiteralExpression.LiteralKind.STRING)));
+        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("C", null));
+        ArkTSStatement.EnumDeclaration enumDecl =
+                new ArkTSStatement.EnumDeclaration("Mixed", members);
+        String result = enumDecl.toArkTS(0);
+        assertTrue(result.startsWith("enum Mixed {"));
+        assertTrue(result.contains("A = 1"));
+        assertTrue(result.contains("B = \"hello\""));
+        assertTrue(result.contains("C"));
+        assertTrue(result.endsWith("}"));
+    }
+
+    @Test
+    void testConstEnumDeclaration_autoIncrement() {
+        List<ArkTSStatement.EnumDeclaration.EnumMember> members =
+                new ArrayList<>();
+        members.add(new ArkTSStatement.EnumDeclaration.EnumMember(
+                "First", null));
+        members.add(new ArkTSStatement.EnumDeclaration.EnumMember(
+                "Second", null));
+        members.add(new ArkTSStatement.EnumDeclaration.EnumMember(
+                "Third", null));
+        ArkTSStatement.ConstEnumDeclaration constEnum =
+                new ArkTSStatement.ConstEnumDeclaration("Auto", members);
+        String result = constEnum.toArkTS(0);
+        assertTrue(result.startsWith("const enum Auto {"));
+        assertTrue(result.contains("First"));
+        assertTrue(result.contains("Second"));
+        assertTrue(result.contains("Third"));
+        assertFalse(result.contains("="));
+    }
+
+    @Test
+    void testConstEnumDeclaration_singleMember() {
+        List<ArkTSStatement.EnumDeclaration.EnumMember> members =
+                new ArrayList<>();
+        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("Only",
+                new ArkTSExpression.LiteralExpression("42",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER)));
+        ArkTSStatement.ConstEnumDeclaration constEnum =
+                new ArkTSStatement.ConstEnumDeclaration("Single", members);
+        String result = constEnum.toArkTS(0);
+        assertTrue(result.startsWith("const enum Single {"));
+        assertTrue(result.contains("Only = 42"));
+        assertTrue(result.endsWith("}"));
+    }
+
+    @Test
+    void testConstEnumDeclaration_withIndent() {
+        List<ArkTSStatement.EnumDeclaration.EnumMember> members =
+                new ArrayList<>();
+        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("X",
+                new ArkTSExpression.LiteralExpression("1",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER)));
+        ArkTSStatement.ConstEnumDeclaration constEnum =
+                new ArkTSStatement.ConstEnumDeclaration("Inner", members);
+        String result = constEnum.toArkTS(1);
+        assertTrue(result.startsWith("    const enum Inner {"));
+    }
+
+    @Test
+    void testEnumDeclaration_computedNumberValues() {
+        List<ArkTSStatement.EnumDeclaration.EnumMember> members =
+                new ArrayList<>();
+        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("HUNDRED",
+                new ArkTSExpression.LiteralExpression("100",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER)));
+        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("TWO_HUNDRED",
+                new ArkTSExpression.LiteralExpression("200",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER)));
+        ArkTSStatement.EnumDeclaration enumDecl =
+                new ArkTSStatement.EnumDeclaration("HttpStatus", members);
+        String result = enumDecl.toArkTS(0);
+        assertTrue(result.contains("HUNDRED = 100"));
+        assertTrue(result.contains("TWO_HUNDRED = 200"));
+    }
+
+    @Test
+    void testEnumDeclaration_stringEnum() {
+        List<ArkTSStatement.EnumDeclaration.EnumMember> members =
+                new ArrayList<>();
+        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("Up",
+                new ArkTSExpression.LiteralExpression("UP",
+                        ArkTSExpression.LiteralExpression.LiteralKind.STRING)));
+        members.add(new ArkTSStatement.EnumDeclaration.EnumMember("Down",
+                new ArkTSExpression.LiteralExpression("DOWN",
+                        ArkTSExpression.LiteralExpression.LiteralKind.STRING)));
+        ArkTSStatement.EnumDeclaration enumDecl =
+                new ArkTSStatement.EnumDeclaration("Vertical", members);
+        String result = enumDecl.toArkTS(0);
+        assertTrue(result.startsWith("enum Vertical {"));
+        assertTrue(result.contains("Up = \"UP\""));
+        assertTrue(result.contains("Down = \"DOWN\""));
+    }
+
+    @Test
+    void testLdSymbolAccumulatorLoad() {
+        byte[] code = concat(
+                bytes(0xAD),
+                bytes(0x61, 0x00),
+                bytes(0x60, 0x00),
+                bytes(0x64)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result);
+        assertTrue(result.contains("Symbol"),
+                "Expected Symbol in output: " + result);
+    }
+
+    @Test
+    void testLdNewTargetAccumulatorLoad() {
+        byte[] code = concat(
+                bytes(0x6E),
+                bytes(0x61, 0x00),
+                bytes(0x60, 0x00),
+                bytes(0x64)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result);
+        assertTrue(result.contains("new.target"),
+                "Expected new.target in output: " + result);
+    }
+
+    @Test
+    void testDebuggerInstruction() {
+        byte[] code = concat(
+                bytes(0xB0),
+                bytes(0x64)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result);
+        assertTrue(result.contains("debugger"),
+                "Expected debugger in output: " + result);
+    }
+
+    @Test
+    void testGetUnmappedArgs() {
+        byte[] code = concat(
+                bytes(0x6C),
+                bytes(0x61, 0x00),
+                bytes(0x60, 0x00),
+                bytes(0x64)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result);
+        assertTrue(result.contains("arguments"),
+                "Expected arguments in output: " + result);
+    }
+
+    @Test
+    void testLdHoleLoadsUndefined() {
+        byte[] code = concat(
+                bytes(0x70),
+                bytes(0x61, 0x00),
+                bytes(0x60, 0x00),
+                bytes(0x64)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result);
+        assertTrue(result.contains("undefined"),
+                "Expected undefined in output: " + result);
+    }
+
+    @Test
+    void testPoplexenvIsNoOp() {
+        byte[] code = concat(
+                bytes(0x09, 0x01),
+                bytes(0x69),
+                bytes(0x64)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result);
+    }
+
+    @Test
+    void testLdNaNLoadsNaN() {
+        byte[] code = concat(
+                bytes(0x6A),
+                bytes(0x61, 0x00),
+                bytes(0x60, 0x00),
+                bytes(0x64)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result);
+        assertTrue(result.contains("NaN"),
+                "Expected NaN in output: " + result);
+    }
+
+    @Test
+    void testLdInfinityLoadsInfinity() {
+        byte[] code = concat(
+                bytes(0x6B),
+                bytes(0x61, 0x00),
+                bytes(0x60, 0x00),
+                bytes(0x64)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result);
+        assertTrue(result.contains("Infinity"),
+                "Expected Infinity in output: " + result);
+    }
+
 }
