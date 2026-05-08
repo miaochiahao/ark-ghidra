@@ -179,7 +179,7 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Try/catch decompilation:** Use `AbcCode.getTryBlocks()` → `AbcTryBlock.getCatchBlocks()` → `AbcCatchBlock` to reconstruct exception handling. Map try start/end PC ranges to CFG block addresses. Catch-all blocks (typeIdx=0) map to `finally`.
 - **Jump offset calculation:** `jmp +0` at offset 0 with instruction length 2 gives target = 0+2+0 = 2 (not 0). For infinite loop (jmp to self), need negative offset = -instruction_length (e.g., `0xFE` for 2-byte jmp).
 - **Parameter naming convention:** Use `param_0`, `param_1` etc. (not `p0`/`p1`) for better readability. Falls back to untyped when no proto info available.
-- **Test count tracking:** 697 tests across 15 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
+- **Test count tracking:** 754 tests across 16 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
 - **ABC debug info parsing:** Tags 0x07 (SOURCE_FILE), 0x03 (DEBUG_INFO) in class/method tag values. Debug info contains line_start, num_params, param name string offsets, constant pool. LNP uses DWARF v3 state machine with special opcodes.
 - **Realistic test fixture design:** Use 16384-byte buffer with 200-byte spacing between areas (strings at 200, classes at 800, code at 2000, protos at 6000, etc.). Encode methods with ULEB128 for vregs/args/codeSize/triesSize.
 - **Debug parameter name resolution:** `AbcFile.getDebugInfoForMethod()` → `AbcDebugInfo.getParameterNames()` → pass to `MethodSignatureBuilder.buildParams(proto, numArgs, debugNames)`. Falls back to `param_N` for unnamed.
@@ -200,6 +200,9 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Nullish coalescing:** Detect from ternary patterns where condition is `===`/`==` comparison against `null`. Produces `value ?? default` via `tryDetectNullishCoalescing()`.
 - **Annotation parsing:** `AbcAnnotation` and `AbcAnnotationElement` data classes. Elements support TAG_INT (0x03), TAG_DOUBLE (0x04), TAG_STRING (0x05), TAG_ID (0x06). Annotations linked to classes/methods/fields via offset maps in AbcFile. `toDecoratorString()` generates `@Name(arg1, arg2)`.
 - **Decorator detection improvement:** `detectDecorators()` now checks annotation data from AbcFile when available, falls back to heuristic detection. `buildFieldDeclaration()` uses field annotations for @State, @Prop, etc.
+- **HAP file loading:** HAP is a ZIP archive containing .abc files. `HapLoader` detects ZIP magic, extracts .abc entries, maps each at 1MB-spaced offsets (0x100000). Block names: `abc_0_sanitized_path`. `AbcLoaderUtils` extracted for shared loading logic between AbcLoader and HapLoader. `HapMetadataParser` handles module.json/json5 with comment stripping.
+- **Multi-ABC block support:** `ArkBytecodeAnalyzer.readAllAbcBytes()` iterates all blocks starting with `"abc"`. AbcLoader creates block named `"abc"` (backward compatible). HapLoader creates `abc_0_*`, `abc_1_*` etc.
+- **Error recovery:** Method-level try/catch in decompileFile() — one method failure doesn't stop others. CFG fallback to linear instruction listing. Instruction-level error recovery with `/* unhandled: opcode */` comments. Warning accumulation in `DecompilationContext.warnings`.
 <!-- LINT_RULES_END -->
 
 ---
