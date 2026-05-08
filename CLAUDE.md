@@ -151,6 +151,10 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **ByteProvider in tests:** `RandomAccessByteProvider` triggers `Application.initializeApplication()`. Use a custom `ByteProvider` implementation for unit tests to avoid Ghidra init overhead.
 - **SymbolTable namespace API:** Use `getOrCreateNameSpace()` (not `createClassNamespace` which doesn't exist). Use `createClass()` for GhidraClass namespaces.
 - **FunctionManager.createFunction:** Takes `(String, Namespace, Address, AddressSetView, SourceType)` — requires `AddressSet` for body, not bare `Address`.
+- **AbstractAnalyzer API (Ghidra 12.0):** Extend `AbstractAnalyzer(name, description, AnalyzerType)`. Override `canAnalyze(Program)`, `getDefaultEnablement(Program)`, and `added(Program, AddressSetView, TaskMonitor, MessageLog)`. Use `AnalyzerType.BYTE_ANALYZER` for bytecode analysis.
+- **Ghidra Analyzer registration:** Analyzers implementing `ExtensionPoint` are auto-discovered. Must be on the classpath. Name must match pspec property `Analyzers.<name>`.
+- **Ark bytecode instruction formats:** 30+ formats covering all instruction layouts. Wide prefix (0xFD) changes operand sizes (8-bit → 16-bit). Jump offsets are signed. Packed 4-bit operands use bit fields.
+- **Duplicate opcode handling:** When generating opcode lookup tables, ensure each opcode maps to exactly one mnemonic. Watch for duplicates like `neg 0x1F`, `createarraywithbuffer 0x06/0x81`, `stsuperbyname 0xD0`, `stsuperbyvalue 0xC9`.
 <!-- LINT_RULES_END -->
 
 ---
