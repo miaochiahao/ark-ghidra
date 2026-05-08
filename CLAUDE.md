@@ -46,8 +46,8 @@ ark-ghidra/
 ### Prerequisites (install before first build)
 
 ```bash
-# Java 17 (installed at /opt/homebrew/opt/openjdk@17)
-export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
+# Java 21 (required — Ghidra 12.0.4 uses Java 21 class files)
+export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
 export PATH="$JAVA_HOME/bin:$PATH"
 
 # Ghidra 12.0.4 (installed at ~/Documents/ghidra_12.0.4_PUBLIC)
@@ -121,14 +121,14 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 
 ## Code Style
 
-- **Language:** Java 17 (no preview features)
+- **Language:** Java 21 (required by Ghidra 12.0.4 — class version 65.0)
 - **Indent:** 4 spaces, no tabs
 - **Max line length:** 120 characters
 - **Naming:** standard Java conventions — PascalCase classes, camelCase methods/fields, UPPER_SNAKE constants
 - **Imports:** no wildcard imports; order: java. → javax. → ghidra. → com. → project
 - **Exceptions:** use Ghidra's exception hierarchy where possible (ghidra.util.exception)
 - **Logging:** use Ghidra's Msg class (Msg.info, Msg.warn, Msg.error) with a static OWNER string
-- **Null:** use `@Nullable` / `@NonNull` annotations from javax.annotation
+- **Null:** no javax.annotation in Ghidra 12.0.4 classpath — omit `@Nonnull`/`@Nullable` or use `ghidra` annotations if available
 - **Tests:** JUnit 5, use descriptive test method names: `testParseMethodTable_withThreeEntries_returnsCorrectCount()`
 - **No TODO comments** — either implement it or create a GitHub issue
 
@@ -143,9 +143,14 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **LeftCurly:** No single-line methods with `{ return x; }`. Always use multi-line format: `{` on same line as closing paren, body on next line, `}` on its own line.
 - **WhitespaceAround:** Empty braces `{}` must have a space: `{ }` is wrong, use multi-line instead.
 - **LineLength must be under Checker (not TreeWalker):** In checkstyle.xml, `LineLength` must be a direct child of `Checker`, not `TreeWalker` (changed in checkstyle 10.x).
-- **JAVA_HOME:** Always set `JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home` before running gradlew.
+- **JAVA_HOME:** Always set `JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home` before running gradlew. (Ghidra 12.0.4 requires Java 21 class files; Java 17 won't work.)
 - **Gradle daemon:** If builds fail with "NoSuchFileException" for gradle jars, stop the daemon: run gradle with `--stop` and delete `~/.gradle/daemon/` cache.
 - **Test fixture binary layout:** When building synthetic .abc binary fixtures in tests, ensure code sections and method structures don't overlap in the byte buffer. Use sufficiently spaced offsets.
+- **Ghidra 12.0 Loader API:** `AbstractProgramWrapperLoader` has abstract `load(Program, ImporterSettings)`. `loadProgram(ImporterSettings)` and `loadProgramInto(Program, ImporterSettings)` are concrete (not abstract) — they call `load()`. `ImporterSettings` is a `Record` with `provider()`, `monitor()`, `log()`, `loadSpec()`, `options()`, `consumer()`.
+- **Ghidra JAR locations:** Loader/opinion classes are in `Ghidra/Features/Base/lib/Base.jar`, not in Framework jars. Use `fileTree(dir: ghidraDir, include: '**/lib/*.jar')` to include all.
+- **ByteProvider in tests:** `RandomAccessByteProvider` triggers `Application.initializeApplication()`. Use a custom `ByteProvider` implementation for unit tests to avoid Ghidra init overhead.
+- **SymbolTable namespace API:** Use `getOrCreateNameSpace()` (not `createClassNamespace` which doesn't exist). Use `createClass()` for GhidraClass namespaces.
+- **FunctionManager.createFunction:** Takes `(String, Namespace, Address, AddressSetView, SourceType)` — requires `AddressSet` for body, not bare `Address`.
 <!-- LINT_RULES_END -->
 
 ---
@@ -153,7 +158,7 @@ _This section is updated automatically when lint reveals new patterns to enforce
 ## Build Dependencies
 
 - Ghidra 12.0.4 (extension API)
-- Java 17
+- Java 21 (Ghidra 12.0.4 requires Java 21+)
 - Gradle 8.x (wrapper included)
 - JUnit 5 (testing)
 - SpotBugs + Checkstyle (static analysis)
