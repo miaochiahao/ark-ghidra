@@ -159,6 +159,23 @@ final class ArkOpcodesCompat {
     static final int SUPERCALLSPREAD = ArkOpcodes.SUPERCALLSPREAD;
     static final int SUPERCALLARROWRANGE = ArkOpcodes.SUPERCALLARROWRANGE;
 
+    static final int LDPRIVATEPROPERTY = ArkOpcodes.LDPRIVATEPROPERTY;
+    static final int STPRIVATEPROPERTY = ArkOpcodes.STPRIVATEPROPERTY;
+    static final int TESTIN = ArkOpcodes.TESTIN;
+
+    static final int SETGENERATORSTATE = ArkOpcodes.SETGENERATORSTATE;
+    static final int CREATEASYNCGENERATOROBJ = ArkOpcodes.CREATEASYNCGENERATOROBJ;
+    static final int ASYNCGENERATORRESOLVE = ArkOpcodes.ASYNCGENERATORRESOLVE;
+    static final int ASYNCGENERATORREJECT = ArkOpcodes.ASYNCGENERATORREJECT;
+
+    static final int CREATEOBJECTWITHEXCLUDEDKEYS =
+            ArkOpcodes.CREATEOBJECTWITHEXCLUDEDKEYS;
+    static final int DEFINEGETTERSETTERBYVALUE =
+            ArkOpcodes.DEFINEGETTERSETTERBYVALUE;
+
+    static final int DELOBJPROP = ArkOpcodes.DELOBJPROP;
+    static final int COPYDATAPROPERTIES = ArkOpcodes.COPYDATAPROPERTIES;
+
     static final int THROW = ArkOpcodes.PREFIX_THROW;
 
     private ArkOpcodesCompat() {

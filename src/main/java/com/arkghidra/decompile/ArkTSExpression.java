@@ -466,7 +466,11 @@ public abstract class ArkTSExpression {
         public String toArkTS() {
             StringJoiner joiner = new StringJoiner(", ");
             for (ObjectProperty prop : properties) {
-                joiner.add(prop.key + ": " + prop.value.toArkTS());
+                if (prop.key == null) {
+                    joiner.add(prop.value.toArkTS());
+                } else {
+                    joiner.add(prop.key + ": " + prop.value.toArkTS());
+                }
             }
             return "{ " + joiner + " }";
         }
@@ -895,6 +899,212 @@ public abstract class ArkTSExpression {
                 sb.append(body.toArkTS(0));
             }
             return sb.toString();
+        }
+    }
+
+    // --- Private member access (obj.#prop) ---
+
+    /**
+     * A private property access expression: obj.#prop.
+     *
+     * <p>Used for private fields in ArkTS/TypeScript classes that are
+     * accessed with the hash prefix syntax.
+     */
+    public static class PrivateMemberExpression extends ArkTSExpression {
+        private final ArkTSExpression object;
+        private final String propertyName;
+
+        /**
+         * Constructs a private member expression.
+         *
+         * @param object the object expression
+         * @param propertyName the private property name (without the # prefix)
+         */
+        public PrivateMemberExpression(ArkTSExpression object,
+                String propertyName) {
+            this.object = object;
+            this.propertyName = propertyName;
+        }
+
+        public ArkTSExpression getObject() {
+            return object;
+        }
+
+        public String getPropertyName() {
+            return propertyName;
+        }
+
+        @Override
+        public String toArkTS() {
+            return object.toArkTS() + ".#" + propertyName;
+        }
+    }
+
+    // --- In expression (prop in obj) ---
+
+    /**
+     * An {@code in} expression: prop in obj.
+     *
+     * <p>Checks whether a property exists on an object.
+     */
+    public static class InExpression extends ArkTSExpression {
+        private final ArkTSExpression property;
+        private final ArkTSExpression object;
+
+        /**
+         * Constructs an in-expression.
+         *
+         * @param property the property name expression
+         * @param object the object expression
+         */
+        public InExpression(ArkTSExpression property,
+                ArkTSExpression object) {
+            this.property = property;
+            this.object = object;
+        }
+
+        public ArkTSExpression getProperty() {
+            return property;
+        }
+
+        public ArkTSExpression getObject() {
+            return object;
+        }
+
+        @Override
+        public String toArkTS() {
+            return property.toArkTS() + " in " + object.toArkTS();
+        }
+    }
+
+    // --- Instanceof expression (expr instanceof Type) ---
+
+    /**
+     * An {@code instanceof} expression: expr instanceof Type.
+     */
+    public static class InstanceofExpression extends ArkTSExpression {
+        private final ArkTSExpression expression;
+        private final ArkTSExpression targetType;
+
+        /**
+         * Constructs an instanceof expression.
+         *
+         * @param expression the expression being tested
+         * @param targetType the target type expression
+         */
+        public InstanceofExpression(ArkTSExpression expression,
+                ArkTSExpression targetType) {
+            this.expression = expression;
+            this.targetType = targetType;
+        }
+
+        public ArkTSExpression getExpression() {
+            return expression;
+        }
+
+        public ArkTSExpression getTargetType() {
+            return targetType;
+        }
+
+        @Override
+        public String toArkTS() {
+            return expression.toArkTS() + " instanceof "
+                    + targetType.toArkTS();
+        }
+    }
+
+    // --- Delete expression (delete obj.prop) ---
+
+    /**
+     * A delete expression: delete obj.prop.
+     */
+    public static class DeleteExpression extends ArkTSExpression {
+        private final ArkTSExpression target;
+
+        /**
+         * Constructs a delete expression.
+         *
+         * @param target the property to delete
+         */
+        public DeleteExpression(ArkTSExpression target) {
+            this.target = target;
+        }
+
+        public ArkTSExpression getTarget() {
+            return target;
+        }
+
+        @Override
+        public String toArkTS() {
+            return "delete " + target.toArkTS();
+        }
+    }
+
+    // --- Object spread / copy (copyDataProperties) ---
+
+    /**
+     * A copy data properties expression: Object.assign(target, source).
+     *
+     * <p>Represents the internal copyDataProperties operation which copies
+     * all enumerable own properties from source to target.
+     */
+    public static class CopyDataPropertiesExpression extends ArkTSExpression {
+        private final ArkTSExpression target;
+        private final ArkTSExpression source;
+
+        /**
+         * Constructs a copy data properties expression.
+         *
+         * @param target the target object
+         * @param source the source object
+         */
+        public CopyDataPropertiesExpression(ArkTSExpression target,
+                ArkTSExpression source) {
+            this.target = target;
+            this.source = source;
+        }
+
+        public ArkTSExpression getTarget() {
+            return target;
+        }
+
+        public ArkTSExpression getSource() {
+            return source;
+        }
+
+        @Override
+        public String toArkTS() {
+            return "Object.assign(" + target.toArkTS() + ", "
+                    + source.toArkTS() + ")";
+        }
+    }
+
+    // --- Generator state expression ---
+
+    /**
+     * A generator state set expression: generator.state = value.
+     *
+     * <p>Used internally for generator state machine management.
+     */
+    public static class GeneratorStateExpression extends ArkTSExpression {
+        private final ArkTSExpression value;
+
+        /**
+         * Constructs a generator state expression.
+         *
+         * @param value the state value expression
+         */
+        public GeneratorStateExpression(ArkTSExpression value) {
+            this.value = value;
+        }
+
+        public ArkTSExpression getValue() {
+            return value;
+        }
+
+        @Override
+        public String toArkTS() {
+            return "/* setgeneratorstate " + value.toArkTS() + " */";
         }
     }
 }

@@ -18,6 +18,7 @@ import com.arkghidra.format.AbcDebugInfo;
 import com.arkghidra.format.AbcField;
 import com.arkghidra.format.AbcFile;
 import com.arkghidra.format.AbcMethod;
+import com.arkghidra.format.AbcModuleRecord;
 import com.arkghidra.format.AbcProto;
 import com.arkghidra.format.AbcTryBlock;
 
@@ -136,6 +137,81 @@ public class ArkTSDecompiler {
         List<ArkTSStatement> exports = new ArrayList<>();
         Set<String> seenImports = new HashSet<>();
 
+        // Generate import/export statements from module records
+        for (int i = 0; i < abcFile.getClasses().size(); i++) {
+            AbcModuleRecord record = abcFile.getModuleRecord(i);
+            if (record != null) {
+                List<String> moduleRequests =
+                        abcFile.resolveModuleRequests(record);
+
+                // Regular imports: import { importName as localName } from 'module'
+                for (AbcModuleRecord.RegularImport ri : record.getRegularImports()) {
+                    String localName = abcFile.getSourceFileName(ri.getLocalNameOffset());
+                    String importName = abcFile.getSourceFileName(ri.getImportNameOffset());
+                    String modulePath = getModulePath(moduleRequests, ri.getModuleRequestIdx());
+                    List<String> namedImports = new ArrayList<>();
+                    if (localName != null && importName != null
+                            && !localName.equals(importName)) {
+                        namedImports.add(importName + " as " + localName);
+                    } else if (importName != null) {
+                        namedImports.add(importName);
+                    }
+                    if (modulePath != null) {
+                        imports.add(new ArkTSStatement.ImportStatement(
+                                namedImports, modulePath, false, null, null));
+                        seenImports.add(modulePath);
+                    }
+                }
+
+                // Namespace imports: import * as localName from 'module'
+                for (AbcModuleRecord.NamespaceImport ni : record.getNamespaceImports()) {
+                    String localName = abcFile.getSourceFileName(ni.getLocalNameOffset());
+                    String modulePath = getModulePath(moduleRequests, ni.getModuleRequestIdx());
+                    if (localName != null && modulePath != null) {
+                        imports.add(new ArkTSStatement.ImportStatement(
+                                Collections.emptyList(), modulePath, false, null, localName));
+                        seenImports.add(modulePath);
+                    }
+                }
+
+                // Local exports: export { localName as exportName }
+                for (AbcModuleRecord.LocalExport le : record.getLocalExports()) {
+                    String localName = abcFile.getSourceFileName(le.getLocalNameOffset());
+                    String exportName = abcFile.getSourceFileName(le.getExportNameOffset());
+                    List<String> namedExports = new ArrayList<>();
+                    if (localName != null && exportName != null
+                            && !localName.equals(exportName)) {
+                        namedExports.add(localName + " as " + exportName);
+                    } else if (localName != null) {
+                        namedExports.add(localName);
+                    }
+                    if (!namedExports.isEmpty()) {
+                        exports.add(new ArkTSStatement.ExportStatement(
+                                namedExports, null, false));
+                    }
+                }
+
+                // Indirect exports: export { importName as exportName } from 'module'
+                for (AbcModuleRecord.IndirectExport ie : record.getIndirectExports()) {
+                    String exportName = abcFile.getSourceFileName(ie.getExportNameOffset());
+                    String importName = abcFile.getSourceFileName(ie.getImportNameOffset());
+                    String modulePath = getModulePath(moduleRequests,
+                            ie.getModuleRequestIdx());
+                    List<String> namedExports = new ArrayList<>();
+                    if (importName != null && exportName != null
+                            && !importName.equals(exportName)) {
+                        namedExports.add(importName + " as " + exportName);
+                    } else if (importName != null) {
+                        namedExports.add(importName);
+                    }
+                    if (modulePath != null && !namedExports.isEmpty()) {
+                        exports.add(new ArkTSStatement.ExportStatement(
+                                namedExports, null, false));
+                    }
+                }
+            }
+        }
+
         for (AbcClass abcClass : abcFile.getClasses()) {
             ArkTSStatement classDecl =
                     buildClassDeclaration(abcClass, abcFile, seenImports);
@@ -157,12 +233,32 @@ public class ArkTSDecompiler {
 
         // Build import statements from collected module references
         for (String moduleRef : seenImports) {
-            imports.add(new ArkTSStatement.ImportStatement(
-                    Collections.emptyList(), moduleRef, false, null, null));
+            boolean alreadyImported = imports.stream().anyMatch(s ->
+                    s instanceof ArkTSStatement.ImportStatement
+                    && ((ArkTSStatement.ImportStatement) s).getModulePath()
+                            .equals(moduleRef));
+            if (!alreadyImported) {
+                imports.add(new ArkTSStatement.ImportStatement(
+                        Collections.emptyList(), moduleRef, false, null, null));
+            }
         }
 
         // Build output with blank lines between classes
         return buildFileOutput(imports, declarations, exports);
+    }
+
+    /**
+     * Resolves a module path from the module requests list by index.
+     *
+     * @param moduleRequests the resolved module request paths
+     * @param idx the module request index
+     * @return the module path, or null if out of range
+     */
+    private static String getModulePath(List<String> moduleRequests, int idx) {
+        if (idx < 0 || idx >= moduleRequests.size()) {
+            return null;
+        }
+        return moduleRequests.get(idx);
     }
 
     /**
@@ -1056,6 +1152,11 @@ public class ArkTSDecompiler {
                     stmts.addAll(processShortCircuitOr(block, pattern, ctx,
                             cfg, visited));
                     break;
+                case SWITCH:
+                    visited.add(block);
+                    stmts.addAll(processSwitch(block, pattern, ctx, cfg,
+                            visited));
+                    break;
                 default:
                     // LINEAR or UNKNOWN: process instructions normally
                     visited.add(block);
@@ -1072,7 +1173,8 @@ public class ArkTSDecompiler {
      */
     private enum PatternType {
         LINEAR, IF_ONLY, IF_ELSE, WHILE_LOOP, FOR_LOOP, DO_WHILE, BREAK,
-        CONTINUE, TERNARY, SHORT_CIRCUIT_AND, SHORT_CIRCUIT_OR, UNKNOWN
+        CONTINUE, TERNARY, SHORT_CIRCUIT_AND, SHORT_CIRCUIT_OR, SWITCH,
+        UNKNOWN
     }
 
     /**
@@ -1097,8 +1199,27 @@ public class ArkTSDecompiler {
         ArkTSExpression ternaryFalseValue;
         ArkTSExpression ternaryCondition;
 
+        // Switch fields
+        ArkTSExpression switchDiscriminant;
+        List<SwitchCaseInfo> switchCases;
+        BasicBlock switchDefaultBlock;
+        BasicBlock switchEndBlock;
+
         ControlFlowPattern(PatternType type) {
             this.type = type;
+        }
+    }
+
+    /**
+     * Holds information about a single switch case during detection.
+     */
+    private static class SwitchCaseInfo {
+        final ArkTSExpression testValue;
+        final BasicBlock targetBlock;
+
+        SwitchCaseInfo(ArkTSExpression testValue, BasicBlock targetBlock) {
+            this.testValue = testValue;
+            this.targetBlock = targetBlock;
         }
     }
 
@@ -1136,6 +1257,14 @@ public class ArkTSDecompiler {
                 p.conditionBlock = block;
                 p.trueBlock = loopBody;
                 return p;
+            }
+
+            // Check for switch pattern: consecutive jeq comparisons against
+            // the same register
+            ControlFlowPattern switchP = detectSwitchPattern(
+                    block, trueBranch, falseBranch, cfg);
+            if (switchP != null) {
+                return switchP;
             }
 
             // Check for ternary pattern: condition -> jeqz else_branch;
@@ -1950,6 +2079,430 @@ public class ArkTSDecompiler {
         return stmts;
     }
 
+    // --- Switch statement processing ---
+
+    /**
+     * Detects a switch statement pattern from the CFG.
+     *
+     * <p>A switch in Ark bytecode is compiled as a chain of comparison blocks.
+     * Each comparison block loads a constant (ldai), then uses {@code jeq vN}
+     * to branch to the corresponding case body if equal. The fall-through from
+     * each comparison goes to the next comparison (or the default body).
+     *
+     * @param block the starting block to examine
+     * @param trueBranch the branch target (case body)
+     * @param falseBranch the fall-through (next comparison or default)
+     * @param cfg the control flow graph
+     * @return the switch pattern, or null if not a switch
+     */
+    private ControlFlowPattern detectSwitchPattern(BasicBlock block,
+            BasicBlock trueBranch, BasicBlock falseBranch,
+            ControlFlowGraph cfg) {
+
+        ArkInstruction lastInsn = block.getLastInstruction();
+        if (lastInsn == null) {
+            return null;
+        }
+
+        int opcode = lastInsn.getOpcode();
+
+        // Switch comparison uses jeq (acc == register)
+        if (opcode != ArkOpcodesCompat.JEQ_IMM8
+                && opcode != ArkOpcodesCompat.JEQ_IMM16) {
+            return null;
+        }
+
+        // Extract the comparison register from the jeq instruction
+        List<ArkOperand> ops = lastInsn.getOperands();
+        if (ops.isEmpty()) {
+            return null;
+        }
+        int compareReg = (int) ops.get(0).getValue();
+
+        // Extract the case test value from the block (look for ldai)
+        ArkTSExpression caseValue = extractCaseValue(block);
+        if (caseValue == null) {
+            return null;
+        }
+
+        // Collect consecutive jeq comparison blocks
+        List<SwitchCaseInfo> cases = new ArrayList<>();
+        cases.add(new SwitchCaseInfo(caseValue, trueBranch));
+
+        BasicBlock current = falseBranch;
+        Set<Integer> visitedOffsets = new HashSet<>();
+        visitedOffsets.add(block.getStartOffset());
+
+        while (current != null && !visitedOffsets.contains(
+                current.getStartOffset())) {
+
+            visitedOffsets.add(current.getStartOffset());
+
+            ArkInstruction currentLast = current.getLastInstruction();
+            if (currentLast == null) {
+                break;
+            }
+
+            int currentOpcode = currentLast.getOpcode();
+
+            // Check if this block also ends with jeq against same register
+            if (currentOpcode == ArkOpcodesCompat.JEQ_IMM8
+                    || currentOpcode == ArkOpcodesCompat.JEQ_IMM16) {
+                List<ArkOperand> currentOps = currentLast.getOperands();
+                if (currentOps.isEmpty()) {
+                    break;
+                }
+                int currentReg = (int) currentOps.get(0).getValue();
+                if (currentReg != compareReg) {
+                    break;
+                }
+
+                // Extract case value from this block
+                ArkTSExpression value = extractCaseValue(current);
+                if (value == null) {
+                    break;
+                }
+
+                // Get the branch target (case body block)
+                List<CFGEdge> succs = current.getSuccessors();
+                if (succs.size() != 2) {
+                    break;
+                }
+
+                BasicBlock caseTarget = getSuccessorByType(succs,
+                        EdgeType.CONDITIONAL_TRUE);
+                BasicBlock nextFallThrough = getSuccessorByType(succs,
+                        EdgeType.CONDITIONAL_FALSE);
+                if (caseTarget == null) {
+                    caseTarget = cfg.getBlockAt(
+                            succs.get(0).getToOffset());
+                    nextFallThrough = cfg.getBlockAt(
+                            succs.get(1).getToOffset());
+                }
+                if (caseTarget == null) {
+                    break;
+                }
+
+                cases.add(new SwitchCaseInfo(value, caseTarget));
+                current = nextFallThrough;
+            } else {
+                // Not a jeq block - this is where the default case starts
+                break;
+            }
+        }
+
+        // Need at least 2 cases to form a switch
+        if (cases.size() < 2) {
+            return null;
+        }
+
+        // The discriminant is the register being compared against
+        ArkTSExpression discriminant =
+                new ArkTSExpression.VariableExpression("v" + compareReg);
+
+        // Find the end block of the switch
+        BasicBlock defaultBlock = current;
+        BasicBlock endBlock = findSwitchEndBlock(
+                cases, defaultBlock, cfg);
+
+        ControlFlowPattern p =
+                new ControlFlowPattern(PatternType.SWITCH);
+        p.switchDiscriminant = discriminant;
+        p.switchCases = cases;
+        p.switchDefaultBlock = defaultBlock;
+        p.switchEndBlock = endBlock;
+        return p;
+    }
+
+    /**
+     * Extracts the case test value from a comparison block.
+     * Looks for an {@code ldai} instruction that sets the accumulator
+     * before the comparison.
+     *
+     * @param block the comparison block
+     * @return the literal expression for the case value, or null
+     */
+    private ArkTSExpression extractCaseValue(BasicBlock block) {
+        ArkInstruction lastInsn = block.getLastInstruction();
+        for (ArkInstruction insn : block.getInstructions()) {
+            if (insn == lastInsn) {
+                break;
+            }
+            if (insn.getOpcode() == ArkOpcodesCompat.LDAI) {
+                return new ArkTSExpression.LiteralExpression(
+                        String.valueOf(
+                                insn.getOperands().get(0).getValue()),
+                        ArkTSExpression.LiteralExpression
+                                .LiteralKind.NUMBER);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Finds the merge block where all switch case bodies converge.
+     *
+     * @param cases the switch case information
+     * @param defaultBlock the default case block (may be null)
+     * @param cfg the control flow graph
+     * @return the estimated switch end block, or null
+     */
+    private BasicBlock findSwitchEndBlock(List<SwitchCaseInfo> cases,
+            BasicBlock defaultBlock, ControlFlowGraph cfg) {
+
+        int maxOffset = 0;
+        BasicBlock endBlock = null;
+
+        for (SwitchCaseInfo sci : cases) {
+            if (sci.targetBlock != null) {
+                int end = sci.targetBlock.getEndOffset();
+                if (end > maxOffset) {
+                    maxOffset = end;
+                    for (CFGEdge edge : sci.targetBlock.getSuccessors()) {
+                        BasicBlock succ = cfg.getBlockAt(
+                                edge.getToOffset());
+                        if (succ != null
+                                && succ.getStartOffset() >= maxOffset) {
+                            maxOffset = succ.getStartOffset();
+                            endBlock = succ;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (defaultBlock != null) {
+            int end = defaultBlock.getEndOffset();
+            if (end > maxOffset) {
+                maxOffset = end;
+                endBlock = null;
+                for (CFGEdge edge : defaultBlock.getSuccessors()) {
+                    BasicBlock succ = cfg.getBlockAt(
+                            edge.getToOffset());
+                    if (succ != null
+                            && succ.getStartOffset() >= maxOffset) {
+                        maxOffset = succ.getStartOffset();
+                        endBlock = succ;
+                    }
+                }
+            }
+        }
+
+        return endBlock;
+    }
+
+    /**
+     * Processes a switch statement pattern into structured ArkTS.
+     *
+     * @param block the first comparison block
+     * @param pattern the switch pattern
+     * @param ctx the decompilation context
+     * @param cfg the control flow graph
+     * @param visited set of visited blocks
+     * @return the list of statements (containing a single SwitchStatement)
+     */
+    private List<ArkTSStatement> processSwitch(BasicBlock block,
+            ControlFlowPattern pattern, DecompilationContext ctx,
+            ControlFlowGraph cfg, Set<BasicBlock> visited) {
+
+        List<ArkTSStatement> stmts = new ArrayList<>();
+
+        // Process preamble instructions before the switch comparisons
+        List<ArkTSStatement> preStmts =
+                processBlockInstructionsExcluding(
+                        block, ctx, block.getLastInstruction());
+        stmts.addAll(preStmts);
+
+        // Mark all comparison blocks as visited by walking the chain
+        List<CFGEdge> succs = block.getSuccessors();
+        BasicBlock fallThrough = null;
+        if (succs.size() >= 2) {
+            fallThrough = getSuccessorByType(succs,
+                    EdgeType.CONDITIONAL_FALSE);
+            if (fallThrough == null) {
+                fallThrough = cfg.getBlockAt(
+                        succs.get(1).getToOffset());
+            }
+        }
+
+        BasicBlock walkCurrent = fallThrough;
+        while (walkCurrent != null) {
+            ArkInstruction curLast = walkCurrent.getLastInstruction();
+            if (curLast == null) {
+                break;
+            }
+            int curOpcode = curLast.getOpcode();
+            if (curOpcode == ArkOpcodesCompat.JEQ_IMM8
+                    || curOpcode == ArkOpcodesCompat.JEQ_IMM16) {
+                visited.add(walkCurrent);
+                List<CFGEdge> curSuccs = walkCurrent.getSuccessors();
+                if (curSuccs.size() >= 2) {
+                    BasicBlock ft = getSuccessorByType(curSuccs,
+                            EdgeType.CONDITIONAL_FALSE);
+                    if (ft != null) {
+                        walkCurrent = ft;
+                    } else {
+                        walkCurrent = cfg.getBlockAt(
+                                curSuccs.get(1).getToOffset());
+                    }
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        // Determine the switch end offset for break detection
+        int switchEndOffset = pattern.switchEndBlock != null
+                ? pattern.switchEndBlock.getStartOffset()
+                : Integer.MAX_VALUE;
+
+        // Push a loop-like context so break detection works in switch
+        ctx.pushLoopContext(-1, switchEndOffset);
+
+        // Build the switch cases
+        List<ArkTSStatement.SwitchStatement.SwitchCase> switchCases =
+                new ArrayList<>();
+
+        Set<BasicBlock> processedCaseBodies = new HashSet<>();
+        for (SwitchCaseInfo sci : pattern.switchCases) {
+            if (sci.targetBlock != null
+                    && !processedCaseBodies.contains(sci.targetBlock)
+                    && !visited.contains(sci.targetBlock)) {
+                visited.add(sci.targetBlock);
+                processedCaseBodies.add(sci.targetBlock);
+
+                List<ArkTSStatement> caseBodyStmts =
+                        processSwitchCaseBody(sci.targetBlock, ctx,
+                                switchEndOffset, cfg, visited);
+                switchCases.add(
+                        new ArkTSStatement.SwitchStatement.SwitchCase(
+                                sci.testValue, caseBodyStmts));
+            }
+        }
+
+        // Process the default case
+        ArkTSStatement defaultBlock = null;
+        if (pattern.switchDefaultBlock != null
+                && !visited.contains(pattern.switchDefaultBlock)) {
+            visited.add(pattern.switchDefaultBlock);
+            List<ArkTSStatement> defaultStmts =
+                    processSwitchCaseBody(pattern.switchDefaultBlock,
+                            ctx, switchEndOffset, cfg, visited);
+            if (!defaultStmts.isEmpty()) {
+                defaultBlock = new ArkTSStatement.BlockStatement(
+                        defaultStmts);
+            }
+        }
+
+        // Pop switch context
+        ctx.popLoopContext();
+
+        // Mark the end block as visited
+        if (pattern.switchEndBlock != null) {
+            visited.add(pattern.switchEndBlock);
+        }
+
+        if (!switchCases.isEmpty()) {
+            stmts.add(new ArkTSStatement.SwitchStatement(
+                    pattern.switchDiscriminant, switchCases,
+                    defaultBlock));
+        }
+
+        return stmts;
+    }
+
+    /**
+     * Processes the body of a switch case, detecting breaks and fall-through.
+     *
+     * @param caseBody the case body block
+     * @param ctx the decompilation context
+     * @param switchEndOffset the offset of the switch end block
+     * @param cfg the control flow graph
+     * @param visited set of visited blocks
+     * @return the list of statements in the case body
+     */
+    private List<ArkTSStatement> processSwitchCaseBody(BasicBlock caseBody,
+            DecompilationContext ctx, int switchEndOffset,
+            ControlFlowGraph cfg, Set<BasicBlock> visited) {
+
+        List<ArkTSStatement> bodyStmts = new ArrayList<>();
+        BasicBlock current = caseBody;
+
+        while (current != null) {
+            ArkInstruction lastInsn = current.getLastInstruction();
+            boolean hasBreak = false;
+            boolean isFallThrough = false;
+
+            // Check if the last instruction is a break (jmp to switch end)
+            if (lastInsn != null && ArkOpcodesCompat.isUnconditionalJump(
+                    lastInsn.getOpcode())) {
+                int jmpTarget = ControlFlowGraphAccessor.getJumpTarget(
+                        lastInsn);
+                if (jmpTarget >= switchEndOffset) {
+                    hasBreak = true;
+                } else if (jmpTarget > current.getStartOffset()
+                        && jmpTarget < switchEndOffset) {
+                    isFallThrough = true;
+                }
+            }
+
+            if (hasBreak) {
+                List<ArkTSStatement> blockStmts =
+                        processBlockInstructionsExcluding(
+                                current, ctx, lastInsn);
+                bodyStmts.addAll(blockStmts);
+                bodyStmts.add(new ArkTSStatement.BreakStatement());
+            } else if (isFallThrough) {
+                List<ArkTSStatement> blockStmts =
+                        processBlockInstructionsExcluding(
+                                current, ctx, lastInsn);
+                bodyStmts.addAll(blockStmts);
+            } else if (lastInsn != null
+                    && ArkOpcodesCompat.isUnconditionalJump(
+                            lastInsn.getOpcode())) {
+                int jmpTarget = ControlFlowGraphAccessor.getJumpTarget(
+                        lastInsn);
+                List<ArkTSStatement> blockStmts =
+                        processBlockInstructionsExcluding(
+                                current, ctx, lastInsn);
+                bodyStmts.addAll(blockStmts);
+                if (jmpTarget >= switchEndOffset) {
+                    bodyStmts.add(new ArkTSStatement.BreakStatement());
+                }
+            } else if (current.endsWithReturn()) {
+                bodyStmts.addAll(
+                        processBlockInstructions(current, ctx));
+                break;
+            } else {
+                bodyStmts.addAll(
+                        processBlockInstructions(current, ctx));
+
+                // Check if we should continue to successor blocks
+                List<CFGEdge> succs = current.getSuccessors();
+                if (succs.size() == 1) {
+                    BasicBlock next = cfg.getBlockAt(
+                            succs.get(0).getToOffset());
+                    if (next != null && !visited.contains(next)
+                            && next.getStartOffset()
+                                    < switchEndOffset
+                            && next.getStartOffset()
+                                    > current.getStartOffset()) {
+                        visited.add(next);
+                        current = next;
+                        continue;
+                    }
+                }
+                break;
+            }
+
+            break;
+        }
+
+        return bodyStmts;
+    }
+
     // --- Condition extraction ---
 
     /**
@@ -2444,6 +2997,163 @@ public class ArkTSDecompiler {
                     new ArkTSExpression.VariableExpression("v" + reg);
             return new StatementResult(
                     new ArkTSStatement.ThrowStatement(value), null);
+        }
+
+        // --- Async generator operations ---
+        if (opcode == ArkOpcodesCompat.CREATEASYNCGENERATOROBJ) {
+            int reg = (int) operands.get(0).getValue();
+            String varName = "v" + reg;
+            ArkTSExpression expr =
+                    new ArkTSExpression.VariableExpression("asyncGenerator");
+            if (!declaredVars.contains(varName)) {
+                declaredVars.add(varName);
+                return new StatementResult(
+                        new ArkTSStatement.VariableDeclaration(
+                                "let", varName, null, expr),
+                        expr);
+            }
+            return new StatementResult(
+                    new ArkTSStatement.ExpressionStatement(
+                            new ArkTSExpression.AssignExpression(
+                                    new ArkTSExpression.VariableExpression(
+                                            varName),
+                                    expr)),
+                    expr);
+        }
+
+        if (opcode == ArkOpcodesCompat.ASYNCGENERATORRESOLVE) {
+            // V8_V8_V8: asyncGeneratorResolve gen, value, flag
+            int valueReg = (int) operands.get(1).getValue();
+            ArkTSExpression value =
+                    new ArkTSExpression.VariableExpression("v" + valueReg);
+            return new StatementResult(
+                    new ArkTSStatement.ReturnStatement(value), null);
+        }
+
+        if (opcode == ArkOpcodesCompat.ASYNCGENERATORREJECT) {
+            // V8: asyncGeneratorReject gen, value
+            int valueReg = (int) operands.get(0).getValue();
+            ArkTSExpression value =
+                    new ArkTSExpression.VariableExpression("v" + valueReg);
+            return new StatementResult(
+                    new ArkTSStatement.ThrowStatement(value), null);
+        }
+
+        if (opcode == ArkOpcodesCompat.SETGENERATORSTATE) {
+            // IMM8: setgeneratorstate state
+            int state = (int) operands.get(0).getValue();
+            ArkTSExpression stateExpr = new ArkTSExpression.LiteralExpression(
+                    String.valueOf(state),
+                    ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+            return new StatementResult(
+                    new ArkTSStatement.ExpressionStatement(
+                            new ArkTSExpression.GeneratorStateExpression(
+                                    stateExpr)),
+                    null);
+        }
+
+        // --- Private property access ---
+        if (opcode == ArkOpcodesCompat.LDPRIVATEPROPERTY) {
+            // IMM8_IMM16_IMM16: ldprivateproperty 0, stringIdx, hClassIndex
+            int stringIdx = (int) operands.get(1).getValue();
+            String propName = ctx.resolveString(stringIdx);
+            ArkTSExpression obj = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.ThisExpression();
+            ArkTSExpression expr =
+                    new ArkTSExpression.PrivateMemberExpression(obj, propName);
+            return new StatementResult(null, expr);
+        }
+
+        if (opcode == ArkOpcodesCompat.STPRIVATEPROPERTY) {
+            // IMM8_IMM16_IMM16_V8: stprivateproperty 0, stringIdx, hClassIdx, objReg
+            int stringIdx = (int) operands.get(1).getValue();
+            String propName = ctx.resolveString(stringIdx);
+            int objReg = (int) operands.get(operands.size() - 1).getValue();
+            ArkTSExpression obj =
+                    new ArkTSExpression.VariableExpression("v" + objReg);
+            ArkTSExpression target =
+                    new ArkTSExpression.PrivateMemberExpression(obj, propName);
+            ArkTSExpression value = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            return new StatementResult(
+                    new ArkTSStatement.ExpressionStatement(
+                            new ArkTSExpression.AssignExpression(target, value)),
+                    value);
+        }
+
+        // --- TestIn (prop in obj) ---
+        if (opcode == ArkOpcodesCompat.TESTIN) {
+            // IMM8_IMM16_IMM16: testin 0, stringIdx, hClassIndex
+            int stringIdx = (int) operands.get(1).getValue();
+            String propName = ctx.resolveString(stringIdx);
+            ArkTSExpression obj = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            ArkTSExpression expr =
+                    new ArkTSExpression.InExpression(
+                            new ArkTSExpression.VariableExpression(propName),
+                            obj);
+            return new StatementResult(null, expr);
+        }
+
+        // --- Object creation with excluded keys ---
+        if (opcode == ArkOpcodesCompat.CREATEOBJECTWITHEXCLUDEDKEYS) {
+            // IMM8_V8: createobjectwithexcludedkeys numKeys, srcReg
+            int numKeys = (int) operands.get(0).getValue();
+            int srcReg = (int) operands.get(operands.size() - 1).getValue();
+            ArkTSExpression source =
+                    new ArkTSExpression.VariableExpression("v" + srcReg);
+            ArkTSExpression spreadExpr =
+                    new ArkTSExpression.SpreadExpression(source);
+            List<ArkTSExpression.ObjectLiteralExpression.ObjectProperty> props =
+                    new ArrayList<>();
+            // The excluded keys are loaded elsewhere; emit the spread pattern
+            props.add(new ArkTSExpression.ObjectLiteralExpression.ObjectProperty(
+                    null, spreadExpr));
+            ArkTSExpression expr =
+                    new ArkTSExpression.ObjectLiteralExpression(props);
+            return new StatementResult(null, expr);
+        }
+
+        // --- Define getter/setter by value ---
+        if (opcode == ArkOpcodesCompat.DEFINEGETTERSETTERBYVALUE) {
+            // V8_V8_V8_V8: definegettersetterbyvalue obj, prop, getter, setter
+            return new StatementResult(
+                    new ArkTSStatement.ExpressionStatement(
+                            new ArkTSExpression.VariableExpression(
+                                    "/* definegettersetterbyvalue */")),
+                    null);
+        }
+
+        // --- Delete object property ---
+        if (opcode == ArkOpcodesCompat.DELOBJPROP) {
+            // V8: delobjprop obj
+            ArkTSExpression obj = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            ArkTSExpression expr =
+                    new ArkTSExpression.DeleteExpression(obj);
+            return new StatementResult(null, expr);
+        }
+
+        // --- Copy data properties ---
+        if (opcode == ArkOpcodesCompat.COPYDATAPROPERTIES) {
+            // V8: copydatatoproperties src
+            int srcReg = (int) operands.get(0).getValue();
+            ArkTSExpression source =
+                    new ArkTSExpression.VariableExpression("v" + srcReg);
+            ArkTSExpression target = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            ArkTSExpression expr =
+                    new ArkTSExpression.CopyDataPropertiesExpression(
+                            target, source);
+            return new StatementResult(
+                    new ArkTSStatement.ExpressionStatement(
+                            new ArkTSExpression.AssignExpression(target, expr)),
+                    expr);
         }
 
         // --- IsTrue / IsFalse ---
@@ -3040,6 +3750,15 @@ public class ArkTSDecompiler {
             return new ArkTSExpression.MemberExpression(obj, prop, true);
         }
 
+        if (opcode == ArkOpcodesCompat.LDOBJBYINDEX) {
+            // IMM8_IMM16 format: the imm16 is a numeric index
+            int index = (int) operands.get(1).getValue();
+            ArkTSExpression prop = new ArkTSExpression.LiteralExpression(
+                    String.valueOf(index),
+                    ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+            return new ArkTSExpression.MemberExpression(obj, prop, true);
+        }
+
         // Name-based access
         String propName = ctx.resolveString((int) operands.get(1).getValue());
         ArkTSExpression prop =
@@ -3067,6 +3786,19 @@ public class ArkTSDecompiler {
                 || opcode == ArkOpcodesCompat.STOWNBYVALUE) {
             int keyReg = (int) operands.get(operands.size() - 2).getValue();
             prop = new ArkTSExpression.VariableExpression("v" + keyReg);
+            return new ArkTSExpression.AssignExpression(
+                    new ArkTSExpression.MemberExpression(obj, prop, true),
+                    accValue != null ? accValue
+                            : new ArkTSExpression.VariableExpression(ACC));
+        }
+
+        if (opcode == ArkOpcodesCompat.STOBJBYINDEX
+                || opcode == ArkOpcodesCompat.STOWNBYINDEX) {
+            // IMM8_V8_IMM16 format: obj, index
+            int index = (int) operands.get(2).getValue();
+            prop = new ArkTSExpression.LiteralExpression(
+                    String.valueOf(index),
+                    ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
             return new ArkTSExpression.AssignExpression(
                     new ArkTSExpression.MemberExpression(obj, prop, true),
                     accValue != null ? accValue

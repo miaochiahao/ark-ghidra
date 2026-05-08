@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -3668,5 +3669,657 @@ class ArkTSDecompilerTest {
         // Pop outer loop
         ctx.popLoopContext();
         assertNull(ctx.getCurrentLoopContext());
+    }
+
+    // ======== SWITCH STATEMENT TESTS ========
+
+    // ======== SWITCH STATEMENT TESTS ========
+
+    /**
+     * Tests a simple switch with 3 cases and breaks.
+     *
+     * <p>Bytecode layout (offsets carefully computed):
+     * <pre>
+     * offset 0:  lda v0       (2 bytes) -> next 2
+     * offset 2:  sta v1       (2 bytes) -> next 4
+     * offset 4:  ldai 1       (5 bytes) -> next 9   -- case 1 test
+     * offset 9:  jeq v1 +28   (3 bytes) -> next 12   -> offset 40 (case1 body)
+     * offset 12: ldai 2       (5 bytes) -> next 17  -- case 2 test
+     * offset 17: jeq v1 +28   (3 bytes) -> next 20   -> offset 48 (case2 body)
+     * offset 20: ldai 3       (5 bytes) -> next 25  -- case 3 test
+     * offset 25: jeq v1 +28   (3 bytes) -> next 28   -> offset 56 (case3 body)
+     * offset 28: ldai 0       (5 bytes) -> next 33  -- default: v2 = 0
+     * offset 33: sta v2       (2 bytes) -> next 35
+     * offset 35: jmp +27      (2 bytes) -> next 37   -> offset 64 (end)
+     * offset 37: (padding - nothing here, skip)
+     * offset 38: (just to be safe, start case bodies at round offsets)
+     * </pre>
+     *
+     * <p>Simpler approach: Use return statements so no jmp to end needed.
+     */
+    @Test
+    void testDecompile_switchThreeCases() {
+        // Each case body just returns a value - simplest possible
+        // offset 0:  lda v0          (2) -> 2
+        // offset 2:  sta v1          (2) -> 4
+        // offset 4:  ldai 1          (5) -> 9
+        // offset 9:  jeq v1, +22     (3) -> 12 -> 34 (case1)
+        // offset 12: ldai 2          (5) -> 17
+        // offset 17: jeq v1, +20     (3) -> 20 -> 40 (case2)
+        // offset 20: ldai 3          (5) -> 25
+        // offset 25: jeq v1, +18     (3) -> 28 -> 46 (case3)
+        // offset 28: ldai 0          (5) -> 33 (default)
+        // offset 33: return          (1) -> 34
+        // offset 34: ldai 10         (5) -> 39 (case1 body)
+        // offset 39: return          (1) -> 40
+        // offset 40: ldai 20         (5) -> 45 (case2 body)
+        // offset 45: return          (1) -> 46
+        // offset 46: ldai 30         (5) -> 51 (case3 body)
+        // offset 51: return          (1) -> 52
+        byte[] code = concat(
+                bytes(0x60, 0x00),             // lda v0          offset 0
+                bytes(0x61, 0x01),             // sta v1          offset 2
+                bytes(0x62), le32(1),          // ldai 1          offset 4
+                bytes(0x5C, 0x01, 0x16),       // jeq v1, +22     offset 9  -> 34
+                bytes(0x62), le32(2),          // ldai 2          offset 12
+                bytes(0x5C, 0x01, 0x14),       // jeq v1, +20     offset 17 -> 40
+                bytes(0x62), le32(3),          // ldai 3          offset 20
+                bytes(0x5C, 0x01, 0x12),       // jeq v1, +18     offset 25 -> 46
+                bytes(0x62), le32(0),          // ldai 0          offset 28 (default)
+                bytes(0x64),                   // return          offset 33
+                bytes(0x62), le32(10),         // ldai 10         offset 34 (case 1)
+                bytes(0x64),                   // return          offset 39
+                bytes(0x62), le32(20),         // ldai 20         offset 40 (case 2)
+                bytes(0x64),                   // return          offset 45
+                bytes(0x62), le32(30),         // ldai 30         offset 46 (case 3)
+                bytes(0x64)                    // return          offset 51
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("switch"), "Expected switch in output: " + result);
+        assertTrue(result.contains("case 1:"), "Expected case 1: " + result);
+        assertTrue(result.contains("case 2:"), "Expected case 2: " + result);
+        assertTrue(result.contains("case 3:"), "Expected case 3: " + result);
+    }
+
+    /**
+     * Tests a switch with a default case.
+     * Uses simple return statements in each case body.
+     */
+    @Test
+    void testDecompile_switchWithDefault() {
+        // offset 0:  lda v0          (2) -> 2
+        // offset 2:  sta v1          (2) -> 4
+        // offset 4:  ldai 1          (5) -> 9
+        // offset 9:  jeq v1, +14     (3) -> 12 -> 26 (case1 body)
+        // offset 12: ldai 2          (5) -> 17
+        // offset 17: jeq v1, +15     (3) -> 20 -> 35 (case2 body)
+        // offset 20: ldai 0          (5) -> 25 (default body)
+        // offset 25: return          (1) -> 26
+        // offset 26: ldai 10         (5) -> 31 (case1 body)
+        // offset 31: return          (1) -> 32
+        // offset 32: ldai 20         (5) -> 37 (case2 body)
+        // offset 37: return          (1) -> 38
+        byte[] code = concat(
+                bytes(0x60, 0x00),             // lda v0          offset 0
+                bytes(0x61, 0x01),             // sta v1          offset 2
+                bytes(0x62), le32(1),          // ldai 1          offset 4
+                bytes(0x5C, 0x01, 0x0E),       // jeq v1, +14     offset 9  -> 26
+                bytes(0x62), le32(2),          // ldai 2          offset 12
+                bytes(0x5C, 0x01, 0x0C),       // jeq v1, +12     offset 17 -> 32
+                bytes(0x62), le32(0),          // ldai 0          offset 20 (default)
+                bytes(0x64),                   // return          offset 25
+                bytes(0x62), le32(10),         // ldai 10         offset 26 (case 1)
+                bytes(0x64),                   // return          offset 31
+                bytes(0x62), le32(20),         // ldai 20         offset 32 (case 2)
+                bytes(0x64)                    // return          offset 37
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("switch"), "Expected switch in output: " + result);
+        assertTrue(result.contains("default:"), "Expected default: " + result);
+    }
+
+    /**
+     * Tests a switch statement CFG structure with 2 cases.
+     * Verifies that the CFG correctly identifies the comparison chain.
+     */
+    @Test
+    void testDecompile_switchTwoCases_cfgStructure() {
+        // Minimal switch with 2 cases using returns
+        // offset 0:  lda v0          (2) -> 2
+        // offset 2:  sta v1          (2) -> 4
+        // offset 4:  ldai 1          (5) -> 9
+        // offset 9:  jeq v1, +14     (3) -> 12 -> 26 (case1 body)
+        // offset 12: ldai 2          (5) -> 17
+        // offset 17: jeq v1, +15     (3) -> 20 -> 35 (case2 body)
+        // offset 20: ldai 0          (5) -> 25 (default body)
+        // offset 25: return          (1) -> 26
+        // offset 26: ldai 10         (5) -> 31 (case1 body)
+        // offset 31: return          (1) -> 32
+        // offset 32: ldai 20         (5) -> 37 (case2 body)
+        // offset 37: return          (1) -> 38
+        byte[] code = concat(
+                bytes(0x60, 0x00),             // lda v0          offset 0
+                bytes(0x61, 0x01),             // sta v1          offset 2
+                bytes(0x62), le32(1),          // ldai 1          offset 4
+                bytes(0x5C, 0x01, 0x0E),       // jeq v1, +14     offset 9  -> 26
+                bytes(0x62), le32(2),          // ldai 2          offset 12
+                bytes(0x5C, 0x01, 0x0C),       // jeq v1, +12     offset 17 -> 32
+                bytes(0x62), le32(0),          // ldai 0          offset 20 (default)
+                bytes(0x64),                   // return          offset 25
+                bytes(0x62), le32(10),         // ldai 10         offset 26 (case 1)
+                bytes(0x64),                   // return          offset 31
+                bytes(0x62), le32(20),         // ldai 20         offset 32 (case 2)
+                bytes(0x64)                    // return          offset 37
+        );
+        List<ArkInstruction> insns = dis(code);
+        ControlFlowGraph cfg = ControlFlowGraph.build(insns);
+
+        // The switch should create multiple blocks:
+        // - Entry/comparison blocks for each case test
+        // - Case body blocks
+        // - Default block
+        assertTrue(cfg.getBlocks().size() >= 5,
+                "Expected at least 5 blocks for switch, got "
+                        + cfg.getBlocks().size());
+
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("switch"), "Expected switch in output: " + result);
+        assertTrue(result.contains("case 1:"), "Expected case 1: " + result);
+        assertTrue(result.contains("case 2:"), "Expected case 2: " + result);
+    }
+
+    /**
+     * Tests that a switch statement correctly identifies the discriminant variable.
+     */
+    @Test
+    void testDecompile_switchDiscriminantVariable() {
+        // The discriminant should be v1 (the register used in jeq comparisons)
+        // offset 0:  lda v0          (2) -> 2
+        // offset 2:  sta v1          (2) -> 4
+        // offset 4:  ldai 1          (5) -> 9
+        // offset 9:  jeq v1, +14     (3) -> 12 -> 26 (case1)
+        // offset 12: ldai 2          (5) -> 17
+        // offset 17: jeq v1, +15     (3) -> 20 -> 35 (case2)
+        // offset 20: ldai 0          (5) -> 25 (default)
+        // offset 25: return          (1) -> 26
+        // offset 26: ldai 10         (5) -> 31 (case1 body)
+        // offset 31: return          (1) -> 32
+        // offset 32: ldai 20         (5) -> 37 (case2 body)
+        // offset 37: return          (1) -> 38
+        byte[] code = concat(
+                bytes(0x60, 0x00),             // lda v0          offset 0
+                bytes(0x61, 0x01),             // sta v1          offset 2
+                bytes(0x62), le32(1),          // ldai 1          offset 4
+                bytes(0x5C, 0x01, 0x0E),       // jeq v1, +14     offset 9  -> 26
+                bytes(0x62), le32(2),          // ldai 2          offset 12
+                bytes(0x5C, 0x01, 0x0C),       // jeq v1, +12     offset 17 -> 32
+                bytes(0x62), le32(0),          // ldai 0          offset 20 (default)
+                bytes(0x64),                   // return          offset 25
+                bytes(0x62), le32(10),         // ldai 10         offset 26 (case 1)
+                bytes(0x64),                   // return          offset 31
+                bytes(0x62), le32(20),         // ldai 20         offset 32 (case 2)
+                bytes(0x64)                    // return          offset 37
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("switch (v1)"),
+                "Expected 'switch (v1)' in output: " + result);
+    }
+
+    /**
+     * Tests that the SwitchStatement AST node produces correct ArkTS output.
+     */
+    @Test
+    void testSwitchStatement_toArkTS() {
+        ArkTSExpression discriminant =
+                new ArkTSExpression.VariableExpression("x");
+        List<ArkTSStatement.SwitchStatement.SwitchCase> cases =
+                new ArrayList<>();
+
+        // case 1: break;
+        cases.add(new ArkTSStatement.SwitchStatement.SwitchCase(
+                new ArkTSExpression.LiteralExpression("1",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER),
+                List.of(new ArkTSStatement.BreakStatement())));
+
+        // case 2: y = 20; break;
+        cases.add(new ArkTSStatement.SwitchStatement.SwitchCase(
+                new ArkTSExpression.LiteralExpression("2",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER),
+                List.of(
+                        new ArkTSStatement.ExpressionStatement(
+                                new ArkTSExpression.AssignExpression(
+                                        new ArkTSExpression.VariableExpression(
+                                                "y"),
+                                        new ArkTSExpression.LiteralExpression(
+                                                "20",
+                                                ArkTSExpression
+                                                        .LiteralExpression
+                                                        .LiteralKind.NUMBER))),
+                        new ArkTSStatement.BreakStatement())));
+
+        // default: y = 0; break;
+        ArkTSStatement defaultBlock = new ArkTSStatement.BlockStatement(
+                List.of(
+                        new ArkTSStatement.ExpressionStatement(
+                                new ArkTSExpression.AssignExpression(
+                                        new ArkTSExpression.VariableExpression(
+                                                "y"),
+                                        new ArkTSExpression.LiteralExpression(
+                                                "0",
+                                                ArkTSExpression
+                                                        .LiteralExpression
+                                                        .LiteralKind.NUMBER))),
+                        new ArkTSStatement.BreakStatement()));
+
+        ArkTSStatement.SwitchStatement switchStmt =
+                new ArkTSStatement.SwitchStatement(discriminant, cases,
+                        defaultBlock);
+        String output = switchStmt.toArkTS(0);
+        assertTrue(output.startsWith("switch (x) {"));
+        assertTrue(output.contains("case 1:"));
+        assertTrue(output.contains("case 2:"));
+        assertTrue(output.contains("default:"));
+        assertTrue(output.contains("break;"));
+        assertTrue(output.endsWith("}"));
+    }
+
+    /**
+     * Tests that a switch with fall-through (case without break) works.
+     * When a case body does not end with a break, execution falls through
+     * to the next case.
+     */
+    @Test
+    void testDecompile_switchFallThrough() {
+        // Switch with fall-through from case 1 to case 2
+        // offset 0:  lda v0          (2) -> 2
+        // offset 2:  sta v1          (2) -> 4
+        // offset 4:  ldai 1          (5) -> 9
+        // offset 9:  jeq v1, +14     (3) -> 12 -> 26 (case1 body)
+        // offset 12: ldai 2          (5) -> 17
+        // offset 17: jeq v1, +13     (3) -> 20 -> 33 (case2 body)
+        // offset 20: ldai 0          (5) -> 25 (default)
+        // offset 25: return          (1) -> 26
+        // case 1 body (falls through - no jmp/break):
+        // offset 26: ldai 10         (5) -> 31
+        // offset 31: sta v2          (2) -> 33  (falls through to case 2)
+        // case 2 body (with return):
+        // offset 33: ldai 20         (5) -> 38
+        // offset 38: sta v2          (2) -> 40
+        // offset 40: lda v2          (2) -> 42
+        // offset 42: return          (1) -> 43
+        byte[] code = concat(
+                bytes(0x60, 0x00),             // lda v0          offset 0
+                bytes(0x61, 0x01),             // sta v1          offset 2
+                bytes(0x62), le32(1),          // ldai 1          offset 4
+                bytes(0x5C, 0x01, 0x0E),       // jeq v1, +14     offset 9  -> 26
+                bytes(0x62), le32(2),          // ldai 2          offset 12
+                bytes(0x5C, 0x01, 0x0D),       // jeq v1, +13     offset 17 -> 33
+                bytes(0x62), le32(0),          // ldai 0          offset 20 (default)
+                bytes(0x64),                   // return          offset 25
+                // case 1 body (falls through - no jmp/break)
+                bytes(0x62), le32(10),         // ldai 10         offset 26
+                bytes(0x61, 0x02),             // sta v2          offset 31
+                // falls through to case 2 body
+                // case 2 body (with return)
+                bytes(0x62), le32(20),         // ldai 20         offset 33
+                bytes(0x61, 0x02),             // sta v2          offset 38
+                bytes(0x60, 0x02),             // lda v2          offset 40
+                bytes(0x64)                    // return          offset 42
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("switch"),
+                "Expected switch in output: " + result);
+    }
+
+    /**
+     * Tests a simple switch with just 2 cases (minimum for switch detection).
+     */
+    @Test
+    void testDecompile_switchMinimalTwoCases() {
+        // lda v0; sta v1; ldai 1; jeq v1 -> body1; ldai 2; jeq v1 -> body2;
+        // default: return 0; body1: return 10; body2: return 20
+        // offset 0:  lda v0          (2) -> 2
+        // offset 2:  sta v1          (2) -> 4
+        // offset 4:  ldai 1          (5) -> 9
+        // offset 9:  jeq v1, +14     (3) -> 12 -> 26 (case1 body)
+        // offset 12: ldai 2          (5) -> 17
+        // offset 17: jeq v1, +15     (3) -> 20 -> 35 (case2 body)
+        // offset 20: ldai 0          (5) -> 25 (default body)
+        // offset 25: return          (1) -> 26
+        // offset 26: ldai 10         (5) -> 31 (case1 body)
+        // offset 31: return          (1) -> 32
+        // offset 32: ldai 20         (5) -> 37 (case2 body)
+        // offset 37: return          (1) -> 38
+        byte[] code = concat(
+                bytes(0x60, 0x00),             // lda v0          offset 0
+                bytes(0x61, 0x01),             // sta v1          offset 2
+                bytes(0x62), le32(1),          // ldai 1          offset 4
+                bytes(0x5C, 0x01, 0x0E),       // jeq v1, +14     offset 9  -> 26
+                bytes(0x62), le32(2),          // ldai 2          offset 12
+                bytes(0x5C, 0x01, 0x0C),       // jeq v1, +12     offset 17 -> 32
+                bytes(0x62), le32(0),          // ldai 0          offset 20 (default)
+                bytes(0x64),                   // return          offset 25
+                bytes(0x62), le32(10),         // ldai 10         offset 26 (case 1)
+                bytes(0x64),                   // return          offset 31
+                bytes(0x62), le32(20),         // ldai 20         offset 32 (case 2)
+                bytes(0x64)                    // return          offset 37
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("switch"),
+                "Expected switch in output: " + result);
+    }
+
+    /**
+     * Tests that the SwitchStatement.SwitchCase AST node works correctly.
+     */
+    @Test
+    void testSwitchCaseAstNode() {
+        List<ArkTSStatement.SwitchStatement.SwitchCase> cases =
+                new ArrayList<>();
+        cases.add(new ArkTSStatement.SwitchStatement.SwitchCase(
+                new ArkTSExpression.LiteralExpression("1",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER),
+                List.of(new ArkTSStatement.BreakStatement())));
+
+        ArkTSStatement.SwitchStatement stmt =
+                new ArkTSStatement.SwitchStatement(
+                        new ArkTSExpression.VariableExpression("x"),
+                        cases, null);
+        String output = stmt.toArkTS(0);
+        assertTrue(output.contains("switch (x)"));
+        assertTrue(output.contains("case 1:"));
+        assertTrue(output.contains("break;"));
+        assertFalse(output.contains("default:"));
+    }
+
+    /**
+     * Tests that the SwitchStatement with no default block works correctly.
+     */
+    @Test
+    void testSwitchStatementNoDefault() {
+        List<ArkTSStatement.SwitchStatement.SwitchCase> cases =
+                new ArrayList<>();
+        cases.add(new ArkTSStatement.SwitchStatement.SwitchCase(
+                new ArkTSExpression.LiteralExpression("5",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER),
+                List.of(
+                        new ArkTSStatement.ExpressionStatement(
+                                new ArkTSExpression.AssignExpression(
+                                        new ArkTSExpression.VariableExpression(
+                                                "result"),
+                                        new ArkTSExpression.LiteralExpression(
+                                                "50",
+                                                ArkTSExpression
+                                                        .LiteralExpression
+                                                        .LiteralKind.NUMBER))),
+                        new ArkTSStatement.BreakStatement())));
+
+        ArkTSStatement.SwitchStatement stmt =
+                new ArkTSStatement.SwitchStatement(
+                        new ArkTSExpression.VariableExpression("val"),
+                        cases, null);
+        String output = stmt.toArkTS(0);
+        assertTrue(output.contains("switch (val)"));
+        assertTrue(output.contains("case 5:"));
+        assertFalse(output.contains("default:"));
+    }
+
+    // --- Private property access tests ---
+
+    @Test
+    void testDecompile_ldprivateproperty_withAccValue() {
+        // ldai 42; ldprivateproperty 0, 5, 0; sta v0; return
+        // LDPRIVATEPROPERTY = 0xD8, IMM8_IMM16_IMM16
+        byte[] code = concat(
+                bytes(0x62), le32(42),                    // ldai 42
+                bytes(0xD8, 0x00, 0x05, 0x00, 0x00, 0x00), // ldprivateproperty 0, str_5, 0
+                bytes(0x61, 0x00),                        // sta v0
+                bytes(0x64)                               // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains(".#"));
+    }
+
+    @Test
+    void testDecompile_stprivateproperty() {
+        // STPRIVATEPROPERTY = 0xD9, IMM8_IMM16_IMM16_V8
+        // ldai 42; stprivateproperty 0, 3, 0, v1
+        byte[] code = concat(
+                bytes(0x62), le32(42),                    // ldai 42
+                bytes(0xD9, 0x00, 0x03, 0x00, 0x00, 0x00, 0x01), // stprivateproperty
+                bytes(0x64)                               // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains(".#"));
+    }
+
+    @Test
+    void testDecompile_testin() {
+        // TESTIN = 0xDA, IMM8_IMM16_IMM16
+        // lda v0; testin 0, 5, 0; sta v1
+        byte[] code = concat(
+                bytes(0x60, 0x00),                        // lda v0
+                bytes(0xDA, 0x00, 0x05, 0x00, 0x00, 0x00), // testin 0, str_5, 0
+                bytes(0x61, 0x01),                        // sta v1
+                bytes(0x64)                               // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains(" in "));
+    }
+
+    // --- Async/generator instruction tests ---
+
+    @Test
+    void testDecompile_createAsyncGeneratorObj() {
+        // CREATEASYNCGENERATOROBJ = 0xB7, V8 format
+        byte[] code = concat(
+                bytes(0xB7, 0x00),  // createasyncgeneratorobj v0
+                bytes(0x64)         // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("asyncGenerator"));
+    }
+
+    @Test
+    void testDecompile_asyncGeneratorResolve() {
+        // ASYNCGENERATORRESOLVE = 0xB8, V8_V8_V8 format
+        byte[] code = concat(
+                bytes(0xB8, 0x00, 0x01, 0x02),  // asyncgeneratorresolve v0, v1, v2
+                bytes(0x64)                      // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("return"));
+    }
+
+    @Test
+    void testDecompile_asyncGeneratorReject() {
+        // ASYNCGENERATORREJECT = 0x97, V8 format
+        byte[] code = concat(
+                bytes(0x97, 0x00),  // asyncgeneratorreject v0
+                bytes(0x64)         // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("throw"));
+    }
+
+    @Test
+    void testDecompile_setGeneratorState() {
+        // SETGENERATORSTATE = 0xD6, IMM8 format
+        byte[] code = concat(
+                bytes(0xD6, 0x03),  // setgeneratorstate 3
+                bytes(0x64)         // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("setgeneratorstate"));
+    }
+
+    // --- Object creation tests ---
+
+    @Test
+    void testDecompile_createObjectWithExcludedKeys() {
+        // CREATEOBJECTWITHEXCLUDEDKEYS = 0xB3, IMM8_V8 format
+        byte[] code = concat(
+                bytes(0xB3, 0x02, 0x01),  // createobjectwithexcludedkeys 2, v1
+                bytes(0x61, 0x00),        // sta v0
+                bytes(0x64)               // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("..."));
+    }
+
+    // --- Type operation tests ---
+
+    @Test
+    void testDecompile_instanceofExpression() {
+        // INSTANCEOF = 0x26, IMM8_V8 format
+        // ldai 42; instanceof v0; sta v1
+        byte[] code = concat(
+                bytes(0x62), le32(42),   // ldai 42
+                bytes(0x26, 0x00, 0x00), // instanceof v0
+                bytes(0x61, 0x01),       // sta v1
+                bytes(0x64)              // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("instanceof"));
+    }
+
+    @Test
+    void testDecompile_isinExpression() {
+        // ISIN = 0x25, IMM8_V8 format
+        byte[] code = concat(
+                bytes(0x62), le32(42),   // ldai 42
+                bytes(0x25, 0x00, 0x00), // isin v0
+                bytes(0x61, 0x01),       // sta v1
+                bytes(0x64)              // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains(" in "));
+    }
+
+    // --- Delete and copy properties tests ---
+
+    @Test
+    void testDecompile_delObjProp() {
+        // DELOBJPROP = 0xC2, V8 format
+        byte[] code = concat(
+                bytes(0x04),             // createemptyobject
+                bytes(0xC2, 0x00),       // delobjprop v0
+                bytes(0x64)              // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("delete"));
+    }
+
+    @Test
+    void testDecompile_copyDataProperties() {
+        // COPYDATAPROPERTIES = 0xC5, V8 format
+        byte[] code = concat(
+                bytes(0x04),             // createemptyobject -> acc
+                bytes(0xC5, 0x00),       // copydatatoproperties v0
+                bytes(0x64)              // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("Object.assign"));
+    }
+
+    // --- Index-based property access tests ---
+
+    @Test
+    void testDecompile_ldObjByIndex() {
+        // LDOBJBYINDEX = 0x3A, IMM8_IMM16 format
+        byte[] code = concat(
+                bytes(0x04),                    // createemptyobject
+                bytes(0x3A, 0x00, 0x05, 0x00),  // ldobjbyindex 0, 5
+                bytes(0x61, 0x00),              // sta v0
+                bytes(0x64)                     // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("[5]"));
+    }
+
+    @Test
+    void testDecompile_privateMemberExpression_toArkTS() {
+        ArkTSExpression obj = new ArkTSExpression.VariableExpression("obj");
+        ArkTSExpression.PrivateMemberExpression expr =
+                new ArkTSExpression.PrivateMemberExpression(obj, "secret");
+        assertEquals("obj.#secret", expr.toArkTS());
+    }
+
+    @Test
+    void testDecompile_inExpression_toArkTS() {
+        ArkTSExpression prop =
+                new ArkTSExpression.VariableExpression("name");
+        ArkTSExpression obj = new ArkTSExpression.VariableExpression("obj");
+        ArkTSExpression.InExpression expr =
+                new ArkTSExpression.InExpression(prop, obj);
+        assertEquals("name in obj", expr.toArkTS());
+    }
+
+    @Test
+    void testDecompile_instanceofExpression_toArkTS() {
+        ArkTSExpression expr1 =
+                new ArkTSExpression.VariableExpression("value");
+        ArkTSExpression expr2 =
+                new ArkTSExpression.VariableExpression("MyClass");
+        ArkTSExpression.InstanceofExpression expr =
+                new ArkTSExpression.InstanceofExpression(expr1, expr2);
+        assertEquals("value instanceof MyClass", expr.toArkTS());
+    }
+
+    @Test
+    void testDecompile_deleteExpression_toArkTS() {
+        ArkTSExpression obj =
+                new ArkTSExpression.VariableExpression("obj");
+        ArkTSExpression prop =
+                new ArkTSExpression.VariableExpression("prop");
+        ArkTSExpression target =
+                new ArkTSExpression.MemberExpression(obj, prop, false);
+        ArkTSExpression.DeleteExpression expr =
+                new ArkTSExpression.DeleteExpression(target);
+        assertEquals("delete obj.prop", expr.toArkTS());
+    }
+
+    @Test
+    void testDecompile_copyDataPropertiesExpression_toArkTS() {
+        ArkTSExpression target =
+                new ArkTSExpression.VariableExpression("target");
+        ArkTSExpression source =
+                new ArkTSExpression.VariableExpression("source");
+        ArkTSExpression.CopyDataPropertiesExpression expr =
+                new ArkTSExpression.CopyDataPropertiesExpression(target, source);
+        assertEquals("Object.assign(target, source)", expr.toArkTS());
+    }
+
+    @Test
+    void testDecompile_objectLiteralWithSpreadProperty() {
+        ArkTSExpression source =
+                new ArkTSExpression.VariableExpression("other");
+        ArkTSExpression spread =
+                new ArkTSExpression.SpreadExpression(source);
+        List<ArkTSExpression.ObjectLiteralExpression.ObjectProperty> props =
+                new ArrayList<>();
+        props.add(new ArkTSExpression.ObjectLiteralExpression.ObjectProperty(
+                null, spread));
+        ArkTSExpression.ObjectLiteralExpression expr =
+                new ArkTSExpression.ObjectLiteralExpression(props);
+        assertEquals("{ ...other }", expr.toArkTS());
     }
 }

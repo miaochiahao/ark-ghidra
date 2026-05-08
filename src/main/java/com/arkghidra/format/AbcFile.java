@@ -26,6 +26,18 @@ public class AbcFile {
     private final byte[] rawData;
 
     /**
+     * Module record literal array offsets indexed by class index.
+     * Each entry maps a class index to the LiteralArray offset that
+     * contains the module record for that class.
+     */
+    private final Map<Integer, Long> moduleRecordOffsets = new HashMap<>();
+
+    /**
+     * Cache of parsed module records keyed by LiteralArray offset.
+     */
+    private final Map<Long, AbcModuleRecord> moduleRecordCache = new HashMap<>();
+
+    /**
      * Cache of string table offset to decoded string. Avoids re-reading MUTF-8
      * bytes and creating a new AbcReader for repeated lookups of the same offset.
      */
@@ -49,6 +61,11 @@ public class AbcFile {
     private static final int METHOD_TAG_DEBUG_INFO = 0x03;
     // Tags 0x04-0x09 are uint32 values (various metadata)
 
+    // Tag constants for field_data TaggedValues
+    private static final int FIELD_TAG_NOTHING = 0x00;
+    private static final int FIELD_TAG_INT_VALUE = 0x01;
+    private static final int FIELD_TAG_VALUE = 0x02;
+
     private AbcFile(AbcHeader header, List<AbcRegionHeader> regionHeaders,
             List<AbcClass> classes, List<AbcProto> protos,
             List<AbcLiteralArray> literalArrays,
@@ -63,6 +80,7 @@ public class AbcFile {
         this.lnpIndex = Collections.unmodifiableList(lnpIndex);
         this.literalArrayIndex = Collections.unmodifiableList(literalArrayIndex);
         this.rawData = rawData;
+        initModuleRecordOffsets();
     }
 
     public static AbcFile parse(byte[] data) {
@@ -110,6 +128,23 @@ public class AbcFile {
 
         return new AbcFile(header, regionHeaders, classes, protos, literalArrays,
                 classIndex, lnpIndex, literalArrayIndex, data);
+    }
+
+    /**
+     * Second-phase initialization: scans fields for module record indices
+     * and caches them for lazy module record parsing.
+     * Called internally after construction.
+     */
+    private void initModuleRecordOffsets() {
+        int classIdx = 0;
+        for (AbcClass cls : classes) {
+            for (AbcField field : cls.getFields()) {
+                if (field.isModuleRecordIdx() && field.getIntValue() != 0) {
+                    moduleRecordOffsets.put(classIdx, field.getIntValue());
+                }
+            }
+            classIdx++;
+        }
     }
 
     /**
@@ -222,8 +257,8 @@ public class AbcFile {
         int typeIdx = r.readU16();
         String name = readStringAt(r, (int) r.readU32());
         long accessFlags = r.readUleb128();
-        parseClassTags(r);
-        return new AbcField(classIdx, typeIdx, name, accessFlags, fieldPos);
+        long intValue = parseFieldTags(r);
+        return new AbcField(classIdx, typeIdx, name, accessFlags, fieldPos, intValue);
     }
 
     private static AbcMethod parseMethod(AbcReader r) {
@@ -304,6 +339,44 @@ public class AbcFile {
             }
         }
         return sourceFileOff;
+    }
+
+    /**
+     * Parses field_data TaggedValues, capturing INT_VALUE for module record index.
+     *
+     * <p>Field tags follow a Tag-Value pattern:
+     * <ul>
+     *   <li>0x00 (NOTHING) - end of tags</li>
+     *   <li>0x01 (INT_VALUE) - sleb128 integer value</li>
+     *   <li>0x02 (VALUE) - uint32 value (type-dependent)</li>
+     *   <li>0x03-0x06 (ANNOTATIONS) - uint32 annotation offsets</li>
+     * </ul>
+     *
+     * @return the INT_VALUE, or 0 if none
+     */
+    private static long parseFieldTags(AbcReader r) {
+        long intValue = 0;
+        while (true) {
+            int tag = r.readU8() & 0xFF;
+            if (tag == FIELD_TAG_NOTHING) {
+                break;
+            }
+            switch (tag) {
+                case FIELD_TAG_INT_VALUE:
+                    intValue = r.readSleb128();
+                    break;
+                case FIELD_TAG_VALUE:
+                    r.readU32();
+                    break;
+                case 0x03: case 0x04: case 0x05: case 0x06:
+                    r.readU32();
+                    break;
+                default:
+                    throw new AbcFormatException(
+                            "Unknown field tag: 0x" + Integer.toHexString(tag));
+            }
+        }
+        return intValue;
     }
 
     public static AbcCode parseCode(AbcReader r, int codeOff) {
@@ -728,5 +801,179 @@ public class AbcFile {
         }
 
         return entries;
+    }
+
+    // --- Module record access ---
+
+    /**
+     * Returns the module record for a given class index, or null if none.
+     *
+     * <p>Module records are stored as special LiteralArrays referenced by a
+     * field named "moduleRecordIdx" in the class data.
+     *
+     * @param classIdx the 0-based class index
+     * @return the module record, or null
+     */
+    public AbcModuleRecord getModuleRecord(int classIdx) {
+        Long laOff = moduleRecordOffsets.get(classIdx);
+        if (laOff == null || laOff == 0) {
+            return null;
+        }
+        AbcModuleRecord cached = moduleRecordCache.get(laOff);
+        if (cached != null) {
+            return cached;
+        }
+        AbcModuleRecord record = parseModuleRecord(laOff);
+        moduleRecordCache.put(laOff, record);
+        return record;
+    }
+
+    /**
+     * Returns all module records in the file, keyed by class index.
+     *
+     * @return the map of class index to module record
+     */
+    public Map<Integer, AbcModuleRecord> getAllModuleRecords() {
+        Map<Integer, AbcModuleRecord> result = new HashMap<>();
+        for (Integer classIdx : moduleRecordOffsets.keySet()) {
+            AbcModuleRecord record = getModuleRecord(classIdx);
+            if (record != null) {
+                result.put(classIdx, record);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Returns the number of module records found in the file.
+     *
+     * @return the module record count
+     */
+    public int getModuleRecordCount() {
+        return moduleRecordOffsets.size();
+    }
+
+    /**
+     * Resolves a module request path string from its offset in the module record.
+     *
+     * @param stringOff the string table offset
+     * @return the module path string, or null if not available
+     */
+    public String resolveModuleRequest(long stringOff) {
+        return getSourceFileName(stringOff);
+    }
+
+    /**
+     * Resolves all module request paths from a module record.
+     *
+     * @param record the module record
+     * @return the list of module request path strings
+     */
+    public List<String> resolveModuleRequests(AbcModuleRecord record) {
+        List<String> result = new ArrayList<>(record.getModuleRequestOffsets().size());
+        for (Long off : record.getModuleRequestOffsets()) {
+            String path = resolveModuleRequest(off);
+            result.add(path != null ? path : "");
+        }
+        return result;
+    }
+
+    /**
+     * Parses a module record from the LiteralArray at the given offset.
+     *
+     * <p>Module record layout:
+     * <ul>
+     *   <li>num_module_requests (uint32)</li>
+     *   <li>module_requests[] (uint32 each - string table offsets)</li>
+     *   <li>regular_import_num (uint32)</li>
+     *   <li>regular_imports[] (local_name_off: uint32, import_name_off: uint32,
+     *       module_request_idx: uint16)</li>
+     *   <li>namespace_import_num (uint32)</li>
+     *   <li>namespace_imports[] (local_name_off: uint32,
+     *       module_request_idx: uint16)</li>
+     *   <li>local_export_num (uint32)</li>
+     *   <li>local_exports[] (local_name_off: uint32, export_name_off: uint32)</li>
+     *   <li>indirect_export_num (uint32)</li>
+     *   <li>indirect_exports[] (export_name_off: uint32, import_name_off: uint32,
+     *       module_request_idx: uint16)</li>
+     *   <li>star_export_num (uint32)</li>
+     *   <li>star_exports[] (module_request_idx: uint16)</li>
+     * </ul>
+     *
+     * @param literalArrayOff the offset of the module record LiteralArray
+     * @return the parsed module record
+     */
+    private AbcModuleRecord parseModuleRecord(long literalArrayOff) {
+        AbcReader r = new AbcReader(rawData);
+        r.position((int) literalArrayOff);
+
+        // Skip num_literals header (uint32)
+        long numLiterals = r.readU32();
+
+        // Read module requests
+        long numModuleRequests = r.readU32();
+        List<Long> moduleRequestOffsets = new ArrayList<>((int) numModuleRequests);
+        for (int i = 0; i < (int) numModuleRequests; i++) {
+            moduleRequestOffsets.add(r.readU32());
+        }
+
+        // Read regular imports
+        long regularImportNum = r.readU32();
+        List<AbcModuleRecord.RegularImport> regularImports =
+                new ArrayList<>((int) regularImportNum);
+        for (int i = 0; i < (int) regularImportNum; i++) {
+            long localNameOff = r.readU32();
+            long importNameOff = r.readU32();
+            int moduleRequestIdx = r.readU16();
+            regularImports.add(new AbcModuleRecord.RegularImport(
+                    localNameOff, importNameOff, moduleRequestIdx));
+        }
+
+        // Read namespace imports
+        long namespaceImportNum = r.readU32();
+        List<AbcModuleRecord.NamespaceImport> namespaceImports =
+                new ArrayList<>((int) namespaceImportNum);
+        for (int i = 0; i < (int) namespaceImportNum; i++) {
+            long localNameOff = r.readU32();
+            int moduleRequestIdx = r.readU16();
+            namespaceImports.add(new AbcModuleRecord.NamespaceImport(
+                    localNameOff, moduleRequestIdx));
+        }
+
+        // Read local exports
+        long localExportNum = r.readU32();
+        List<AbcModuleRecord.LocalExport> localExports =
+                new ArrayList<>((int) localExportNum);
+        for (int i = 0; i < (int) localExportNum; i++) {
+            long localNameOff = r.readU32();
+            long exportNameOff = r.readU32();
+            localExports.add(new AbcModuleRecord.LocalExport(
+                    localNameOff, exportNameOff));
+        }
+
+        // Read indirect exports
+        long indirectExportNum = r.readU32();
+        List<AbcModuleRecord.IndirectExport> indirectExports =
+                new ArrayList<>((int) indirectExportNum);
+        for (int i = 0; i < (int) indirectExportNum; i++) {
+            long exportNameOff = r.readU32();
+            long importNameOff = r.readU32();
+            int moduleRequestIdx = r.readU16();
+            indirectExports.add(new AbcModuleRecord.IndirectExport(
+                    exportNameOff, importNameOff, moduleRequestIdx));
+        }
+
+        // Read star exports
+        long starExportNum = r.readU32();
+        List<AbcModuleRecord.StarExport> starExports =
+                new ArrayList<>((int) starExportNum);
+        for (int i = 0; i < (int) starExportNum; i++) {
+            int moduleRequestIdx = r.readU16();
+            starExports.add(new AbcModuleRecord.StarExport(moduleRequestIdx));
+        }
+
+        return new AbcModuleRecord(moduleRequestOffsets, regularImports,
+                namespaceImports, localExports, indirectExports, starExports,
+                literalArrayOff);
     }
 }
