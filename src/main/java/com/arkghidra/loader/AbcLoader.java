@@ -246,7 +246,7 @@ public class AbcLoader extends AbstractProgramWrapperLoader {
         return ns != null ? ns : globalNs;
     }
 
-    static String toNamespaceName(String className) {
+    public static String toNamespaceName(String className) {
         if (className == null || className.isEmpty()) {
             return "unknown";
         }
