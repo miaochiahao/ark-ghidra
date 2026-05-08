@@ -99,8 +99,9 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 14. ~~Decompiler quality: switch with fall-through, nested try/catch, ternary expressions~~ DONE
 15. ~~HAP file loading support (#36)~~ DONE
 16. ~~Output quality: remove placeholders, type simplification, syntax highlighting (#41, #42, #43)~~ DONE
-17. Real .abc file support: test with actual HarmonyOS compiler output (#25)
-18. Performance: large file handling and incremental decompilation
+17. ~~Destructuring, template literals, class features, rest/spread (#44, #45, #46, #47)~~ DONE
+18. Real .abc file support: test with actual HarmonyOS compiler output (#25)
+19. Performance: large file handling and incremental decompilation
 
 ### Rules for the loop
 
@@ -181,7 +182,7 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Try/catch decompilation:** Use `AbcCode.getTryBlocks()` → `AbcTryBlock.getCatchBlocks()` → `AbcCatchBlock` to reconstruct exception handling. Map try start/end PC ranges to CFG block addresses. Catch-all blocks (typeIdx=0) map to `finally`.
 - **Jump offset calculation:** `jmp +0` at offset 0 with instruction length 2 gives target = 0+2+0 = 2 (not 0). For infinite loop (jmp to self), need negative offset = -instruction_length (e.g., `0xFE` for 2-byte jmp).
 - **Parameter naming convention:** Use `param_0`, `param_1` etc. (not `p0`/`p1`) for better readability. Falls back to untyped when no proto info available.
-- **Test count tracking:** 868 tests across 20 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
+- **Test count tracking:** 893 tests across 20 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
 - **ABC debug info parsing:** Tags 0x07 (SOURCE_FILE), 0x03 (DEBUG_INFO) in class/method tag values. Debug info contains line_start, num_params, param name string offsets, constant pool. LNP uses DWARF v3 state machine with special opcodes.
 - **Realistic test fixture design:** Use 16384-byte buffer with 200-byte spacing between areas (strings at 200, classes at 800, code at 2000, protos at 6000, etc.). Encode methods with ULEB128 for vregs/args/codeSize/triesSize.
 - **Debug parameter name resolution:** `AbcFile.getDebugInfoForMethod()` → `AbcDebugInfo.getParameterNames()` → pass to `MethodSignatureBuilder.buildParams(proto, numArgs, debugNames)`. Falls back to `param_N` for unnamed.
@@ -211,6 +212,11 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Namespace declarations:** `NamespaceStatement` in ArkTSDeclarations. `groupByNamespace()` in ArkTSDecompiler groups classes by namespace. Import organization: dedup, group (@packages first, external, relative), sort, blank line separation.
 - **Syntax highlighting:** `ArkTSColorizer` standalone class with `TokenType` enum and `StyledSegment`. Colorizes keywords (blue), types (teal), strings (green), comments (gray), decorators (purple), numbers (orange). Integrated into `ArkTSOutputProvider` via `JTextPane` with `StyledDocument`. No external dependencies.
 - **Type simplification:** `TypeInference.formatTypeAnnotationForDeclaration()` omits type annotation when initializer makes type obvious (e.g., `let x = 42` not `let x: number = 42`). Prevents redundant annotations.
+- **Parallel agent coordination (4 agents):** Launched 4 agents for #44-#47 in parallel, each focused on non-overlapping files. All completed successfully. Unified build passed after clean. Key: instruct agents to prefer adding new methods over modifying existing ones to minimize conflicts.
+- **Destructuring decompilation:** Array: `tryDetectArrayDestructuring()` scans `lda vN; ldobjbyindex 0, I; sta vM` patterns. Object: `tryDetectObjectDestructuring()` scans `lda vN; ldobjbyname 0, "prop"; sta vM`. Rest: detect spreadcreatearray after last index. Defaults: detect conditional assignment after destructuring.
+- **Template literal decompilation:** `tryReconstructTemplateLiteral()` flattens `+` binary chains. Detects string literal + variable interleaving. Produces backtick syntax with `${expr}` interpolation. Escapes backticks in quasis.
+- **Class feature decompilation:** DeclarationBuilder handles inheritance (superclass reference), constructor param properties (from proto info), getter/setter (from definegettersetter opcodes), static (method flags), abstract (metadata). Decorators from annotation data.
+- **Rest/spread decompilation:** Rest params from method proto flags. Spread calls from callspread opcode. Spread arrays from spreadcreatearray. Spread objects from createobjectwithexcludedkeys.
 <!-- LINT_RULES_END -->
 
 ---
