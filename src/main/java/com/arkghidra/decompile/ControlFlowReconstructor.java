@@ -1,15 +1,12 @@
 package com.arkghidra.decompile;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
 import com.arkghidra.disasm.ArkInstruction;
 import com.arkghidra.disasm.ArkOperand;
-import com.arkghidra.format.AbcCatchBlock;
-import com.arkghidra.format.AbcTryBlock;
 
 /**
  * Reconstructs structured control flow from the CFG into ArkTS statements.
@@ -17,18 +14,38 @@ import com.arkghidra.format.AbcTryBlock;
  * <p>Detects if/else, while, for, do/while, for-of, for-in, switch,
  * ternary, short-circuit, and try/catch patterns from the raw CFG and
  * produces structured ArkTS statement nodes.
+ *
+ * <p>Pattern-specific processing is delegated to:
+ * <ul>
+ *   <li>{@link BranchProcessor} -- if/else, ternary, short-circuit</li>
+ *   <li>{@link LoopProcessor} -- while, for, do-while, for-of, for-in</li>
+ *   <li>{@link SwitchProcessor} -- switch/case</li>
+ *   <li>{@link TryCatchProcessor} -- try/catch/finally</li>
+ * </ul>
+ *
+ * <p>Block instruction processing is delegated to
+ * {@link BlockInstructionProcessor}.
  */
 class ControlFlowReconstructor {
 
-    private static final String ACC = "acc";
+    static final String ACC = "acc";
 
     private final ArkTSDecompiler decompiler;
-    private final InstructionHandler instrHandler;
+
+    private final BlockInstructionProcessor blockProc;
+    private final BranchProcessor branchProcessor;
+    private final LoopProcessor loopProcessor;
+    private final SwitchProcessor switchProcessor;
+    private final TryCatchProcessor tryCatchProcessor;
 
     ControlFlowReconstructor(ArkTSDecompiler decompiler,
             InstructionHandler instrHandler) {
         this.decompiler = decompiler;
-        this.instrHandler = instrHandler;
+        this.blockProc = new BlockInstructionProcessor(instrHandler);
+        this.branchProcessor = new BranchProcessor(this);
+        this.loopProcessor = new LoopProcessor(this);
+        this.switchProcessor = new SwitchProcessor(this);
+        this.tryCatchProcessor = new TryCatchProcessor(this, decompiler);
     }
 
     // --- Inner types ---
@@ -124,7 +141,7 @@ class ControlFlowReconstructor {
         List<ArkTSStatement> stmts = new ArrayList<>();
 
         List<TryCatchRegion> tryCatchRegions =
-                buildTryCatchRegions(ctx, cfg);
+                tryCatchProcessor.buildTryCatchRegions(ctx, cfg);
 
         for (BasicBlock block : blocks) {
             if (visited.contains(block)) {
@@ -136,12 +153,13 @@ class ControlFlowReconstructor {
                 continue;
             }
 
-            TryCatchRegion tcr = findTryCatchRegion(
+            TryCatchRegion tcr = tryCatchProcessor.findTryCatchRegion(
                     block.getStartOffset(), tryCatchRegions);
             if (tcr != null && !tcr.isProcessed()) {
                 tcr.markProcessed();
                 visited.add(block);
-                stmts.addAll(processTryCatch(tcr, ctx, cfg, visited));
+                stmts.addAll(tryCatchProcessor.processTryCatch(
+                        tcr, ctx, cfg, visited));
                 continue;
             }
 
@@ -177,38 +195,38 @@ class ControlFlowReconstructor {
             switch (pattern.type) {
                 case IF_ELSE:
                     visited.add(block);
-                    stmts.addAll(processIfElse(block, pattern,
-                            ctx, cfg, visited));
+                    stmts.addAll(branchProcessor.processIfElse(block,
+                            pattern, ctx, cfg, visited));
                     break;
                 case IF_ONLY:
                     visited.add(block);
-                    stmts.addAll(processIfOnly(block, pattern,
-                            ctx, cfg, visited));
+                    stmts.addAll(branchProcessor.processIfOnly(block,
+                            pattern, ctx, cfg, visited));
                     break;
                 case WHILE_LOOP:
                     visited.add(block);
-                    stmts.addAll(processWhileLoop(block, pattern,
-                            ctx, cfg, visited));
+                    stmts.addAll(loopProcessor.processWhileLoop(block,
+                            pattern, ctx, cfg, visited));
                     break;
                 case FOR_LOOP:
                     visited.add(block);
-                    stmts.addAll(processForLoop(block, pattern,
-                            ctx, cfg, visited));
+                    stmts.addAll(loopProcessor.processForLoop(block,
+                            pattern, ctx, cfg, visited));
                     break;
                 case DO_WHILE:
                     visited.add(block);
-                    stmts.addAll(processDoWhile(block, pattern,
-                            ctx, cfg, visited));
+                    stmts.addAll(loopProcessor.processDoWhile(block,
+                            pattern, ctx, cfg, visited));
                     break;
                 case FOR_OF_LOOP:
                     visited.add(block);
-                    stmts.addAll(processForOfLoop(block, pattern,
-                            ctx, cfg, visited));
+                    stmts.addAll(loopProcessor.processForOfLoop(block,
+                            pattern, ctx, cfg, visited));
                     break;
                 case FOR_IN_LOOP:
                     visited.add(block);
-                    stmts.addAll(processForInLoop(block, pattern,
-                            ctx, cfg, visited));
+                    stmts.addAll(loopProcessor.processForInLoop(block,
+                            pattern, ctx, cfg, visited));
                     break;
                 case BREAK:
                     visited.add(block);
@@ -222,23 +240,25 @@ class ControlFlowReconstructor {
                     break;
                 case TERNARY:
                     visited.add(block);
-                    stmts.addAll(processTernary(block, pattern,
-                            ctx, cfg, visited));
+                    stmts.addAll(branchProcessor.processTernary(block,
+                            pattern, ctx, cfg, visited));
                     break;
                 case SHORT_CIRCUIT_AND:
                     visited.add(block);
-                    stmts.addAll(processShortCircuitAnd(block, pattern,
-                            ctx, cfg, visited));
+                    stmts.addAll(
+                            branchProcessor.processShortCircuitAnd(
+                                    block, pattern, ctx, cfg, visited));
                     break;
                 case SHORT_CIRCUIT_OR:
                     visited.add(block);
-                    stmts.addAll(processShortCircuitOr(block, pattern,
-                            ctx, cfg, visited));
+                    stmts.addAll(
+                            branchProcessor.processShortCircuitOr(
+                                    block, pattern, ctx, cfg, visited));
                     break;
                 case SWITCH:
                     visited.add(block);
-                    stmts.addAll(processSwitch(block, pattern,
-                            ctx, cfg, visited));
+                    stmts.addAll(switchProcessor.processSwitch(block,
+                            pattern, ctx, cfg, visited));
                     break;
                 default:
                     visited.add(block);
@@ -250,7 +270,7 @@ class ControlFlowReconstructor {
         return stmts;
     }
 
-    // --- Pattern detection ---
+    // --- Pattern detection (delegates to sub-processors) ---
 
     private ControlFlowPattern detectPattern(BasicBlock block,
             ControlFlowGraph cfg, Set<BasicBlock> visited) {
@@ -287,13 +307,15 @@ class ControlFlowReconstructor {
                         : (trueBranch.getStartOffset() > block
                                 .getStartOffset() ? trueBranch
                                 : falseBranch);
-                ControlFlowPattern forOfP = detectForOfPattern(
-                        block, loopBody, cfg);
+                ControlFlowPattern forOfP =
+                        loopProcessor.detectForOfPattern(
+                                block, loopBody, cfg);
                 if (forOfP != null) {
                     return forOfP;
                 }
-                ControlFlowPattern forInP = detectForInPattern(
-                        block, loopBody, cfg);
+                ControlFlowPattern forInP =
+                        loopProcessor.detectForInPattern(
+                                block, loopBody, cfg);
                 if (forInP != null) {
                     return forInP;
                 }
@@ -304,20 +326,22 @@ class ControlFlowReconstructor {
                 return p;
             }
 
-            ControlFlowPattern switchP = detectSwitchPattern(
-                    block, trueBranch, falseBranch, cfg);
+            ControlFlowPattern switchP =
+                    switchProcessor.detectSwitchPattern(
+                            block, trueBranch, falseBranch, cfg);
             if (switchP != null) {
                 return switchP;
             }
 
-            ControlFlowPattern ternaryP = detectTernaryPattern(
-                    block, trueBranch, falseBranch, cfg);
+            ControlFlowPattern ternaryP =
+                    branchProcessor.detectTernaryPattern(
+                            block, trueBranch, falseBranch, cfg);
             if (ternaryP != null) {
                 return ternaryP;
             }
 
             ControlFlowPattern shortCircuitP =
-                    detectShortCircuitPattern(
+                    branchProcessor.detectShortCircuitPattern(
                             block, trueBranch, falseBranch,
                             cfg, visited);
             if (shortCircuitP != null) {
@@ -362,1364 +386,9 @@ class ControlFlowReconstructor {
         return new ControlFlowPattern(PatternType.LINEAR);
     }
 
-    // --- Ternary detection ---
+    // --- Condition extraction (shared by processors) ---
 
-    private ControlFlowPattern detectTernaryPattern(
-            BasicBlock condBlock, BasicBlock trueBranch,
-            BasicBlock falseBranch, ControlFlowGraph cfg) {
-
-        ArkInstruction trueLast = trueBranch.getLastInstruction();
-        if (trueLast == null
-                || !ArkOpcodesCompat.isUnconditionalJump(
-                        trueLast.getOpcode())) {
-            return null;
-        }
-
-        int mergeOffset = ControlFlowGraph.getJumpTargetPublic(trueLast);
-        BasicBlock mergeBlock = cfg.getBlockAt(mergeOffset);
-
-        if (mergeBlock == null) {
-            return null;
-        }
-
-        ArkInstruction falseLast = falseBranch.getLastInstruction();
-        if (falseLast == null) {
-            return null;
-        }
-        int falseEnd = falseLast.getNextOffset();
-        boolean falseFlowsToMerge = falseEnd == mergeOffset
-                || (mergeOffset > falseBranch.getStartOffset()
-                        && mergeOffset <= falseEnd + 5);
-
-        if (!falseFlowsToMerge) {
-            if (!ArkOpcodesCompat.isUnconditionalJump(
-                    falseLast.getOpcode())) {
-                return null;
-            }
-            int falseJmpTarget =
-                    ControlFlowGraph.getJumpTargetPublic(falseLast);
-            if (falseJmpTarget != mergeOffset) {
-                return null;
-            }
-        }
-
-        String targetVar = null;
-
-        for (ArkInstruction insn : trueBranch.getInstructions()) {
-            if (insn == trueLast) {
-                break;
-            }
-            if (insn.getOpcode() == ArkOpcodesCompat.STA) {
-                targetVar = "v" + insn.getOperands().get(0).getValue();
-            }
-        }
-
-        if (targetVar == null) {
-            return null;
-        }
-
-        boolean hasMatchingSta = false;
-        for (ArkInstruction insn : falseBranch.getInstructions()) {
-            if (insn == falseLast
-                    && !ArkOpcodesCompat.isUnconditionalJump(
-                            falseLast.getOpcode())) {
-                break;
-            }
-            if (insn.getOpcode() == ArkOpcodesCompat.STA) {
-                String falseVar =
-                        "v" + insn.getOperands().get(0).getValue();
-                if (falseVar.equals(targetVar)) {
-                    hasMatchingSta = true;
-                }
-            }
-        }
-
-        if (!hasMatchingSta) {
-            return null;
-        }
-
-        ControlFlowPattern p =
-                new ControlFlowPattern(PatternType.TERNARY);
-        p.conditionBlock = condBlock;
-        p.trueBlock = trueBranch;
-        p.falseBlock = falseBranch;
-        p.mergeBlock = mergeBlock;
-        p.ternaryTargetVar = targetVar;
-        return p;
-    }
-
-    // --- Short-circuit detection ---
-
-    private ControlFlowPattern detectShortCircuitPattern(
-            BasicBlock block, BasicBlock trueBranch,
-            BasicBlock falseBranch, ControlFlowGraph cfg,
-            Set<BasicBlock> visited) {
-
-        ArkInstruction lastInsn = block.getLastInstruction();
-        if (lastInsn == null) {
-            return null;
-        }
-        int opcode = lastInsn.getOpcode();
-
-        if (opcode == ArkOpcodesCompat.JEQZ_IMM8
-                || opcode == ArkOpcodesCompat.JEQZ_IMM16) {
-            int target1 = ControlFlowGraph
-                    .getJumpTargetPublic(lastInsn);
-
-            BasicBlock nextCondBlock = falseBranch;
-            ArkInstruction nextLast = nextCondBlock.getLastInstruction();
-            if (nextLast != null
-                    && (nextLast.getOpcode()
-                            == ArkOpcodesCompat.JEQZ_IMM8
-                    || nextLast.getOpcode()
-                            == ArkOpcodesCompat.JEQZ_IMM16)) {
-                int target2 = ControlFlowGraph
-                        .getJumpTargetPublic(nextLast);
-                if (target1 == target2) {
-                    ControlFlowPattern p = new ControlFlowPattern(
-                            PatternType.SHORT_CIRCUIT_AND);
-                    p.conditionBlock = block;
-                    p.trueBlock = falseBranch;
-                    p.falseBlock = trueBranch;
-                    p.mergeBlock = cfg.getBlockAt(target1);
-                    return p;
-                }
-            }
-        }
-
-        if (opcode == ArkOpcodesCompat.JNEZ_IMM8
-                || opcode == ArkOpcodesCompat.JNEZ_IMM16) {
-            int target1 = ControlFlowGraph
-                    .getJumpTargetPublic(lastInsn);
-
-            BasicBlock nextCondBlock = falseBranch;
-            ArkInstruction nextLast = nextCondBlock.getLastInstruction();
-            if (nextLast != null
-                    && (nextLast.getOpcode()
-                            == ArkOpcodesCompat.JNEZ_IMM8
-                    || nextLast.getOpcode()
-                            == ArkOpcodesCompat.JNEZ_IMM16)) {
-                int target2 = ControlFlowGraph
-                        .getJumpTargetPublic(nextLast);
-                if (target1 == target2) {
-                    ControlFlowPattern p = new ControlFlowPattern(
-                            PatternType.SHORT_CIRCUIT_OR);
-                    p.conditionBlock = block;
-                    p.trueBlock = falseBranch;
-                    p.falseBlock = trueBranch;
-                    p.mergeBlock = cfg.getBlockAt(target1);
-                    return p;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    // --- For-of / For-in detection ---
-
-    private ControlFlowPattern detectForOfPattern(
-            BasicBlock condBlock, BasicBlock loopBody,
-            ControlFlowGraph cfg) {
-        boolean hasGetIterator = false;
-        BasicBlock setupBlock = null;
-        for (ArkInstruction insn : condBlock.getInstructions()) {
-            if (ArkOpcodesCompat.isGetIterator(insn.getOpcode())) {
-                hasGetIterator = true;
-                break;
-            }
-        }
-        if (!hasGetIterator) {
-            for (CFGEdge pred : condBlock.getPredecessors()) {
-                BasicBlock predBlock =
-                        cfg.getBlockAt(pred.getFromOffset());
-                if (predBlock != null) {
-                    for (ArkInstruction insn :
-                            predBlock.getInstructions()) {
-                        if (ArkOpcodesCompat.isGetIterator(
-                                insn.getOpcode())) {
-                            hasGetIterator = true;
-                            setupBlock = predBlock;
-                            break;
-                        }
-                    }
-                    if (!hasGetIterator) {
-                        for (CFGEdge pred2 :
-                                predBlock.getPredecessors()) {
-                            BasicBlock pred2Block =
-                                    cfg.getBlockAt(
-                                            pred2.getFromOffset());
-                            if (pred2Block != null
-                                    && pred2Block != condBlock) {
-                                for (ArkInstruction insn2 :
-                                        pred2Block.getInstructions()) {
-                                    if (ArkOpcodesCompat.isGetIterator(
-                                            insn2.getOpcode())) {
-                                        hasGetIterator = true;
-                                        setupBlock = pred2Block;
-                                        break;
-                                    }
-                                }
-                            }
-                            if (hasGetIterator) {
-                                break;
-                            }
-                        }
-                    }
-                }
-                if (hasGetIterator) {
-                    break;
-                }
-            }
-        }
-        if (!hasGetIterator) {
-            return null;
-        }
-        String iterVarName = null;
-        String itemVarName = null;
-        List<ArkInstruction> searchInsns = setupBlock != null
-                ? setupBlock.getInstructions()
-                : condBlock.getInstructions();
-        for (int i = 0; i < searchInsns.size() - 1; i++) {
-            ArkInstruction insn = searchInsns.get(i);
-            if (ArkOpcodesCompat.isGetIterator(insn.getOpcode())) {
-                if (i + 1 < searchInsns.size()) {
-                    ArkInstruction nextInsn = searchInsns.get(i + 1);
-                    if (nextInsn.getOpcode()
-                            == ArkOpcodesCompat.STA) {
-                        iterVarName = "v" + nextInsn.getOperands()
-                                .get(0).getValue();
-                    }
-                }
-                break;
-            }
-        }
-        for (int i = 0; i < condBlock.getInstructions().size();
-                i++) {
-            ArkInstruction insn =
-                    condBlock.getInstructions().get(i);
-            if (insn.getOpcode()
-                    == ArkOpcodesCompat.GETNEXTPROPNAME) {
-                if (i + 1 < condBlock.getInstructions().size()) {
-                    ArkInstruction nextInsn =
-                            condBlock.getInstructions().get(i + 1);
-                    if (nextInsn.getOpcode()
-                            == ArkOpcodesCompat.STA) {
-                        itemVarName = "v" + nextInsn.getOperands()
-                                .get(0).getValue();
-                    }
-                }
-            }
-        }
-        if (itemVarName == null) {
-            for (int i = 0; i < loopBody.getInstructions().size();
-                    i++) {
-                ArkInstruction insn =
-                        loopBody.getInstructions().get(i);
-                if (insn.getOpcode()
-                        == ArkOpcodesCompat.GETNEXTPROPNAME) {
-                    if (i + 1 < loopBody.getInstructions().size()) {
-                        ArkInstruction nextInsn =
-                                loopBody.getInstructions().get(i + 1);
-                        if (nextInsn.getOpcode()
-                                == ArkOpcodesCompat.STA) {
-                            itemVarName = "v" + nextInsn.getOperands()
-                                    .get(0).getValue();
-                        }
-                    }
-                    break;
-                }
-            }
-        }
-        if (itemVarName == null) {
-            itemVarName = "item";
-        }
-        ArkTSExpression iterableExpr =
-                new ArkTSExpression.VariableExpression(
-                        iterVarName != null ? iterVarName : "iterable");
-        ControlFlowPattern p =
-                new ControlFlowPattern(PatternType.FOR_OF_LOOP);
-        p.conditionBlock = condBlock;
-        p.trueBlock = loopBody;
-        p.iteratorVarName = itemVarName;
-        p.iterableExpr = iterableExpr;
-        p.iteratorSetupBlock = setupBlock;
-        return p;
-    }
-
-    private ControlFlowPattern detectForInPattern(
-            BasicBlock condBlock, BasicBlock loopBody,
-            ControlFlowGraph cfg) {
-        boolean hasPropIterator = false;
-        BasicBlock setupBlock = null;
-        for (CFGEdge pred : condBlock.getPredecessors()) {
-            BasicBlock predBlock =
-                    cfg.getBlockAt(pred.getFromOffset());
-            if (predBlock != null) {
-                for (ArkInstruction insn :
-                        predBlock.getInstructions()) {
-                    if (insn.getOpcode()
-                            == ArkOpcodesCompat.GETPROPITERATOR) {
-                        hasPropIterator = true;
-                        setupBlock = predBlock;
-                        break;
-                    }
-                }
-                if (!hasPropIterator) {
-                    for (CFGEdge pred2 :
-                            predBlock.getPredecessors()) {
-                        BasicBlock pred2Block =
-                                cfg.getBlockAt(pred2.getFromOffset());
-                        if (pred2Block != null
-                                && pred2Block != condBlock) {
-                            for (ArkInstruction insn2 :
-                                    pred2Block.getInstructions()) {
-                                if (insn2.getOpcode()
-                                        == ArkOpcodesCompat
-                                                .GETPROPITERATOR) {
-                                    hasPropIterator = true;
-                                    setupBlock = pred2Block;
-                                    break;
-                                }
-                            }
-                        }
-                        if (hasPropIterator) {
-                            break;
-                        }
-                    }
-                }
-            }
-            if (hasPropIterator) {
-                break;
-            }
-        }
-        if (!hasPropIterator) {
-            return null;
-        }
-        String keyVarName = null;
-        String iterVarName = null;
-        if (setupBlock != null) {
-            List<ArkInstruction> setupInsns =
-                    setupBlock.getInstructions();
-            for (int i = 0; i < setupInsns.size() - 1; i++) {
-                if (setupInsns.get(i).getOpcode()
-                        == ArkOpcodesCompat.GETPROPITERATOR) {
-                    if (i + 1 < setupInsns.size()) {
-                        ArkInstruction nextInsn = setupInsns.get(i + 1);
-                        if (nextInsn.getOpcode()
-                                == ArkOpcodesCompat.STA) {
-                            iterVarName = "v" + nextInsn.getOperands()
-                                    .get(0).getValue();
-                        }
-                    }
-                    break;
-                }
-            }
-        }
-        for (int i = 0; i < condBlock.getInstructions().size();
-                i++) {
-            ArkInstruction insn =
-                    condBlock.getInstructions().get(i);
-            if (insn.getOpcode()
-                    == ArkOpcodesCompat.GETNEXTPROPNAME) {
-                if (i + 1 < condBlock.getInstructions().size()) {
-                    ArkInstruction nextInsn =
-                            condBlock.getInstructions().get(i + 1);
-                    if (nextInsn.getOpcode()
-                            == ArkOpcodesCompat.STA) {
-                        keyVarName = "v" + nextInsn.getOperands()
-                                .get(0).getValue();
-                    }
-                }
-                break;
-            }
-        }
-        if (keyVarName == null) {
-            for (int i = 0; i < loopBody.getInstructions().size();
-                    i++) {
-                ArkInstruction insn =
-                        loopBody.getInstructions().get(i);
-                if (insn.getOpcode()
-                        == ArkOpcodesCompat.GETNEXTPROPNAME) {
-                    if (i + 1 < loopBody.getInstructions().size()) {
-                        ArkInstruction nextInsn =
-                                loopBody.getInstructions().get(i + 1);
-                        if (nextInsn.getOpcode()
-                                == ArkOpcodesCompat.STA) {
-                            keyVarName = "v" + nextInsn.getOperands()
-                                    .get(0).getValue();
-                        }
-                    }
-                    break;
-                }
-            }
-        }
-        if (keyVarName == null) {
-            keyVarName = "key";
-        }
-        ArkTSExpression objectExpr =
-                new ArkTSExpression.VariableExpression(
-                        iterVarName != null ? iterVarName : "obj");
-        ControlFlowPattern p =
-                new ControlFlowPattern(PatternType.FOR_IN_LOOP);
-        p.conditionBlock = condBlock;
-        p.trueBlock = loopBody;
-        p.iteratorVarName = keyVarName;
-        p.iterableExpr = objectExpr;
-        p.iteratorSetupBlock = setupBlock;
-        return p;
-    }
-
-    // --- Pattern processing ---
-
-    private List<ArkTSStatement> processIfElse(BasicBlock condBlock,
-            ControlFlowPattern pattern, DecompilationContext ctx,
-            ControlFlowGraph cfg, Set<BasicBlock> visited) {
-
-        List<ArkTSStatement> stmts = new ArrayList<>();
-
-        List<ArkTSStatement> preStmts =
-                processBlockInstructionsExcluding(
-                        condBlock, ctx, condBlock.getLastInstruction());
-        stmts.addAll(preStmts);
-
-        ArkTSExpression condition = getConditionExpression(
-                condBlock.getLastInstruction(), ctx);
-        if (condition == null) {
-            condition = new ArkTSExpression.VariableExpression(ACC);
-        }
-
-        visited.add(pattern.trueBlock);
-        visited.add(pattern.falseBlock);
-        if (pattern.mergeBlock != null) {
-            visited.add(pattern.mergeBlock);
-        }
-
-        List<ArkTSStatement> thenStmts =
-                processBlockInstructions(pattern.trueBlock, ctx);
-        ArkTSStatement thenBlock =
-                new ArkTSStatement.BlockStatement(thenStmts);
-
-        List<ArkTSStatement> elseStmts =
-                processBlockInstructions(pattern.falseBlock, ctx);
-        ArkTSStatement elseBlock =
-                new ArkTSStatement.BlockStatement(elseStmts);
-
-        ArkTSControlFlow.IfStatement ifStmt =
-                new ArkTSControlFlow.IfStatement(condition, thenBlock,
-                        elseBlock);
-        stmts.add(ifStmt);
-
-        return stmts;
-    }
-
-    private List<ArkTSStatement> processIfOnly(BasicBlock condBlock,
-            ControlFlowPattern pattern, DecompilationContext ctx,
-            ControlFlowGraph cfg, Set<BasicBlock> visited) {
-
-        List<ArkTSStatement> stmts = new ArrayList<>();
-
-        List<ArkTSStatement> preStmts =
-                processBlockInstructionsExcluding(
-                        condBlock, ctx, condBlock.getLastInstruction());
-        stmts.addAll(preStmts);
-
-        ArkTSExpression condition = getConditionExpression(
-                condBlock.getLastInstruction(), ctx);
-        if (condition == null) {
-            condition = new ArkTSExpression.VariableExpression(ACC);
-        }
-
-        BasicBlock branchBlock = pattern.trueBlock;
-        visited.add(branchBlock);
-
-        List<ArkTSStatement> thenStmts =
-                processBlockInstructions(branchBlock, ctx);
-        ArkTSStatement thenBlock =
-                new ArkTSStatement.BlockStatement(thenStmts);
-
-        int lastOpcode =
-                condBlock.getLastInstruction().getOpcode();
-        ArkTSExpression effectiveCondition = condition;
-        if (isBranchOnFalse(lastOpcode)) {
-            effectiveCondition =
-                    new ArkTSExpression.UnaryExpression(
-                            "!", condition, true);
-        }
-
-        ArkTSControlFlow.IfStatement ifStmt =
-                new ArkTSControlFlow.IfStatement(effectiveCondition,
-                        thenBlock, null);
-        stmts.add(ifStmt);
-
-        return stmts;
-    }
-
-    private List<ArkTSStatement> processWhileLoop(
-            BasicBlock condBlock, ControlFlowPattern pattern,
-            DecompilationContext ctx, ControlFlowGraph cfg,
-            Set<BasicBlock> visited) {
-
-        List<ArkTSStatement> stmts = new ArrayList<>();
-
-        List<ArkTSStatement> preStmts =
-                processBlockInstructionsExcluding(
-                        condBlock, ctx, condBlock.getLastInstruction());
-        stmts.addAll(preStmts);
-
-        ArkTSExpression condition = getConditionExpression(
-                condBlock.getLastInstruction(), ctx);
-        if (condition == null) {
-            condition = new ArkTSExpression.VariableExpression(ACC);
-        }
-
-        int lastOpcode =
-                condBlock.getLastInstruction().getOpcode();
-        ArkTSExpression effectiveCondition = condition;
-        if (isBranchOnFalse(lastOpcode)) {
-            effectiveCondition =
-                    new ArkTSExpression.UnaryExpression(
-                            "!", condition, true);
-        }
-
-        int loopHeaderOffset = condBlock.getStartOffset();
-        int loopEndOffset = estimateLoopEndOffset(
-                condBlock, pattern, cfg);
-
-        ctx.pushLoopContext(loopHeaderOffset, loopEndOffset);
-
-        visited.add(pattern.trueBlock);
-        List<ArkTSStatement> bodyStmts =
-                processBlockInstructions(pattern.trueBlock, ctx);
-        ArkTSStatement bodyBlock =
-                new ArkTSStatement.BlockStatement(bodyStmts);
-
-        ctx.popLoopContext();
-
-        ArkTSControlFlow.WhileStatement whileStmt =
-                new ArkTSControlFlow.WhileStatement(effectiveCondition,
-                        bodyBlock);
-        stmts.add(whileStmt);
-
-        return stmts;
-    }
-
-    private List<ArkTSStatement> processForLoop(
-            BasicBlock condBlock, ControlFlowPattern pattern,
-            DecompilationContext ctx, ControlFlowGraph cfg,
-            Set<BasicBlock> visited) {
-
-        List<ArkTSStatement> stmts = new ArrayList<>();
-
-        if (pattern.initBlock != null) {
-            stmts.addAll(processBlockInstructions(
-                    pattern.initBlock, ctx));
-            visited.add(pattern.initBlock);
-        }
-
-        ArkTSExpression condition = getConditionExpression(
-                condBlock.getLastInstruction(), ctx);
-        if (condition == null) {
-            condition = new ArkTSExpression.VariableExpression(ACC);
-        }
-
-        ArkTSExpression update = null;
-        if (pattern.updateBlock != null) {
-            List<ArkTSStatement> updateStmts =
-                    processBlockInstructions(
-                            pattern.updateBlock, ctx);
-            visited.add(pattern.updateBlock);
-            if (!updateStmts.isEmpty() && updateStmts.get(
-                    0) instanceof ArkTSStatement.ExpressionStatement) {
-                update = ((ArkTSStatement.ExpressionStatement)
-                        updateStmts.get(0)).getExpression();
-            }
-        }
-
-        visited.add(pattern.trueBlock);
-        List<ArkTSStatement> bodyStmts =
-                processBlockInstructions(pattern.trueBlock, ctx);
-        ArkTSStatement bodyBlock =
-                new ArkTSStatement.BlockStatement(bodyStmts);
-
-        ArkTSControlFlow.WhileStatement whileStmt =
-                new ArkTSControlFlow.WhileStatement(condition, bodyBlock);
-        stmts.add(whileStmt);
-
-        return stmts;
-    }
-
-    private List<ArkTSStatement> processDoWhile(BasicBlock block,
-            ControlFlowPattern pattern, DecompilationContext ctx,
-            ControlFlowGraph cfg, Set<BasicBlock> visited) {
-
-        List<ArkTSStatement> stmts = new ArrayList<>();
-
-        int loopHeaderOffset = block.getStartOffset();
-        int loopEndOffset = block.getEndOffset();
-        if (pattern.conditionBlock != null) {
-            for (CFGEdge edge :
-                    pattern.conditionBlock.getSuccessors()) {
-                if (edge.getToOffset() > loopEndOffset) {
-                    loopEndOffset = edge.getToOffset();
-                }
-            }
-        }
-
-        ctx.pushLoopContext(loopHeaderOffset, loopEndOffset);
-
-        List<ArkTSStatement> bodyStmts =
-                processBlockInstructions(block, ctx);
-
-        ArkTSExpression condition =
-                new ArkTSExpression.VariableExpression(ACC);
-        if (pattern.conditionBlock != null) {
-            visited.add(pattern.conditionBlock);
-            List<ArkTSStatement> condStmts =
-                    processBlockInstructionsExcluding(
-                            pattern.conditionBlock, ctx,
-                            pattern.conditionBlock.getLastInstruction());
-            bodyStmts.addAll(condStmts);
-            condition = getConditionExpression(
-                    pattern.conditionBlock.getLastInstruction(), ctx);
-            if (condition == null) {
-                condition = new ArkTSExpression.VariableExpression(ACC);
-            }
-        }
-
-        ctx.popLoopContext();
-
-        ArkTSStatement bodyBlock =
-                new ArkTSStatement.BlockStatement(bodyStmts);
-        ArkTSControlFlow.DoWhileStatement doWhile =
-                new ArkTSControlFlow.DoWhileStatement(bodyBlock, condition);
-        stmts.add(doWhile);
-
-        return stmts;
-    }
-
-    private List<ArkTSStatement> processForOfLoop(
-            BasicBlock condBlock, ControlFlowPattern pattern,
-            DecompilationContext ctx, ControlFlowGraph cfg,
-            Set<BasicBlock> visited) {
-        List<ArkTSStatement> stmts = new ArrayList<>();
-        List<ArkTSStatement> preStmts =
-                processBlockInstructionsExcludingIterator(
-                        condBlock, ctx, condBlock.getLastInstruction());
-        stmts.addAll(preStmts);
-        int loopHeaderOffset = condBlock.getStartOffset();
-        int loopEndOffset = estimateLoopEndOffset(
-                condBlock, pattern, cfg);
-        ctx.pushLoopContext(loopHeaderOffset, loopEndOffset);
-        visited.add(pattern.trueBlock);
-        List<ArkTSStatement> bodyStmts =
-                processBlockInstructions(pattern.trueBlock, ctx);
-        ArkTSStatement bodyBlock =
-                new ArkTSStatement.BlockStatement(bodyStmts);
-        ctx.popLoopContext();
-        ArkTSStatement forOfStmt =
-                new ArkTSControlFlow.ForOfStatement(
-                        "const", pattern.iteratorVarName,
-                        pattern.iterableExpr, bodyBlock);
-        stmts.add(forOfStmt);
-        return stmts;
-    }
-
-    private List<ArkTSStatement> processForInLoop(
-            BasicBlock condBlock, ControlFlowPattern pattern,
-            DecompilationContext ctx, ControlFlowGraph cfg,
-            Set<BasicBlock> visited) {
-        List<ArkTSStatement> stmts = new ArrayList<>();
-        List<ArkTSStatement> preStmts =
-                processBlockInstructionsExcludingIterator(
-                        condBlock, ctx, condBlock.getLastInstruction());
-        stmts.addAll(preStmts);
-        int loopHeaderOffset = condBlock.getStartOffset();
-        int loopEndOffset = estimateLoopEndOffset(
-                condBlock, pattern, cfg);
-        ctx.pushLoopContext(loopHeaderOffset, loopEndOffset);
-        visited.add(pattern.trueBlock);
-        List<ArkTSStatement> bodyStmts =
-                processBlockInstructions(pattern.trueBlock, ctx);
-        ArkTSStatement bodyBlock =
-                new ArkTSStatement.BlockStatement(bodyStmts);
-        ctx.popLoopContext();
-        ArkTSStatement forInStmt =
-                new ArkTSControlFlow.ForInStatement(
-                        "const", pattern.iteratorVarName,
-                        pattern.iterableExpr, bodyBlock);
-        stmts.add(forInStmt);
-        return stmts;
-    }
-
-    // --- Ternary processing ---
-
-    private List<ArkTSStatement> processTernary(BasicBlock condBlock,
-            ControlFlowPattern pattern, DecompilationContext ctx,
-            ControlFlowGraph cfg, Set<BasicBlock> visited) {
-
-        List<ArkTSStatement> stmts = new ArrayList<>();
-
-        List<ArkTSStatement> preStmts =
-                processBlockInstructionsExcluding(
-                        condBlock, ctx, condBlock.getLastInstruction());
-        stmts.addAll(preStmts);
-
-        ArkTSExpression condition = getConditionExpression(
-                condBlock.getLastInstruction(), ctx);
-        if (condition == null) {
-            condition = new ArkTSExpression.VariableExpression(ACC);
-        }
-
-        int lastOpcode =
-                condBlock.getLastInstruction().getOpcode();
-        ArkTSExpression effectiveCondition = condition;
-        if (isBranchOnFalse(lastOpcode)) {
-            effectiveCondition = condition;
-        }
-
-        visited.add(pattern.trueBlock);
-        visited.add(pattern.falseBlock);
-        if (pattern.mergeBlock != null) {
-            visited.add(pattern.mergeBlock);
-        }
-
-        ArkTSExpression trueValue =
-                extractBlockValue(pattern.trueBlock, ctx);
-        ArkTSExpression falseValue =
-                extractBlockValue(pattern.falseBlock, ctx);
-
-        if (trueValue != null && falseValue != null) {
-            ArkTSExpression ternaryExpr =
-                    new ArkTSAccessExpressions.ConditionalExpression(
-                            effectiveCondition, trueValue, falseValue);
-            String targetVar = pattern.ternaryTargetVar;
-            ArkTSStatement decl =
-                    new ArkTSStatement.VariableDeclaration(
-                            "let", targetVar, null, ternaryExpr);
-            stmts.add(decl);
-        } else {
-            List<ArkTSStatement> thenStmts =
-                    processBlockInstructions(pattern.trueBlock, ctx);
-            List<ArkTSStatement> elseStmts =
-                    processBlockInstructions(pattern.falseBlock, ctx);
-            ArkTSStatement thenBlock =
-                    new ArkTSStatement.BlockStatement(thenStmts);
-            ArkTSStatement elseBlock =
-                    new ArkTSStatement.BlockStatement(elseStmts);
-            stmts.add(new ArkTSControlFlow.IfStatement(
-                    effectiveCondition, thenBlock, elseBlock));
-        }
-
-        return stmts;
-    }
-
-    private ArkTSExpression extractBlockValue(BasicBlock block,
-            DecompilationContext ctx) {
-        ArkTSExpression accValue = null;
-        TypeInference typeInf = new TypeInference();
-        Set<String> declaredVars = new HashSet<>();
-        for (int i = 0; i < ctx.numArgs; i++) {
-            declaredVars.add("v" + i);
-        }
-
-        for (ArkInstruction insn : block.getInstructions()) {
-            int opcode = insn.getOpcode();
-            if (opcode == ArkOpcodesCompat.STA) {
-                continue;
-            }
-            if (ArkOpcodesCompat.isUnconditionalJump(opcode)) {
-                continue;
-            }
-            if (ArkOpcodesCompat.isConditionalBranch(opcode)) {
-                continue;
-            }
-            InstructionHandler.StatementResult result =
-                    instrHandler.processInstruction(
-                            insn, ctx, accValue, declaredVars, typeInf);
-            if (result != null) {
-                accValue = result.newAccValue != null
-                        ? result.newAccValue : accValue;
-            }
-        }
-        return accValue;
-    }
-
-    // --- Short-circuit processing ---
-
-    private List<ArkTSStatement> processShortCircuitAnd(
-            BasicBlock condBlock, ControlFlowPattern pattern,
-            DecompilationContext ctx, ControlFlowGraph cfg,
-            Set<BasicBlock> visited) {
-
-        List<ArkTSStatement> stmts = new ArrayList<>();
-
-        List<ArkTSStatement> preStmts =
-                processBlockInstructionsExcluding(
-                        condBlock, ctx, condBlock.getLastInstruction());
-        stmts.addAll(preStmts);
-
-        ArkTSExpression leftCond = getConditionExpression(
-                condBlock.getLastInstruction(), ctx);
-        if (leftCond == null) {
-            leftCond = new ArkTSExpression.VariableExpression(ACC);
-        }
-
-        BasicBlock secondCondBlock = pattern.trueBlock;
-        visited.add(secondCondBlock);
-        List<ArkTSStatement> midStmts =
-                processBlockInstructionsExcluding(
-                        secondCondBlock, ctx,
-                        secondCondBlock.getLastInstruction());
-        stmts.addAll(midStmts);
-
-        ArkTSExpression rightCond = getConditionExpression(
-                secondCondBlock.getLastInstruction(), ctx);
-        if (rightCond == null) {
-            rightCond = new ArkTSExpression.VariableExpression(ACC);
-        }
-
-        visited.add(pattern.falseBlock);
-        if (pattern.mergeBlock != null) {
-            visited.add(pattern.mergeBlock);
-        }
-
-        ArkTSExpression combined =
-                new ArkTSExpression.BinaryExpression(
-                        leftCond, "&&", rightCond);
-
-        stmts.add(new ArkTSStatement.ExpressionStatement(combined));
-
-        return stmts;
-    }
-
-    private List<ArkTSStatement> processShortCircuitOr(
-            BasicBlock condBlock, ControlFlowPattern pattern,
-            DecompilationContext ctx, ControlFlowGraph cfg,
-            Set<BasicBlock> visited) {
-
-        List<ArkTSStatement> stmts = new ArrayList<>();
-
-        List<ArkTSStatement> preStmts =
-                processBlockInstructionsExcluding(
-                        condBlock, ctx, condBlock.getLastInstruction());
-        stmts.addAll(preStmts);
-
-        ArkTSExpression leftCond = getConditionExpression(
-                condBlock.getLastInstruction(), ctx);
-        if (leftCond == null) {
-            leftCond = new ArkTSExpression.VariableExpression(ACC);
-        }
-
-        BasicBlock secondCondBlock = pattern.trueBlock;
-        visited.add(secondCondBlock);
-        List<ArkTSStatement> midStmts =
-                processBlockInstructionsExcluding(
-                        secondCondBlock, ctx,
-                        secondCondBlock.getLastInstruction());
-        stmts.addAll(midStmts);
-
-        ArkTSExpression rightCond = getConditionExpression(
-                secondCondBlock.getLastInstruction(), ctx);
-        if (rightCond == null) {
-            rightCond = new ArkTSExpression.VariableExpression(ACC);
-        }
-
-        visited.add(pattern.falseBlock);
-        if (pattern.mergeBlock != null) {
-            visited.add(pattern.mergeBlock);
-        }
-
-        ArkTSExpression combined =
-                new ArkTSExpression.BinaryExpression(
-                        leftCond, "||", rightCond);
-
-        stmts.add(new ArkTSStatement.ExpressionStatement(combined));
-
-        return stmts;
-    }
-
-    // --- Switch processing ---
-
-    private ControlFlowPattern detectSwitchPattern(
-            BasicBlock block, BasicBlock trueBranch,
-            BasicBlock falseBranch, ControlFlowGraph cfg) {
-
-        ArkInstruction lastInsn = block.getLastInstruction();
-        if (lastInsn == null) {
-            return null;
-        }
-
-        int opcode = lastInsn.getOpcode();
-
-        if (opcode != ArkOpcodesCompat.JEQ_IMM8
-                && opcode != ArkOpcodesCompat.JEQ_IMM16) {
-            return null;
-        }
-
-        List<ArkOperand> ops = lastInsn.getOperands();
-        if (ops.isEmpty()) {
-            return null;
-        }
-        int compareReg = (int) ops.get(0).getValue();
-
-        ArkTSExpression caseValue = extractCaseValue(block);
-        if (caseValue == null) {
-            return null;
-        }
-
-        List<SwitchCaseInfo> cases = new ArrayList<>();
-        cases.add(new SwitchCaseInfo(caseValue, trueBranch));
-
-        BasicBlock current = falseBranch;
-        Set<Integer> visitedOffsets = new HashSet<>();
-        visitedOffsets.add(block.getStartOffset());
-
-        while (current != null && !visitedOffsets.contains(
-                current.getStartOffset())) {
-
-            visitedOffsets.add(current.getStartOffset());
-
-            ArkInstruction currentLast = current.getLastInstruction();
-            if (currentLast == null) {
-                break;
-            }
-
-            int currentOpcode = currentLast.getOpcode();
-
-            if (currentOpcode == ArkOpcodesCompat.JEQ_IMM8
-                    || currentOpcode == ArkOpcodesCompat.JEQ_IMM16) {
-                List<ArkOperand> currentOps =
-                        currentLast.getOperands();
-                if (currentOps.isEmpty()) {
-                    break;
-                }
-                int currentReg = (int) currentOps.get(0).getValue();
-                if (currentReg != compareReg) {
-                    break;
-                }
-
-                ArkTSExpression value =
-                        extractCaseValue(current);
-                if (value == null) {
-                    break;
-                }
-
-                List<CFGEdge> succs = current.getSuccessors();
-                if (succs.size() != 2) {
-                    break;
-                }
-
-                BasicBlock caseTarget = getSuccessorByType(succs,
-                        EdgeType.CONDITIONAL_TRUE);
-                BasicBlock nextFallThrough = getSuccessorByType(succs,
-                        EdgeType.CONDITIONAL_FALSE);
-                if (caseTarget == null) {
-                    caseTarget = cfg.getBlockAt(
-                            succs.get(0).getToOffset());
-                    nextFallThrough = cfg.getBlockAt(
-                            succs.get(1).getToOffset());
-                }
-                if (caseTarget == null) {
-                    break;
-                }
-
-                cases.add(new SwitchCaseInfo(value, caseTarget));
-                current = nextFallThrough;
-            } else {
-                break;
-            }
-        }
-
-        if (cases.size() < 2) {
-            return null;
-        }
-
-        ArkTSExpression discriminant =
-                new ArkTSExpression.VariableExpression(
-                        "v" + compareReg);
-
-        BasicBlock defaultBlock = current;
-        BasicBlock endBlock = findSwitchEndBlock(
-                cases, defaultBlock, cfg);
-
-        ControlFlowPattern p =
-                new ControlFlowPattern(PatternType.SWITCH);
-        p.switchDiscriminant = discriminant;
-        p.switchCases = cases;
-        p.switchDefaultBlock = defaultBlock;
-        p.switchEndBlock = endBlock;
-        return p;
-    }
-
-    private ArkTSExpression extractCaseValue(BasicBlock block) {
-        ArkInstruction lastInsn = block.getLastInstruction();
-        for (ArkInstruction insn : block.getInstructions()) {
-            if (insn == lastInsn) {
-                break;
-            }
-            if (insn.getOpcode() == ArkOpcodesCompat.LDAI) {
-                return new ArkTSExpression.LiteralExpression(
-                        String.valueOf(
-                                insn.getOperands().get(0).getValue()),
-                        ArkTSExpression.LiteralExpression
-                                .LiteralKind.NUMBER);
-            }
-        }
-        return null;
-    }
-
-    private BasicBlock findSwitchEndBlock(
-            List<SwitchCaseInfo> cases,
-            BasicBlock defaultBlock, ControlFlowGraph cfg) {
-
-        int maxOffset = 0;
-        BasicBlock endBlock = null;
-
-        for (SwitchCaseInfo sci : cases) {
-            if (sci.targetBlock != null) {
-                int end = sci.targetBlock.getEndOffset();
-                if (end > maxOffset) {
-                    maxOffset = end;
-                    for (CFGEdge edge :
-                            sci.targetBlock.getSuccessors()) {
-                        BasicBlock succ =
-                                cfg.getBlockAt(edge.getToOffset());
-                        if (succ != null
-                                && succ.getStartOffset()
-                                        >= maxOffset) {
-                            maxOffset = succ.getStartOffset();
-                            endBlock = succ;
-                        }
-                    }
-                }
-            }
-        }
-
-        if (defaultBlock != null) {
-            int end = defaultBlock.getEndOffset();
-            if (end > maxOffset) {
-                maxOffset = end;
-                endBlock = null;
-                for (CFGEdge edge :
-                        defaultBlock.getSuccessors()) {
-                    BasicBlock succ =
-                            cfg.getBlockAt(edge.getToOffset());
-                    if (succ != null
-                            && succ.getStartOffset()
-                                    >= maxOffset) {
-                        maxOffset = succ.getStartOffset();
-                        endBlock = succ;
-                    }
-                }
-            }
-        }
-
-        return endBlock;
-    }
-
-    private List<ArkTSStatement> processSwitch(BasicBlock block,
-            ControlFlowPattern pattern, DecompilationContext ctx,
-            ControlFlowGraph cfg, Set<BasicBlock> visited) {
-
-        List<ArkTSStatement> stmts = new ArrayList<>();
-
-        List<ArkTSStatement> preStmts =
-                processBlockInstructionsExcluding(
-                        block, ctx, block.getLastInstruction());
-        stmts.addAll(preStmts);
-
-        List<CFGEdge> succs = block.getSuccessors();
-        BasicBlock fallThrough = null;
-        if (succs.size() >= 2) {
-            fallThrough = getSuccessorByType(succs,
-                    EdgeType.CONDITIONAL_FALSE);
-            if (fallThrough == null) {
-                fallThrough = cfg.getBlockAt(
-                        succs.get(1).getToOffset());
-            }
-        }
-
-        BasicBlock walkCurrent = fallThrough;
-        while (walkCurrent != null) {
-            ArkInstruction curLast = walkCurrent.getLastInstruction();
-            if (curLast == null) {
-                break;
-            }
-            int curOpcode = curLast.getOpcode();
-            if (curOpcode == ArkOpcodesCompat.JEQ_IMM8
-                    || curOpcode == ArkOpcodesCompat.JEQ_IMM16) {
-                visited.add(walkCurrent);
-                List<CFGEdge> curSuccs = walkCurrent.getSuccessors();
-                if (curSuccs.size() >= 2) {
-                    BasicBlock ft = getSuccessorByType(curSuccs,
-                            EdgeType.CONDITIONAL_FALSE);
-                    if (ft != null) {
-                        walkCurrent = ft;
-                    } else {
-                        walkCurrent = cfg.getBlockAt(
-                                curSuccs.get(1).getToOffset());
-                    }
-                } else {
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-
-        int switchEndOffset = pattern.switchEndBlock != null
-                ? pattern.switchEndBlock.getStartOffset()
-                : Integer.MAX_VALUE;
-
-        ctx.pushLoopContext(-1, switchEndOffset);
-
-        List<ArkTSControlFlow.SwitchStatement.SwitchCase> switchCases =
-                new ArrayList<>();
-
-        Set<BasicBlock> processedCaseBodies = new HashSet<>();
-        for (SwitchCaseInfo sci : pattern.switchCases) {
-            if (sci.targetBlock != null
-                    && !processedCaseBodies.contains(sci.targetBlock)
-                    && !visited.contains(sci.targetBlock)) {
-                visited.add(sci.targetBlock);
-                processedCaseBodies.add(sci.targetBlock);
-
-                List<ArkTSStatement> caseBodyStmts =
-                        processSwitchCaseBody(sci.targetBlock,
-                                ctx, switchEndOffset, cfg, visited);
-                switchCases.add(
-                        new ArkTSControlFlow.SwitchStatement.SwitchCase(
-                                sci.testValue, caseBodyStmts));
-            }
-        }
-
-        ArkTSStatement defaultBlock = null;
-        if (pattern.switchDefaultBlock != null
-                && !visited.contains(pattern.switchDefaultBlock)) {
-            visited.add(pattern.switchDefaultBlock);
-            List<ArkTSStatement> defaultStmts =
-                    processSwitchCaseBody(pattern.switchDefaultBlock,
-                            ctx, switchEndOffset, cfg, visited);
-            if (!defaultStmts.isEmpty()) {
-                defaultBlock = new ArkTSStatement.BlockStatement(
-                        defaultStmts);
-            }
-        }
-
-        ctx.popLoopContext();
-
-        if (pattern.switchEndBlock != null) {
-            visited.add(pattern.switchEndBlock);
-        }
-
-        if (!switchCases.isEmpty()) {
-            stmts.add(new ArkTSControlFlow.SwitchStatement(
-                    pattern.switchDiscriminant, switchCases,
-                    defaultBlock));
-        }
-
-        return stmts;
-    }
-
-    private List<ArkTSStatement> processSwitchCaseBody(
-            BasicBlock caseBody, DecompilationContext ctx,
-            int switchEndOffset, ControlFlowGraph cfg,
-            Set<BasicBlock> visited) {
-
-        List<ArkTSStatement> bodyStmts = new ArrayList<>();
-        BasicBlock current = caseBody;
-
-        while (current != null) {
-            ArkInstruction lastInsn = current.getLastInstruction();
-            boolean hasBreak = false;
-            boolean isFallThrough = false;
-
-            if (lastInsn != null
-                    && ArkOpcodesCompat.isUnconditionalJump(
-                            lastInsn.getOpcode())) {
-                int jmpTarget = ControlFlowGraph
-                        .getJumpTargetPublic(lastInsn);
-                if (jmpTarget >= switchEndOffset) {
-                    hasBreak = true;
-                } else if (jmpTarget > current.getStartOffset()
-                        && jmpTarget < switchEndOffset) {
-                    isFallThrough = true;
-                }
-            }
-
-            if (hasBreak) {
-                List<ArkTSStatement> blockStmts =
-                        processBlockInstructionsExcluding(
-                                current, ctx, lastInsn);
-                bodyStmts.addAll(blockStmts);
-                bodyStmts.add(new ArkTSStatement.BreakStatement());
-            } else if (isFallThrough) {
-                List<ArkTSStatement> blockStmts =
-                        processBlockInstructionsExcluding(
-                                current, ctx, lastInsn);
-                bodyStmts.addAll(blockStmts);
-            } else if (lastInsn != null
-                    && ArkOpcodesCompat.isUnconditionalJump(
-                            lastInsn.getOpcode())) {
-                int jmpTarget = ControlFlowGraph
-                        .getJumpTargetPublic(lastInsn);
-                List<ArkTSStatement> blockStmts =
-                        processBlockInstructionsExcluding(
-                                current, ctx, lastInsn);
-                bodyStmts.addAll(blockStmts);
-                if (jmpTarget >= switchEndOffset) {
-                    bodyStmts.add(new ArkTSStatement.BreakStatement());
-                }
-            } else if (current.endsWithReturn()) {
-                bodyStmts.addAll(
-                        processBlockInstructions(current, ctx));
-                break;
-            } else {
-                bodyStmts.addAll(
-                        processBlockInstructions(current, ctx));
-
-                List<CFGEdge> succs = current.getSuccessors();
-                if (succs.size() == 1) {
-                    BasicBlock next = cfg.getBlockAt(
-                            succs.get(0).getToOffset());
-                    if (next != null && !visited.contains(next)
-                            && next.getStartOffset()
-                                    < switchEndOffset
-                            && next.getStartOffset()
-                                    > current.getStartOffset()) {
-                        visited.add(next);
-                        current = next;
-                        continue;
-                    }
-                }
-                break;
-            }
-
-            break;
-        }
-
-        return bodyStmts;
-    }
-
-    // --- Try/catch processing ---
-
-    List<TryCatchRegion> buildTryCatchRegions(
-            DecompilationContext ctx, ControlFlowGraph cfg) {
-        List<TryCatchRegion> regions = new ArrayList<>();
-        if (ctx.code == null || ctx.code.getTryBlocks() == null) {
-            return regions;
-        }
-        for (AbcTryBlock tryBlock : ctx.code.getTryBlocks()) {
-            int startPc = (int) tryBlock.getStartPc();
-            int endPc = startPc + (int) tryBlock.getLength();
-            List<CatchHandler> handlers = new ArrayList<>();
-            CatchHandler finallyHandler = null;
-            for (AbcCatchBlock catchBlock :
-                    tryBlock.getCatchBlocks()) {
-                String typeName = null;
-                if (catchBlock.getTypeIdx() > 0
-                        && ctx.abcFile != null) {
-                    typeName = decompiler.resolveTypeName(
-                            (int) catchBlock.getTypeIdx(), ctx.abcFile);
-                }
-                if (catchBlock.isCatchAll()) {
-                    finallyHandler = new CatchHandler(
-                            typeName, (int) catchBlock.getHandlerPc());
-                } else {
-                    handlers.add(new CatchHandler(
-                            typeName, (int) catchBlock.getHandlerPc()));
-                }
-            }
-            if (finallyHandler != null && handlers.isEmpty()) {
-                handlers.add(finallyHandler);
-            }
-            if (!handlers.isEmpty()) {
-                TryCatchRegion region = new TryCatchRegion(
-                        startPc, endPc, handlers);
-                regions.add(region);
-            }
-        }
-        return regions;
-    }
-
-    private TryCatchRegion findTryCatchRegion(int offset,
-            List<TryCatchRegion> regions) {
-        for (TryCatchRegion region : regions) {
-            if (region.startPc == offset && !region.isProcessed()) {
-                return region;
-            }
-        }
-        return null;
-    }
-
-    private List<ArkTSStatement> processTryCatch(TryCatchRegion tcr,
-            DecompilationContext ctx, ControlFlowGraph cfg,
-            Set<BasicBlock> visited) {
-
-        List<ArkTSStatement> stmts = new ArrayList<>();
-
-        List<TryCatchRegion> allRegions =
-                buildTryCatchRegions(ctx, cfg);
-
-        List<ArkTSStatement> tryBodyStmts = new ArrayList<>();
-        for (BasicBlock block : cfg.getBlocks()) {
-            if (block.getStartOffset() >= tcr.startPc
-                    && block.getStartOffset() < tcr.endPc
-                    && !visited.contains(block)) {
-                TryCatchRegion nestedTcr = findTryCatchRegion(
-                        block.getStartOffset(), allRegions);
-                if (nestedTcr != null && nestedTcr != tcr
-                        && !nestedTcr.isProcessed()
-                        && nestedTcr.startPc >= tcr.startPc
-                        && nestedTcr.endPc <= tcr.endPc) {
-                    nestedTcr.markProcessed();
-                    visited.add(block);
-                    tryBodyStmts.addAll(
-                            processTryCatch(nestedTcr, ctx, cfg,
-                                    visited));
-                } else {
-                    visited.add(block);
-                    tryBodyStmts.addAll(
-                            processBlockInstructions(block, ctx));
-                }
-            }
-        }
-        ArkTSStatement tryBody =
-                new ArkTSStatement.BlockStatement(tryBodyStmts);
-
-        ArkTSStatement catchBody = null;
-        String catchParam = "e";
-        if (!tcr.handlers.isEmpty()) {
-            CatchHandler firstHandler = tcr.handlers.get(0);
-            if (firstHandler.typeName != null) {
-                catchParam = "e";
-            }
-            List<ArkTSStatement> catchBodyStmts = new ArrayList<>();
-            BasicBlock handlerBlock =
-                    cfg.getBlockAt(firstHandler.handlerPc);
-            if (handlerBlock != null
-                    && !visited.contains(handlerBlock)) {
-                visited.add(handlerBlock);
-                catchBodyStmts.addAll(
-                        processBlockInstructions(handlerBlock, ctx));
-            }
-            if (!catchBodyStmts.isEmpty()) {
-                catchBody = new ArkTSStatement.BlockStatement(
-                        catchBodyStmts);
-            }
-        }
-
-        ArkTSControlFlow.TryCatchStatement tryCatch =
-                new ArkTSControlFlow.TryCatchStatement(
-                        tryBody, catchParam, catchBody, null);
-        stmts.add(tryCatch);
-        return stmts;
-    }
-
-    // --- Condition extraction ---
-
-    private ArkTSExpression getConditionExpression(
+    ArkTSExpression getConditionExpression(
             ArkInstruction branchInsn, DecompilationContext ctx) {
         if (branchInsn == null) {
             return null;
@@ -1829,7 +498,7 @@ class ControlFlowReconstructor {
         return ctx.currentAccValue;
     }
 
-    private boolean isBranchOnFalse(int opcode) {
+    boolean isBranchOnFalse(int opcode) {
         return opcode == ArkOpcodesCompat.JEQZ_IMM8
                 || opcode == ArkOpcodesCompat.JEQZ_IMM16
                 || opcode == ArkOpcodesCompat.JEQNULL_IMM8
@@ -1840,207 +509,41 @@ class ControlFlowReconstructor {
                 || opcode == ArkOpcodesCompat.JSTRICTEQZ_IMM16;
     }
 
-    // --- Block instruction processing ---
+    // --- Block instruction processing (delegates to BlockInstructionProcessor) ---
 
     List<ArkTSStatement> processBlockInstructions(BasicBlock block,
             DecompilationContext ctx) {
-        return processBlockInstructionsExcluding(block, ctx, null);
+        return blockProc.processBlockInstructions(block, ctx);
     }
 
     List<ArkTSStatement> processBlockInstructionsExcluding(
             BasicBlock block, DecompilationContext ctx,
             ArkInstruction excludeInsn) {
-
-        List<ArkTSStatement> stmts = new ArrayList<>();
-        Set<String> declaredVars = new HashSet<>();
-        for (int i = 0; i < ctx.numArgs; i++) {
-            declaredVars.add("v" + i);
-        }
-
-        ArkTSExpression accValue = null;
-        TypeInference typeInf = new TypeInference();
-
-        for (ArkInstruction insn : block.getInstructions()) {
-            if (insn == excludeInsn) {
-                continue;
-            }
-
-            int opcode = insn.getOpcode();
-
-            if (opcode == ArkOpcodesCompat.NOP) {
-                continue;
-            }
-
-            if (ArkOpcodesCompat.isUnconditionalJump(opcode)) {
-                if (isBreakJump(insn, block, ctx)) {
-                    stmts.add(new ArkTSStatement.BreakStatement());
-                    continue;
-                }
-                if (isContinueJump(insn, block, ctx)) {
-                    stmts.add(new ArkTSStatement.ContinueStatement());
-                    continue;
-                }
-                continue;
-            }
-
-            if (ArkOpcodesCompat.isConditionalBranch(opcode)) {
-                ctx.currentAccValue = accValue;
-                continue;
-            }
-
-            if (opcode == ArkOpcodesCompat.RETURN) {
-                stmts.add(new ArkTSStatement.ReturnStatement(accValue));
-                accValue = null;
-                continue;
-            }
-            if (opcode == ArkOpcodesCompat.RETURNUNDEFINED) {
-                stmts.add(new ArkTSStatement.ReturnStatement(null));
-                accValue = null;
-                continue;
-            }
-
-            InstructionHandler.StatementResult result;
-            try {
-                result = instrHandler.processInstruction(
-                        insn, ctx, accValue, declaredVars, typeInf);
-            } catch (Exception e) {
-                String msg = "error at offset 0x"
-                        + Integer.toHexString(insn.getOffset())
-                        + ": " + e.getMessage();
-                ctx.warnings.add(msg);
-                stmts.add(new ArkTSStatement.ExpressionStatement(
-                        new ArkTSExpression.VariableExpression(
-                                "/* " + msg + " */")));
-                accValue = null;
-                continue;
-            }
-            if (result != null) {
-                if (result.statement != null) {
-                    stmts.add(result.statement);
-                }
-                accValue = result.newAccValue;
-            } else {
-                accValue = null;
-            }
-        }
-
-        ctx.currentAccValue = accValue;
-        return stmts;
+        return blockProc.processBlockInstructionsExcluding(
+                block, ctx, excludeInsn);
     }
 
-    private List<ArkTSStatement> processBlockInstructionsExcludingIterator(
+    List<ArkTSStatement> processBlockInstructionsExcludingIterator(
             BasicBlock block, DecompilationContext ctx,
             ArkInstruction excludeInsn) {
-        List<ArkTSStatement> stmts = new ArrayList<>();
-        Set<String> declaredVars = new HashSet<>();
-        for (int i = 0; i < ctx.numArgs; i++) {
-            declaredVars.add("v" + i);
-        }
-        ArkTSExpression accValue = null;
-        TypeInference typeInf = new TypeInference();
-        List<ArkInstruction> instructions = block.getInstructions();
-        for (int idx = 0; idx < instructions.size(); idx++) {
-            ArkInstruction insn = instructions.get(idx);
-            if (insn == excludeInsn) {
-                continue;
-            }
-            int opcode = insn.getOpcode();
-            if (ArkOpcodesCompat.isGetIterator(opcode)
-                    || ArkOpcodesCompat.isCloseIterator(opcode)
-                    || opcode == ArkOpcodesCompat.GETNEXTPROPNAME
-                    || opcode == ArkOpcodesCompat.GETPROPITERATOR) {
-                continue;
-            }
-            if (opcode == ArkOpcodesCompat.STA && idx > 0) {
-                int prevOpcode = instructions.get(idx - 1).getOpcode();
-                if (ArkOpcodesCompat.isGetIterator(prevOpcode)
-                        || prevOpcode
-                                == ArkOpcodesCompat.GETNEXTPROPNAME
-                        || prevOpcode
-                                == ArkOpcodesCompat.GETPROPITERATOR) {
-                    continue;
-                }
-            }
-            if (opcode == ArkOpcodesCompat.NOP) {
-                continue;
-            }
-            if (ArkOpcodesCompat.isUnconditionalJump(opcode)) {
-                if (isBreakJump(insn, block, ctx)) {
-                    stmts.add(new ArkTSStatement.BreakStatement());
-                    continue;
-                }
-                if (isContinueJump(insn, block, ctx)) {
-                    stmts.add(new ArkTSStatement.ContinueStatement());
-                    continue;
-                }
-                continue;
-            }
-            if (ArkOpcodesCompat.isConditionalBranch(opcode)) {
-                ctx.currentAccValue = accValue;
-                continue;
-            }
-            if (opcode == ArkOpcodesCompat.RETURN) {
-                stmts.add(new ArkTSStatement.ReturnStatement(accValue));
-                accValue = null;
-                continue;
-            }
-            if (opcode == ArkOpcodesCompat.RETURNUNDEFINED) {
-                stmts.add(new ArkTSStatement.ReturnStatement(null));
-                accValue = null;
-                continue;
-            }
-            InstructionHandler.StatementResult result =
-                    instrHandler.processInstruction(
-                            insn, ctx, accValue, declaredVars, typeInf);
-            if (result != null) {
-                if (result.statement != null) {
-                    stmts.add(result.statement);
-                }
-                accValue = result.newAccValue;
-            } else {
-                accValue = null;
-            }
-        }
-        ctx.currentAccValue = accValue;
-        return stmts;
+        return blockProc.processBlockInstructionsExcludingIterator(
+                block, ctx, excludeInsn);
+    }
+
+    ArkTSExpression extractBlockValue(BasicBlock block,
+            DecompilationContext ctx) {
+        return blockProc.extractBlockValue(block, ctx);
     }
 
     // --- Helpers ---
-
-    private boolean isBreakJump(ArkInstruction insn, BasicBlock block,
-            DecompilationContext ctx) {
-        int[] loopCtx = ctx.getCurrentLoopContext();
-        if (loopCtx == null) {
-            return false;
-        }
-        int loopEnd = loopCtx[1];
-        int target = ControlFlowGraph.getJumpTargetPublic(insn);
-        return target >= loopEnd;
-    }
-
-    private boolean isContinueJump(ArkInstruction insn,
-            BasicBlock block, DecompilationContext ctx) {
-        int[] loopCtx = ctx.getCurrentLoopContext();
-        if (loopCtx == null) {
-            return false;
-        }
-        int loopHeader = loopCtx[0];
-        int loopEnd = loopCtx[1];
-        int target = ControlFlowGraph.getJumpTargetPublic(insn);
-        return target == loopHeader && target < loopEnd;
-    }
 
     private BasicBlock getSuccessorByType(List<CFGEdge> edges,
             EdgeType type) {
         for (CFGEdge edge : edges) {
             if (edge.getType() == type) {
-                return ctx_getBlock(edge.getToOffset());
+                return null;
             }
         }
-        return null;
-    }
-
-    private BasicBlock ctx_getBlock(int offset) {
         return null;
     }
 
@@ -2127,39 +630,5 @@ class ControlFlowReconstructor {
             }
         }
         return true;
-    }
-
-    private int estimateLoopEndOffset(BasicBlock condBlock,
-            ControlFlowPattern pattern, ControlFlowGraph cfg) {
-        List<CFGEdge> successors = condBlock.getSuccessors();
-        if (successors.size() == 2) {
-            int target1 = successors.get(0).getToOffset();
-            int target2 = successors.get(1).getToOffset();
-            if (target1 <= condBlock.getStartOffset()) {
-                return findLoopExit(pattern.trueBlock, condBlock, cfg);
-            }
-            if (target2 <= condBlock.getStartOffset()) {
-                return findLoopExit(pattern.trueBlock, condBlock, cfg);
-            }
-            return Math.max(target1, target2);
-        }
-        if (pattern.trueBlock != null) {
-            return pattern.trueBlock.getEndOffset();
-        }
-        return condBlock.getEndOffset();
-    }
-
-    private int findLoopExit(BasicBlock bodyBlock,
-            BasicBlock headerBlock, ControlFlowGraph cfg) {
-        if (bodyBlock == null) {
-            return headerBlock.getEndOffset();
-        }
-        int maxOffset = bodyBlock.getEndOffset();
-        for (CFGEdge edge : bodyBlock.getSuccessors()) {
-            if (edge.getToOffset() > maxOffset) {
-                maxOffset = edge.getToOffset();
-            }
-        }
-        return maxOffset;
     }
 }

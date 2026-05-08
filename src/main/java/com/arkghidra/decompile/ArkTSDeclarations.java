@@ -494,6 +494,56 @@ public class ArkTSDeclarations {
         }
     }
 
+    // --- Namespace statement ---
+
+    /**
+     * A namespace declaration: namespace com.example { ... }.
+     * Groups related classes, functions, and other declarations.
+     */
+    public static class NamespaceStatement extends ArkTSStatement {
+        private final String name;
+        private final List<ArkTSStatement> members;
+
+        /**
+         * Constructs a namespace statement.
+         *
+         * @param name the fully-qualified namespace name (e.g. "com.example")
+         * @param members the declarations inside the namespace
+         */
+        public NamespaceStatement(String name,
+                List<ArkTSStatement> members) {
+            this.name = name;
+            this.members = Collections.unmodifiableList(
+                    new ArrayList<>(members));
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public List<ArkTSStatement> getMembers() {
+            return members;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(indent(indent)).append("namespace ")
+                    .append(name).append(" {\n");
+            for (int i = 0; i < members.size(); i++) {
+                sb.append(members.get(i).toArkTS(indent + 1));
+                if (i < members.size() - 1) {
+                    sb.append("\n\n");
+                }
+            }
+            if (!members.isEmpty()) {
+                sb.append("\n");
+            }
+            sb.append(indent(indent)).append("}");
+            return sb.toString();
+        }
+    }
+
     // --- Import statement ---
 
     /**

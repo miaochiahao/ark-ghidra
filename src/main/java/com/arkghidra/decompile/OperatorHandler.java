@@ -1,0 +1,190 @@
+package com.arkghidra.decompile;
+
+/**
+ * Handles operator-related classification and translation for ArkTS
+ * decompilation.
+ *
+ * <p>Provides static methods for classifying opcodes as binary/unary/property/
+ * call operations and for mapping opcodes to their string representations.
+ * Also handles type inference helpers for accumulator expressions.
+ */
+class OperatorHandler {
+
+    private OperatorHandler() {
+        // utility class
+    }
+
+    // --- Type inference helper ---
+
+    static String getAccType(ArkTSExpression expr, TypeInference typeInf) {
+        if (expr instanceof ArkTSExpression.LiteralExpression) {
+            ArkTSExpression.LiteralExpression lit =
+                    (ArkTSExpression.LiteralExpression) expr;
+            switch (lit.getKind()) {
+                case NUMBER:
+                    return "number";
+                case STRING:
+                    return "string";
+                case BOOLEAN:
+                    return "boolean";
+                case NULL:
+                    return "null";
+                case UNDEFINED:
+                    return "undefined";
+                default:
+                    return null;
+            }
+        }
+        if (expr instanceof ArkTSExpression.VariableExpression) {
+            return typeInf.getRegisterType(
+                    ((ArkTSExpression.VariableExpression) expr).getName());
+        }
+        if (expr instanceof ArkTSExpression.BinaryExpression) {
+            String op =
+                    ((ArkTSExpression.BinaryExpression) expr).getOperator();
+            if (TypeInference.isComparisonOpFromSymbol(op)) {
+                return "boolean";
+            }
+            if (TypeInference.isBinaryArithmeticOpFromSymbol(op)) {
+                return "number";
+            }
+        }
+        if (expr instanceof ArkTSExpression.UnaryExpression) {
+            String op =
+                    ((ArkTSExpression.UnaryExpression) expr).getOperator();
+            if ("!".equals(op)) {
+                return "boolean";
+            }
+            if ("-".equals(op)) {
+                return "number";
+            }
+        }
+        if (expr instanceof ArkTSAccessExpressions.ArrayLiteralExpression) {
+            return "Array<unknown>";
+        }
+        if (expr instanceof ArkTSAccessExpressions.ObjectLiteralExpression) {
+            return "Object";
+        }
+        if (expr instanceof ArkTSExpression.CallExpression) {
+            return null;
+        }
+        if (expr instanceof ArkTSExpression.NewExpression) {
+            return null;
+        }
+        return null;
+    }
+
+    // --- Binary operator classification ---
+
+    static boolean isBinaryOp(int opcode) {
+        return opcode == ArkOpcodesCompat.ADD2
+                || opcode == ArkOpcodesCompat.SUB2
+                || opcode == ArkOpcodesCompat.MUL2
+                || opcode == ArkOpcodesCompat.DIV2
+                || opcode == ArkOpcodesCompat.MOD2
+                || opcode == ArkOpcodesCompat.EQ
+                || opcode == ArkOpcodesCompat.NOTEQ
+                || opcode == ArkOpcodesCompat.LESS
+                || opcode == ArkOpcodesCompat.LESSEQ
+                || opcode == ArkOpcodesCompat.GREATER
+                || opcode == ArkOpcodesCompat.GREATEREQ
+                || opcode == ArkOpcodesCompat.SHL2
+                || opcode == ArkOpcodesCompat.SHR2
+                || opcode == ArkOpcodesCompat.ASHR2
+                || opcode == ArkOpcodesCompat.AND2
+                || opcode == ArkOpcodesCompat.OR2
+                || opcode == ArkOpcodesCompat.XOR2
+                || opcode == ArkOpcodesCompat.EXP
+                || opcode == ArkOpcodesCompat.STRICTEQ
+                || opcode == ArkOpcodesCompat.STRICTNOTEQ
+                || opcode == ArkOpcodesCompat.INSTANCEOF
+                || opcode == ArkOpcodesCompat.ISIN;
+    }
+
+    static String getBinaryOperator(int opcode) {
+        switch (opcode) {
+            case ArkOpcodesCompat.ADD2: return "+";
+            case ArkOpcodesCompat.SUB2: return "-";
+            case ArkOpcodesCompat.MUL2: return "*";
+            case ArkOpcodesCompat.DIV2: return "/";
+            case ArkOpcodesCompat.MOD2: return "%";
+            case ArkOpcodesCompat.EQ: return "==";
+            case ArkOpcodesCompat.NOTEQ: return "!=";
+            case ArkOpcodesCompat.LESS: return "<";
+            case ArkOpcodesCompat.LESSEQ: return "<=";
+            case ArkOpcodesCompat.GREATER: return ">";
+            case ArkOpcodesCompat.GREATEREQ: return ">=";
+            case ArkOpcodesCompat.SHL2: return "<<";
+            case ArkOpcodesCompat.SHR2: return ">>>";
+            case ArkOpcodesCompat.ASHR2: return ">>";
+            case ArkOpcodesCompat.AND2: return "&";
+            case ArkOpcodesCompat.OR2: return "|";
+            case ArkOpcodesCompat.XOR2: return "^";
+            case ArkOpcodesCompat.EXP: return "**";
+            case ArkOpcodesCompat.STRICTEQ: return "===";
+            case ArkOpcodesCompat.STRICTNOTEQ: return "!==";
+            case ArkOpcodesCompat.INSTANCEOF: return "instanceof";
+            case ArkOpcodesCompat.ISIN: return "in";
+            default: return "/* op */";
+        }
+    }
+
+    // --- Unary operator classification ---
+
+    static boolean isUnaryOp(int opcode) {
+        return opcode == ArkOpcodesCompat.NEG
+                || opcode == ArkOpcodesCompat.NOT
+                || opcode == ArkOpcodesCompat.TYPEOF;
+    }
+
+    static String getUnaryOperator(int opcode) {
+        switch (opcode) {
+            case ArkOpcodesCompat.NEG: return "-";
+            case ArkOpcodesCompat.NOT: return "!";
+            case ArkOpcodesCompat.TYPEOF: return "typeof";
+            default: return "/* unary */";
+        }
+    }
+
+    // --- Call opcode classification ---
+
+    static boolean isCallOpcode(int opcode) {
+        return opcode == ArkOpcodesCompat.CALLARG0
+                || opcode == ArkOpcodesCompat.CALLARG1
+                || opcode == ArkOpcodesCompat.CALLARGS2
+                || opcode == ArkOpcodesCompat.CALLARGS3
+                || opcode == ArkOpcodesCompat.CALLTHIS0
+                || opcode == ArkOpcodesCompat.CALLTHIS1
+                || opcode == ArkOpcodesCompat.CALLTHIS2
+                || opcode == ArkOpcodesCompat.CALLTHIS3
+                || opcode == ArkOpcodesCompat.CALLTHISRANGE
+                || opcode == ArkOpcodesCompat.CALLRANGE;
+    }
+
+    // --- Property opcode classification ---
+
+    static boolean isPropertyLoadOpcode(int opcode) {
+        return opcode == ArkOpcodesCompat.LDOBJBYNAME
+                || opcode == ArkOpcodesCompat.LDOBJBYVALUE
+                || opcode == ArkOpcodesCompat.LDOBJBYINDEX
+                || opcode == ArkOpcodesCompat.LDTHISBYNAME
+                || opcode == ArkOpcodesCompat.LDTHISBYVALUE
+                || opcode == ArkOpcodesCompat.LDSUPERBYNAME
+                || opcode == ArkOpcodesCompat.LDSUPERBYVALUE;
+    }
+
+    static boolean isPropertyStoreOpcode(int opcode) {
+        return opcode == ArkOpcodesCompat.STOBJBYNAME
+                || opcode == ArkOpcodesCompat.STOBJBYVALUE
+                || opcode == ArkOpcodesCompat.STOBJBYINDEX
+                || opcode == ArkOpcodesCompat.STTHISBYNAME
+                || opcode == ArkOpcodesCompat.STTHISBYVALUE
+                || opcode == ArkOpcodesCompat.STOWNBYNAME
+                || opcode == ArkOpcodesCompat.STOWNBYVALUE
+                || opcode == ArkOpcodesCompat.STOWNBYINDEX
+                || opcode == ArkOpcodesCompat.STSUPERBYNAME
+                || opcode == ArkOpcodesCompat.STSUPERBYVALUE
+                || opcode == ArkOpcodesCompat.STOWNBYVALUEWITHNAMESET
+                || opcode == ArkOpcodesCompat.STOWNBYNAMEWITHNAMESET;
+    }
+}

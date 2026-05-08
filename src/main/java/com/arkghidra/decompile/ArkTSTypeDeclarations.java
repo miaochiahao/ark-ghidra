@@ -2,7 +2,9 @@ package com.arkghidra.decompile;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.StringJoiner;
 
 /**
@@ -551,10 +553,17 @@ public class ArkTSTypeDeclarations {
         @Override
         public String toArkTS(int indent) {
             StringBuilder sb = new StringBuilder();
-            for (ArkTSStatement imp : imports) {
-                sb.append(imp.toArkTS(indent)).append("\n");
+
+            List<String> importGroups = organizeImportGroups(imports);
+            for (int i = 0; i < importGroups.size(); i++) {
+                sb.append(importGroups.get(i));
+                if (i < importGroups.size() - 1) {
+                    sb.append("\n");
+                }
             }
-            if (!imports.isEmpty() && !declarations.isEmpty()) {
+            if (!imports.isEmpty()
+                    && (!declarations.isEmpty()
+                            || !exports.isEmpty())) {
                 sb.append("\n");
             }
             for (int i = 0; i < declarations.size(); i++) {
@@ -564,7 +573,11 @@ public class ArkTSTypeDeclarations {
                 }
             }
             if (!exports.isEmpty()) {
-                sb.append("\n\n");
+                if (!declarations.isEmpty()) {
+                    sb.append("\n\n");
+                } else if (!imports.isEmpty()) {
+                    sb.append("\n\n");
+                }
                 for (int i = 0; i < exports.size(); i++) {
                     sb.append(exports.get(i).toArkTS(indent));
                     if (i < exports.size() - 1) {
@@ -573,6 +586,88 @@ public class ArkTSTypeDeclarations {
                 }
             }
             return sb.toString();
+        }
+
+        /**
+         * Organizes import statements into grouped lines.
+         *
+         * <p>Groups imports by module path prefix:
+         * <ol>
+         *   <li>Node built-ins (starts with "@" or no path separator)</li>
+         *   <li>External packages (starts with a non-dot)</li>
+         *   <li>Internal/relative imports (starts with ".")</li>
+         * </ol>
+         *
+         * <p>Within each group, imports are sorted alphabetically by module
+         * path. Duplicate module paths are merged.
+         *
+         * @param importStmts the raw import statements
+         * @return a list of formatted import group strings, each ending
+         *     with a newline
+         */
+        private static List<String> organizeImportGroups(
+                List<ArkTSStatement> importStmts) {
+            List<ArkTSDeclarations.ImportStatement> deduped =
+                    deduplicateImports(importStmts);
+            deduped.sort((a, b) -> {
+                int groupA = importGroup(a.getModulePath());
+                int groupB = importGroup(b.getModulePath());
+                if (groupA != groupB) {
+                    return groupA - groupB;
+                }
+                return a.getModulePath()
+                        .compareToIgnoreCase(b.getModulePath());
+            });
+
+            List<String> groups = new ArrayList<>();
+            int currentGroup = -1;
+            StringBuilder groupBuilder = new StringBuilder();
+            for (ArkTSDeclarations.ImportStatement imp : deduped) {
+                int grp = importGroup(imp.getModulePath());
+                if (grp != currentGroup) {
+                    if (groupBuilder.length() > 0) {
+                        groups.add(groupBuilder.toString());
+                        groupBuilder = new StringBuilder();
+                    }
+                    currentGroup = grp;
+                }
+                groupBuilder.append(imp.toArkTS(0)).append("\n");
+            }
+            if (groupBuilder.length() > 0) {
+                groups.add(groupBuilder.toString());
+            }
+            return groups;
+        }
+
+        private static int importGroup(String modulePath) {
+            if (modulePath == null) {
+                return 1;
+            }
+            if (modulePath.startsWith("@")) {
+                return 0;
+            }
+            if (modulePath.startsWith(".")) {
+                return 2;
+            }
+            return 1;
+        }
+
+        private static List<ArkTSDeclarations.ImportStatement>
+                deduplicateImports(List<ArkTSStatement> importStmts) {
+            Set<String> seenModulePaths = new LinkedHashSet<>();
+            List<ArkTSDeclarations.ImportStatement> result =
+                    new ArrayList<>();
+            for (ArkTSStatement stmt : importStmts) {
+                if (stmt
+                        instanceof ArkTSDeclarations.ImportStatement) {
+                    ArkTSDeclarations.ImportStatement imp =
+                            (ArkTSDeclarations.ImportStatement) stmt;
+                    if (seenModulePaths.add(imp.getModulePath())) {
+                        result.add(imp);
+                    }
+                }
+            }
+            return result;
         }
     }
 }

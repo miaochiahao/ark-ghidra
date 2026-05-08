@@ -3,7 +3,9 @@ package com.arkghidra.decompile;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import com.arkghidra.disasm.ArkDisassembler;
@@ -286,6 +288,9 @@ public class ArkTSDecompiler {
                 }
             }
         }
+
+        // Group declarations by namespace
+        declarations = groupByNamespace(declarations);
 
         List<ArkTSStatement> enumDecls =
                 declBuilder.detectEnumsFromLiteralArrays(abcFile);
@@ -586,6 +591,123 @@ public class ArkTSDecompiler {
     }
 
     // --- Static utilities ---
+
+    /**
+     * Groups top-level declarations by their namespace. Declarations
+     * with a namespace are wrapped in a {@link NamespaceStatement}.
+     * Declarations without a namespace remain as-is.
+     *
+     * @param decls the flat list of declarations
+     * @return declarations grouped by namespace
+     */
+    static List<ArkTSStatement> groupByNamespace(
+            List<ArkTSStatement> decls) {
+        Map<String, List<ArkTSStatement>> nsGroups =
+                new LinkedHashMap<>();
+        List<ArkTSStatement> noNamespace = new ArrayList<>();
+
+        for (ArkTSStatement decl : decls) {
+            String ns = extractNamespace(decl);
+            if (ns != null) {
+                nsGroups.computeIfAbsent(ns,
+                        k -> new ArrayList<>()).add(decl);
+            } else {
+                noNamespace.add(decl);
+            }
+        }
+
+        List<ArkTSStatement> result = new ArrayList<>();
+        for (Map.Entry<String, List<ArkTSStatement>> entry
+                : nsGroups.entrySet()) {
+            result.add(new ArkTSDeclarations.NamespaceStatement(
+                    entry.getKey(), entry.getValue()));
+        }
+        result.addAll(noNamespace);
+        return result;
+    }
+
+    /**
+     * Extracts the namespace from a declaration's class name pattern.
+     *
+     * <p>For class names derived from Ark bytecode like
+     * "Lcom/example/MyClass;", the namespace is "com.example".
+     * Returns null if the class name has no package prefix.
+     *
+     * @param decl the declaration statement
+     * @return the namespace string, or null
+     */
+    static String extractNamespace(ArkTSStatement decl) {
+        String className = getDeclarationName(decl);
+        if (className == null) {
+            return null;
+        }
+        return namespaceFromClassName(className);
+    }
+
+    /**
+     * Gets the simple name from a declaration statement.
+     *
+     * @param decl the declaration
+     * @return the name, or null
+     */
+    static String getDeclarationName(ArkTSStatement decl) {
+        if (decl instanceof ArkTSDeclarations.ClassDeclaration) {
+            return ((ArkTSDeclarations.ClassDeclaration) decl).getName();
+        }
+        if (decl instanceof ArkTSTypeDeclarations.StructDeclaration) {
+            return ((ArkTSTypeDeclarations.StructDeclaration) decl)
+                    .getName();
+        }
+        if (decl
+                instanceof ArkTSTypeDeclarations.GenericClassDeclaration) {
+            return ((ArkTSTypeDeclarations.GenericClassDeclaration) decl)
+                    .getName();
+        }
+        if (decl instanceof ArkTSTypeDeclarations.EnumDeclaration) {
+            return ((ArkTSTypeDeclarations.EnumDeclaration) decl)
+                    .getName();
+        }
+        if (decl instanceof ArkTSDeclarations.FunctionDeclaration) {
+            return ((ArkTSDeclarations.FunctionDeclaration) decl)
+                    .getName();
+        }
+        if (decl instanceof ArkTSDeclarations.NamespaceStatement) {
+            return ((ArkTSDeclarations.NamespaceStatement) decl)
+                    .getName();
+        }
+        return null;
+    }
+
+    /**
+     * Derives a namespace from a class name that may contain package
+     * path separators.
+     *
+     * <p>Handles names like "com.example.MyClass" or
+     * "Lcom/example/MyClass;". Returns null if the name has no
+     * package component (i.e. no dot or slash separator).
+     *
+     * @param className the class name
+     * @return the namespace, or null
+     */
+    static String namespaceFromClassName(String className) {
+        if (className == null || className.isEmpty()) {
+            return null;
+        }
+        String name = className;
+        if (name.startsWith("L") && name.endsWith(";")) {
+            name = name.substring(1, name.length() - 1);
+        }
+        int lastSlash = name.lastIndexOf('/');
+        int lastDot = name.lastIndexOf('.');
+        if (lastSlash > 0) {
+            String ns = name.substring(0, lastSlash);
+            return ns.replace('/', '.');
+        }
+        if (lastDot > 0) {
+            return name.substring(0, lastDot);
+        }
+        return null;
+    }
 
     // --- Delegates for test-visible methods ---
 

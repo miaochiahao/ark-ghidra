@@ -5546,4 +5546,350 @@ class ArkTSDecompilerTest {
                 "Expected Infinity in output: " + result);
     }
 
+    // --- Issue #39: Namespace declarations and output formatting ---
+
+    @Test
+    void testNamespaceStatement_basicRendering() {
+        ArkTSStatement classDecl = new ArkTSDeclarations.ClassDeclaration(
+                "MyClass", null, Collections.emptyList());
+        ArkTSStatement ns =
+                new ArkTSDeclarations.NamespaceStatement("com.example",
+                        List.of(classDecl));
+        String result = ns.toArkTS(0);
+        assertTrue(result.startsWith("namespace com.example {"),
+                "Expected namespace header: " + result);
+        assertTrue(result.contains("class MyClass"),
+                "Expected nested class: " + result);
+        assertTrue(result.trim().endsWith("}"),
+                "Expected closing brace: " + result);
+    }
+
+    @Test
+    void testNamespaceStatement_withNestedClass() {
+        ArkTSStatement cls1 = new ArkTSDeclarations.ClassDeclaration(
+                "ServiceA", null, Collections.emptyList());
+        ArkTSStatement cls2 = new ArkTSDeclarations.ClassDeclaration(
+                "ServiceB", "ServiceA", Collections.emptyList());
+        ArkTSStatement ns =
+                new ArkTSDeclarations.NamespaceStatement("app.services",
+                        List.of(cls1, cls2));
+        String result = ns.toArkTS(0);
+        assertTrue(result.contains("namespace app.services {"),
+                "Expected namespace header: " + result);
+        assertTrue(result.contains("class ServiceA"),
+                "Expected ServiceA: " + result);
+        assertTrue(result.contains("class ServiceB extends ServiceA"),
+                "Expected ServiceB: " + result);
+        // Classes should be separated by blank line
+        assertTrue(result.contains("}\n\n    class ServiceB"),
+                "Expected blank line between classes: " + result);
+    }
+
+    @Test
+    void testNamespaceStatement_withMethods() {
+        ArkTSStatement methodBody =
+                new ArkTSStatement.BlockStatement(
+                        Collections.emptyList());
+        ArkTSStatement methodDecl =
+                new ArkTSDeclarations.ClassMethodDeclaration("process",
+                        Collections.emptyList(), "void", methodBody,
+                        false, "public");
+        ArkTSStatement cls =
+                new ArkTSDeclarations.ClassDeclaration("Worker", null,
+                        List.of(methodDecl));
+        ArkTSStatement ns =
+                new ArkTSDeclarations.NamespaceStatement("workers",
+                        List.of(cls));
+        String result = ns.toArkTS(0);
+        assertTrue(result.contains("namespace workers {"),
+                "Expected namespace header: " + result);
+        assertTrue(result.contains("class Worker"),
+                "Expected class: " + result);
+        assertTrue(result.contains("public process()"),
+                "Expected method: " + result);
+    }
+
+    @Test
+    void testNamespaceDetection_fromDotNotation() {
+        String ns = ArkTSDecompiler.namespaceFromClassName(
+                "com.example.MyClass");
+        assertEquals("com.example", ns);
+    }
+
+    @Test
+    void testNamespaceDetection_fromSlashNotation() {
+        String ns = ArkTSDecompiler.namespaceFromClassName(
+                "Lcom/example/MyClass;");
+        assertEquals("com.example", ns);
+    }
+
+    @Test
+    void testNamespaceDetection_noNamespace() {
+        String ns = ArkTSDecompiler.namespaceFromClassName("MyClass");
+        assertNull(ns);
+    }
+
+    @Test
+    void testNamespaceDetection_nullInput() {
+        String ns = ArkTSDecompiler.namespaceFromClassName(null);
+        assertNull(ns);
+    }
+
+    @Test
+    void testNamespaceDetection_emptyInput() {
+        String ns = ArkTSDecompiler.namespaceFromClassName("");
+        assertNull(ns);
+    }
+
+    @Test
+    void testGroupByNamespace_groupsTwoClasses() {
+        ArkTSStatement cls1 = new ArkTSDeclarations.ClassDeclaration(
+                "com.example.ClassA", null, Collections.emptyList());
+        ArkTSStatement cls2 = new ArkTSDeclarations.ClassDeclaration(
+                "com.example.ClassB", null, Collections.emptyList());
+        List<ArkTSStatement> grouped =
+                ArkTSDecompiler.groupByNamespace(List.of(cls1, cls2));
+        assertEquals(1, grouped.size(),
+                "Expected single namespace group");
+        assertTrue(grouped.get(0)
+                instanceof ArkTSDeclarations.NamespaceStatement,
+                "Expected NamespaceStatement");
+        ArkTSDeclarations.NamespaceStatement ns =
+                (ArkTSDeclarations.NamespaceStatement) grouped.get(0);
+        assertEquals("com.example", ns.getName());
+        assertEquals(2, ns.getMembers().size());
+    }
+
+    @Test
+    void testGroupByNamespace_mixedNamespaces() {
+        ArkTSStatement cls1 = new ArkTSDeclarations.ClassDeclaration(
+                "com.example.ClassA", null, Collections.emptyList());
+        ArkTSStatement cls2 = new ArkTSDeclarations.ClassDeclaration(
+                "org.other.ClassB", null, Collections.emptyList());
+        List<ArkTSStatement> grouped =
+                ArkTSDecompiler.groupByNamespace(List.of(cls1, cls2));
+        assertEquals(2, grouped.size(),
+                "Expected two namespace groups");
+    }
+
+    @Test
+    void testGroupByNamespace_noNamespace() {
+        ArkTSStatement cls = new ArkTSDeclarations.ClassDeclaration(
+                "Standalone", null, Collections.emptyList());
+        List<ArkTSStatement> grouped =
+                ArkTSDecompiler.groupByNamespace(List.of(cls));
+        assertEquals(1, grouped.size());
+        assertTrue(grouped.get(0)
+                instanceof ArkTSDeclarations.ClassDeclaration,
+                "Expected ClassDeclaration without namespace");
+    }
+
+    @Test
+    void testImportDeduplication_inFileModule() {
+        ArkTSStatement imp1 = new ArkTSDeclarations.ImportStatement(
+                List.of("A"), "./utils", false, null, null);
+        ArkTSStatement imp2 = new ArkTSDeclarations.ImportStatement(
+                List.of("B"), "./utils", false, null, null);
+        ArkTSStatement decl = new ArkTSDeclarations.ClassDeclaration(
+                "Test", null, Collections.emptyList());
+        ArkTSTypeDeclarations.FileModule fm =
+                new ArkTSTypeDeclarations.FileModule(
+                        List.of(imp1, imp2), List.of(decl),
+                        Collections.emptyList());
+        String result = fm.toArkTS(0);
+        // Duplicate module path should appear only once
+        int count = 0;
+        int idx = 0;
+        while ((idx = result.indexOf("from './utils'", idx)) != -1) {
+            count++;
+            idx++;
+        }
+        assertEquals(1, count,
+                "Expected deduplicated import, got: " + result);
+    }
+
+    @Test
+    void testImportGrouping_sortsAlphabetically() {
+        ArkTSStatement imp1 = new ArkTSDeclarations.ImportStatement(
+                List.of("Zebra"), "./zoo", false, null, null);
+        ArkTSStatement imp2 = new ArkTSDeclarations.ImportStatement(
+                List.of("Apple"), "./apple", false, null, null);
+        ArkTSStatement decl = new ArkTSDeclarations.ClassDeclaration(
+                "Test", null, Collections.emptyList());
+        ArkTSTypeDeclarations.FileModule fm =
+                new ArkTSTypeDeclarations.FileModule(
+                        List.of(imp1, imp2), List.of(decl),
+                        Collections.emptyList());
+        String result = fm.toArkTS(0);
+        int appleIdx = result.indexOf("from './apple'");
+        int zooIdx = result.indexOf("from './zoo'");
+        assertTrue(appleIdx < zooIdx,
+                "Expected ./apple before ./zoo: " + result);
+    }
+
+    @Test
+    void testImportGrouping_separatesGroupsByPath() {
+        ArkTSStatement extImp = new ArkTSDeclarations.ImportStatement(
+                List.of("Component"), "react", false, null, null);
+        ArkTSStatement relImp = new ArkTSDeclarations.ImportStatement(
+                List.of("Helper"), "./helper", false, null, null);
+        ArkTSStatement decl = new ArkTSDeclarations.ClassDeclaration(
+                "App", null, Collections.emptyList());
+        ArkTSTypeDeclarations.FileModule fm =
+                new ArkTSTypeDeclarations.FileModule(
+                        List.of(extImp, relImp), List.of(decl),
+                        Collections.emptyList());
+        String result = fm.toArkTS(0);
+        // External and relative imports should be in separate groups
+        // with a blank line between them
+        assertTrue(result.contains("from 'react'"),
+                "Expected react import: " + result);
+        assertTrue(result.contains("from './helper'"),
+                "Expected relative import: " + result);
+        // Verify ordering: external before relative
+        int reactIdx = result.indexOf("from 'react'");
+        int relIdx = result.indexOf("from './helper'");
+        assertTrue(reactIdx < relIdx,
+                "Expected external before relative: " + result);
+    }
+
+    @Test
+    void testImportGrouping_atSymbolGroupFirst() {
+        ArkTSStatement atImp = new ArkTSDeclarations.ImportStatement(
+                List.of("UI"), "@ohos/ui", false, null, null);
+        ArkTSStatement extImp = new ArkTSDeclarations.ImportStatement(
+                List.of("Lib"), "somelib", false, null, null);
+        ArkTSStatement relImp = new ArkTSDeclarations.ImportStatement(
+                List.of("Util"), "./util", false, null, null);
+        ArkTSStatement decl = new ArkTSDeclarations.ClassDeclaration(
+                "App", null, Collections.emptyList());
+        ArkTSTypeDeclarations.FileModule fm =
+                new ArkTSTypeDeclarations.FileModule(
+                        List.of(relImp, extImp, atImp), List.of(decl),
+                        Collections.emptyList());
+        String result = fm.toArkTS(0);
+        int atIdx = result.indexOf("from '@ohos/ui'");
+        int extIdx = result.indexOf("from 'somelib'");
+        int relIdx = result.indexOf("from './util'");
+        assertTrue(atIdx < extIdx,
+                "Expected @-import before external: " + result);
+        assertTrue(extIdx < relIdx,
+                "Expected external before relative: " + result);
+    }
+
+    @Test
+    void testBlankLineManagement_betweenTopLevelDeclarations() {
+        ArkTSStatement cls1 = new ArkTSDeclarations.ClassDeclaration(
+                "First", null, Collections.emptyList());
+        ArkTSStatement cls2 = new ArkTSDeclarations.ClassDeclaration(
+                "Second", null, Collections.emptyList());
+        ArkTSStatement cls3 = new ArkTSDeclarations.ClassDeclaration(
+                "Third", null, Collections.emptyList());
+        ArkTSTypeDeclarations.FileModule fm =
+                new ArkTSTypeDeclarations.FileModule(
+                        Collections.emptyList(),
+                        List.of(cls1, cls2, cls3),
+                        Collections.emptyList());
+        String result = fm.toArkTS(0);
+        // Exactly one blank line between declarations
+        assertFalse(result.contains("}\n\n\n"),
+                "No triple newlines expected: " + result);
+        assertTrue(result.contains("}\n\nclass Second"),
+                "Expected single blank line between classes");
+        assertTrue(result.contains("}\n\nclass Third"),
+                "Expected single blank line between classes");
+    }
+
+    @Test
+    void testFileModuleFormatting_withNamespaces() {
+        ArkTSStatement cls = new ArkTSDeclarations.ClassDeclaration(
+                "com.example.MyClass", null, Collections.emptyList());
+        List<ArkTSStatement> grouped =
+                ArkTSDecompiler.groupByNamespace(List.of(cls));
+        ArkTSTypeDeclarations.FileModule fm =
+                new ArkTSTypeDeclarations.FileModule(
+                        Collections.emptyList(), grouped,
+                        Collections.emptyList());
+        String result = fm.toArkTS(0);
+        assertTrue(result.contains("namespace com.example {"),
+                "Expected namespace in file module: " + result);
+        assertTrue(result.contains("class com.example.MyClass"),
+                "Expected class inside namespace: " + result);
+    }
+
+    @Test
+    void testFileModule_multiClassSameNamespace() {
+        ArkTSStatement cls1 = new ArkTSDeclarations.ClassDeclaration(
+                "com.app.Controller", null, Collections.emptyList());
+        ArkTSStatement cls2 = new ArkTSDeclarations.ClassDeclaration(
+                "com.app.Service", null, Collections.emptyList());
+        List<ArkTSStatement> grouped =
+                ArkTSDecompiler.groupByNamespace(List.of(cls1, cls2));
+        assertEquals(1, grouped.size(),
+                "Expected single namespace group");
+        ArkTSDeclarations.NamespaceStatement ns =
+                (ArkTSDeclarations.NamespaceStatement) grouped.get(0);
+        assertEquals("com.app", ns.getName());
+        assertEquals(2, ns.getMembers().size());
+        String output = ns.toArkTS(0);
+        assertTrue(output.contains("class com.app.Controller"));
+        assertTrue(output.contains("class com.app.Service"));
+    }
+
+    @Test
+    void testNamespaceStatement_indentedContent() {
+        ArkTSStatement cls = new ArkTSDeclarations.ClassDeclaration(
+                "Inner", null, Collections.emptyList());
+        ArkTSStatement ns =
+                new ArkTSDeclarations.NamespaceStatement("pkg", List.of(cls));
+        String result = ns.toArkTS(0);
+        assertTrue(result.contains("    class Inner"),
+                "Expected indented class inside namespace: " + result);
+    }
+
+    @Test
+    void testNamespaceStatement_emptyNamespace() {
+        ArkTSStatement ns =
+                new ArkTSDeclarations.NamespaceStatement("empty",
+                        Collections.emptyList());
+        String result = ns.toArkTS(0);
+        assertEquals("namespace empty {\n}", result,
+                "Expected empty namespace: " + result);
+    }
+
+    @Test
+    void testExtractNamespace_fromClassDeclaration() {
+        ArkTSStatement cls = new ArkTSDeclarations.ClassDeclaration(
+                "com.example.Foo", null, Collections.emptyList());
+        String ns = ArkTSDecompiler.extractNamespace(cls);
+        assertEquals("com.example", ns);
+    }
+
+    @Test
+    void testExtractNamespace_fromEnumDeclaration() {
+        ArkTSStatement enumDecl =
+                new ArkTSTypeDeclarations.EnumDeclaration(
+                        "com.app.Status", Collections.emptyList());
+        String ns = ArkTSDecompiler.extractNamespace(enumDecl);
+        assertEquals("com.app", ns);
+    }
+
+    @Test
+    void testExtractNamespace_fromStructDeclaration() {
+        ArkTSStatement struct =
+                new ArkTSTypeDeclarations.StructDeclaration(
+                        "com.ui.Panel", Collections.emptyList(),
+                        Collections.emptyList());
+        String ns = ArkTSDecompiler.extractNamespace(struct);
+        assertEquals("com.ui", ns);
+    }
+
+    @Test
+    void testExtractNamespace_fromPlainClass() {
+        ArkTSStatement cls = new ArkTSDeclarations.ClassDeclaration(
+                "SimpleClass", null, Collections.emptyList());
+        String ns = ArkTSDecompiler.extractNamespace(cls);
+        assertNull(ns);
+    }
+
 }
