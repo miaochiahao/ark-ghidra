@@ -96,7 +96,7 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 11. ~~Pcode generation for instructions (#19, #21, #22)~~ DONE
 12. ~~Complete ABC format parser — debug info, source maps (#20)~~ DONE
 13. ~~Fuzzing and robustness testing (#23)~~ DONE
-14. Decompiler quality: switch with fall-through, nested try/catch, ternary expressions
+14. ~~Decompiler quality: switch with fall-through, nested try/catch, ternary expressions~~ DONE
 15. Real .abc file support: test with actual HarmonyOS compiler output
 16. Performance: large file handling and incremental decompilation
 
@@ -179,7 +179,7 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Try/catch decompilation:** Use `AbcCode.getTryBlocks()` → `AbcTryBlock.getCatchBlocks()` → `AbcCatchBlock` to reconstruct exception handling. Map try start/end PC ranges to CFG block addresses. Catch-all blocks (typeIdx=0) map to `finally`.
 - **Jump offset calculation:** `jmp +0` at offset 0 with instruction length 2 gives target = 0+2+0 = 2 (not 0). For infinite loop (jmp to self), need negative offset = -instruction_length (e.g., `0xFE` for 2-byte jmp).
 - **Parameter naming convention:** Use `param_0`, `param_1` etc. (not `p0`/`p1`) for better readability. Falls back to untyped when no proto info available.
-- **Test count tracking:** 598 tests across 13 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
+- **Test count tracking:** 642 tests across 14 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
 - **ABC debug info parsing:** Tags 0x07 (SOURCE_FILE), 0x03 (DEBUG_INFO) in class/method tag values. Debug info contains line_start, num_params, param name string offsets, constant pool. LNP uses DWARF v3 state machine with special opcodes.
 - **Realistic test fixture design:** Use 16384-byte buffer with 200-byte spacing between areas (strings at 200, classes at 800, code at 2000, protos at 6000, etc.). Encode methods with ULEB128 for vregs/args/codeSize/triesSize.
 - **Debug parameter name resolution:** `AbcFile.getDebugInfoForMethod()` → `AbcDebugInfo.getParameterNames()` → pass to `MethodSignatureBuilder.buildParams(proto, numArgs, debugNames)`. Falls back to `param_N` for unnamed.
@@ -189,6 +189,11 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Short-circuit evaluation (&&/||):** Detect via consecutive conditional branches: condition→true_branch→merge←false_branch for &&, condition→false_branch→merge←true_branch for ||. Use `detectShortCircuitPattern()` with PatternType enum.
 - **Ternary expression detection:** Pattern: condition→true_branch→merge←false_branch where both branches assign to same variable or produce a value. Use `detectTernaryPattern()` and `processTernary()` to emit `cond ? val1 : val2`.
 - **Nested try/catch:** Process try/catch regions recursively. Inner regions handled before outer. Each region maps to a try/catch/finally block in ArkTS output.
+- **Switch decompilation:** Detect switch from consecutive `jeq` blocks comparing same register. Extract case values from `ldai` instructions. Find merge block via successor edges. Push loop context (header=-1) for break detection within switch. Handle fall-through and default case.
+- **Private property access:** `ldprivateproperty`/`stprivateproperty` → `obj.#prop` syntax. `testin` → `prop in obj` expression. `delobjprop` → `delete obj.prop`. `copydataproperties` → `Object.assign(target, source)`.
+- **Async/generator decompilation:** `createasyncgeneratorobj` → async generator variable. `asyncgeneratorresolve` → return. `asyncgeneratorreject` → throw. `setgeneratorstate` → comment. `createobjectwithexcludedkeys` → spread object `{...source}`.
+- **ABC module records:** Import/export metadata stored in LiteralArrays, referenced by special field name `moduleRecordIdx`. `AbcModuleRecord` contains RegularImport, NamespaceImport, LocalExport, IndirectExport, StarExport. Parse via `AbcFile.parseModuleRecord()`.
+- **Field tag parsing:** ABC fields have tag values: FIELD_TAG_NOTHING (0x00), FIELD_TAG_INT_VALUE (0x01), FIELD_TAG_VALUE (0x02), FIELD_TAG_ANNOTATION (0x05). Parse with `parseFieldTags()` to extract intValue for module record indices.
 <!-- LINT_RULES_END -->
 
 ---
