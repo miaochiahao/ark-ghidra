@@ -500,6 +500,96 @@ public abstract class ArkTSStatement {
         }
     }
 
+    // --- For-Of ---
+
+    public static class ForOfStatement extends ArkTSStatement {
+        private final String variableKind;
+        private final String variableName;
+        private final ArkTSExpression iterable;
+        private final ArkTSStatement body;
+
+        public ForOfStatement(String variableKind, String variableName,
+                ArkTSExpression iterable, ArkTSStatement body) {
+            this.variableKind = variableKind;
+            this.variableName = variableName;
+            this.iterable = iterable;
+            this.body = body;
+        }
+
+        public String getVariableKind() {
+            return variableKind;
+        }
+
+        public String getVariableName() {
+            return variableName;
+        }
+
+        public ArkTSExpression getIterable() {
+            return iterable;
+        }
+
+        public ArkTSStatement getBody() {
+            return body;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(indent(indent)).append("for (")
+                    .append(variableKind).append(" ")
+                    .append(variableName).append(" of ")
+                    .append(iterable.toArkTS()).append(") {\n");
+            appendBlockBody(sb, body, indent + 1);
+            sb.append(indent(indent)).append("}");
+            return sb.toString();
+        }
+    }
+
+    // --- For-In ---
+
+    public static class ForInStatement extends ArkTSStatement {
+        private final String variableKind;
+        private final String variableName;
+        private final ArkTSExpression object;
+        private final ArkTSStatement body;
+
+        public ForInStatement(String variableKind, String variableName,
+                ArkTSExpression object, ArkTSStatement body) {
+            this.variableKind = variableKind;
+            this.variableName = variableName;
+            this.object = object;
+            this.body = body;
+        }
+
+        public String getVariableKind() {
+            return variableKind;
+        }
+
+        public String getVariableName() {
+            return variableName;
+        }
+
+        public ArkTSExpression getObject() {
+            return object;
+        }
+
+        public ArkTSStatement getBody() {
+            return body;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(indent(indent)).append("for (")
+                    .append(variableKind).append(" ")
+                    .append(variableName).append(" in ")
+                    .append(object.toArkTS()).append(") {\n");
+            appendBlockBody(sb, body, indent + 1);
+            sb.append(indent(indent)).append("}");
+            return sb.toString();
+        }
+    }
+
     // --- Do/While ---
 
     /**
@@ -698,6 +788,7 @@ public abstract class ArkTSStatement {
         private final ArkTSExpression initializer;
         private final boolean isStatic;
         private final String accessModifier;
+        private final List<String> decorators;
 
         /**
          * Constructs a class field declaration.
@@ -711,11 +802,32 @@ public abstract class ArkTSStatement {
         public ClassFieldDeclaration(String name, String typeName,
                 ArkTSExpression initializer, boolean isStatic,
                 String accessModifier) {
+            this(name, typeName, initializer, isStatic, accessModifier,
+                    Collections.emptyList());
+        }
+
+        /**
+         * Constructs a class field declaration with decorators.
+         *
+         * @param name the field name
+         * @param typeName the type annotation (may be null)
+         * @param initializer the initializer expression (may be null)
+         * @param isStatic true if static
+         * @param accessModifier the access modifier (may be null)
+         * @param decorators the decorator names (may be empty)
+         */
+        public ClassFieldDeclaration(String name, String typeName,
+                ArkTSExpression initializer, boolean isStatic,
+                String accessModifier, List<String> decorators) {
             this.name = name;
             this.typeName = typeName;
             this.initializer = initializer;
             this.isStatic = isStatic;
             this.accessModifier = accessModifier;
+            this.decorators = decorators != null
+                    ? Collections.unmodifiableList(
+                            new ArrayList<>(decorators))
+                    : Collections.emptyList();
         }
 
         public String getName() {
@@ -738,9 +850,17 @@ public abstract class ArkTSStatement {
             return accessModifier;
         }
 
+        public List<String> getDecorators() {
+            return decorators;
+        }
+
         @Override
         public String toArkTS(int indent) {
             StringBuilder sb = new StringBuilder();
+            for (String dec : decorators) {
+                sb.append(indent(indent)).append("@").append(dec)
+                        .append("\n");
+            }
             sb.append(indent(indent));
             if (accessModifier != null) {
                 sb.append(accessModifier).append(" ");
@@ -1403,6 +1523,44 @@ public abstract class ArkTSStatement {
             }
             sb.append(indent(indent)).append("}");
             return sb.toString();
+        }
+    }
+
+    // --- Destructuring declaration ---
+
+    /**
+     * A destructuring variable declaration: const [a, b] = arr or
+     * const { x, y } = obj.
+     */
+    public static class DestructuringDeclaration extends ArkTSStatement {
+        private final String kind;
+        private final ArkTSExpression pattern;
+
+        /**
+         * Constructs a destructuring declaration.
+         *
+         * @param kind "let" or "const"
+         * @param pattern the destructuring pattern expression
+         *     (ArrayDestructuringExpression or ObjectDestructuringExpression)
+         */
+        public DestructuringDeclaration(String kind,
+                ArkTSExpression pattern) {
+            this.kind = kind;
+            this.pattern = pattern;
+        }
+
+        public String getKind() {
+            return kind;
+        }
+
+        public ArkTSExpression getPattern() {
+            return pattern;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            return indent(indent) + kind + " "
+                    + pattern.toArkTS() + ";";
         }
     }
 

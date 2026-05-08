@@ -1107,4 +1107,190 @@ public abstract class ArkTSExpression {
             return "/* setgeneratorstate " + value.toArkTS() + " */";
         }
     }
+
+    // --- Array destructuring ---
+
+    /**
+     * An array destructuring expression: [a, b, ...rest] = source.
+     */
+    public static class ArrayDestructuringExpression extends ArkTSExpression {
+        private final List<String> bindings;
+        private final String restBinding;
+        private final ArkTSExpression source;
+
+        /**
+         * Constructs an array destructuring expression.
+         *
+         * @param bindings the variable names for positional bindings
+         * @param restBinding the rest variable name (may be null)
+         * @param source the source expression being destructured
+         */
+        public ArrayDestructuringExpression(List<String> bindings,
+                String restBinding, ArkTSExpression source) {
+            this.bindings = Collections.unmodifiableList(
+                    new ArrayList<>(bindings));
+            this.restBinding = restBinding;
+            this.source = source;
+        }
+
+        public List<String> getBindings() {
+            return bindings;
+        }
+
+        public String getRestBinding() {
+            return restBinding;
+        }
+
+        public ArkTSExpression getSource() {
+            return source;
+        }
+
+        @Override
+        public String toArkTS() {
+            StringBuilder sb = new StringBuilder();
+            sb.append("[");
+            for (int i = 0; i < bindings.size(); i++) {
+                if (i > 0) {
+                    sb.append(", ");
+                }
+                sb.append(bindings.get(i));
+            }
+            if (restBinding != null) {
+                if (!bindings.isEmpty()) {
+                    sb.append(", ");
+                }
+                sb.append("...").append(restBinding);
+            }
+            sb.append("]");
+            if (source != null) {
+                sb.append(" = ").append(source.toArkTS());
+            }
+            return sb.toString();
+        }
+    }
+
+    // --- Object destructuring ---
+
+    /**
+     * An object destructuring expression: { prop1, prop2: alias } = source.
+     */
+    public static class ObjectDestructuringExpression extends ArkTSExpression {
+        private final List<DestructuringBinding> bindings;
+        private final ArkTSExpression source;
+
+        /**
+         * Constructs an object destructuring expression.
+         *
+         * @param bindings the property bindings
+         * @param source the source expression
+         */
+        public ObjectDestructuringExpression(
+                List<DestructuringBinding> bindings,
+                ArkTSExpression source) {
+            this.bindings = Collections.unmodifiableList(
+                    new ArrayList<>(bindings));
+            this.source = source;
+        }
+
+        public List<DestructuringBinding> getBindings() {
+            return bindings;
+        }
+
+        public ArkTSExpression getSource() {
+            return source;
+        }
+
+        @Override
+        public String toArkTS() {
+            StringBuilder sb = new StringBuilder();
+            sb.append("{ ");
+            for (int i = 0; i < bindings.size(); i++) {
+                if (i > 0) {
+                    sb.append(", ");
+                }
+                sb.append(bindings.get(i).toArkTS());
+            }
+            sb.append(" }");
+            if (source != null) {
+                sb.append(" = ").append(source.toArkTS());
+            }
+            return sb.toString();
+        }
+
+        /**
+         * A single binding in an object destructuring pattern.
+         */
+        public static class DestructuringBinding {
+            private final String property;
+            private final String alias;
+
+            /**
+             * Constructs a destructuring binding.
+             *
+             * @param property the property name
+             * @param alias the alias (may be null if same as property)
+             */
+            public DestructuringBinding(String property, String alias) {
+                this.property = property;
+                this.alias = alias;
+            }
+
+            public String getProperty() {
+                return property;
+            }
+
+            public String getAlias() {
+                return alias;
+            }
+
+            /**
+             * Returns the ArkTS source text for this binding.
+             *
+             * @return the binding string
+             */
+            public String toArkTS() {
+                if (alias != null && !alias.equals(property)) {
+                    return property + ": " + alias;
+                }
+                return property;
+            }
+        }
+    }
+
+    // --- Nullish coalescing ---
+
+    /**
+     * A nullish coalescing expression: left ?? right.
+     * Returns the left operand if it is not null/undefined,
+     * otherwise returns the right operand.
+     */
+    public static class NullishCoalescingExpression extends ArkTSExpression {
+        private final ArkTSExpression left;
+        private final ArkTSExpression right;
+
+        /**
+         * Constructs a nullish coalescing expression.
+         *
+         * @param left the left operand (the checked value)
+         * @param right the right operand (the fallback)
+         */
+        public NullishCoalescingExpression(ArkTSExpression left,
+                ArkTSExpression right) {
+            this.left = left;
+            this.right = right;
+        }
+
+        public ArkTSExpression getLeft() {
+            return left;
+        }
+
+        public ArkTSExpression getRight() {
+            return right;
+        }
+
+        @Override
+        public String toArkTS() {
+            return "(" + left.toArkTS() + " ?? " + right.toArkTS() + ")";
+        }
+    }
 }

@@ -10,6 +10,7 @@ import java.util.Set;
 import com.arkghidra.disasm.ArkDisassembler;
 import com.arkghidra.disasm.ArkInstruction;
 import com.arkghidra.disasm.ArkOperand;
+import com.arkghidra.format.AbcAnnotation;
 import com.arkghidra.format.AbcAccessFlags;
 import com.arkghidra.format.AbcCatchBlock;
 import com.arkghidra.format.AbcClass;
@@ -315,7 +316,8 @@ public class ArkTSDecompiler {
         String className = sanitizeClassName(abcClass.getName());
 
         // Determine if this is a struct (ArkTS UI component)
-        List<String> decorators = detectDecorators(abcClass);
+        List<String> decorators = detectDecorators(abcClass, abcFile,
+                seenImports);
 
         // Resolve super class
         String superClassName = resolveSuperClassName(
@@ -332,7 +334,7 @@ public class ArkTSDecompiler {
 
         // Group 1: fields first
         for (AbcField field : abcClass.getFields()) {
-            ArkTSStatement fieldDecl = buildFieldDeclaration(field);
+            ArkTSStatement fieldDecl = buildFieldDeclaration(field, abcFile);
             members.add(fieldDecl);
         }
 
@@ -375,19 +377,43 @@ public class ArkTSDecompiler {
 
     /**
      * Builds a field declaration from an ABC field definition.
+     * Includes decorators from annotation data when available.
      *
      * @param field the ABC field
+     * @param abcFile the parent ABC file for annotation lookup
      * @return the field declaration statement
      */
     private ArkTSStatement.ClassFieldDeclaration buildFieldDeclaration(
-            AbcField field) {
+            AbcField field, AbcFile abcFile) {
         String fieldName = field.getName();
         String typeName = inferFieldType(field);
         boolean isStatic = (field.getAccessFlags()
                 & AbcAccessFlags.ACC_STATIC) != 0;
-        String accessModifier = accessFlagsToModifier(field.getAccessFlags());
+        String accessModifier = accessFlagsToModifier(
+                field.getAccessFlags());
+
+        List<String> fieldDecorators = new ArrayList<>();
+        if (abcFile != null) {
+            List<AbcAnnotation> fieldAnns =
+                    abcFile.getAnnotationsForField(field.getOffset());
+            for (AbcAnnotation ann : fieldAnns) {
+                String simpleName = ann.getSimpleTypeName();
+                if (!simpleName.isEmpty()
+                        && !fieldDecorators.contains(simpleName)) {
+                    fieldDecorators.add(simpleName);
+                }
+            }
+        }
+        if (fieldDecorators.isEmpty()) {
+            String heuristic = detectFieldDecorator(fieldName);
+            if (heuristic != null) {
+                fieldDecorators.add(heuristic);
+            }
+        }
+
         return new ArkTSStatement.ClassFieldDeclaration(
-                fieldName, typeName, null, isStatic, accessModifier);
+                fieldName, typeName, null, isStatic, accessModifier,
+                fieldDecorators);
     }
 
     /**
@@ -808,32 +834,77 @@ public class ArkTSDecompiler {
         if (name == null) {
             return false;
         }
-        // Heuristic: ArkTS structs often have names ending in "Page" or "Component"
-        // or have @Component decorator markers
-        return name.endsWith("Page") || name.endsWith("Component")
-                || name.endsWith("View") || name.endsWith("Widget");
+        // Check name patterns from full class name (Lcom/example/MyPage;)
+        if (name.contains("Page") || name.contains("Component")
+                || name.contains("View") || name.contains("Widget")) {
+            return true;
+        }
+        return false;
     }
 
     /**
      * Detects decorators applied to a class.
-     * In ABC bytecode, decorators are often stored as annotations or
-     * recognizable patterns in the class metadata.
+     * First checks for explicit annotations in the ABC metadata.
+     * Falls back to heuristic detection from class and field name patterns.
      *
      * @param abcClass the ABC class
-     * @return the list of decorator names
+     * @param abcFile the parent ABC file for annotation lookup
+     * @param seenImports collector for import module references
+     * @return the list of decorator strings
      */
-    private List<String> detectDecorators(AbcClass abcClass) {
+    private List<String> detectDecorators(AbcClass abcClass,
+            AbcFile abcFile, Set<String> seenImports) {
         List<String> decorators = new ArrayList<>();
+
+        // First try annotation-based detection
+        int classIdx = abcFile.getClasses().indexOf(abcClass);
+        if (classIdx >= 0) {
+            List<AbcAnnotation> classAnns =
+                    abcFile.getAnnotationsForClass(classIdx);
+            for (AbcAnnotation ann : classAnns) {
+                String simpleName = ann.getSimpleTypeName();
+                if (!simpleName.isEmpty()
+                        && !decorators.contains(simpleName)) {
+                    if (ann.getElements().isEmpty()) {
+                        decorators.add(simpleName);
+                    } else {
+                        decorators.add(ann.toDecoratorString());
+                    }
+                }
+            }
+        }
+
+        // Also check field annotations for decorators
+        for (AbcField field : abcClass.getFields()) {
+            List<AbcAnnotation> fieldAnns =
+                    abcFile.getAnnotationsForField(field.getOffset());
+            for (AbcAnnotation ann : fieldAnns) {
+                String simpleName = ann.getSimpleTypeName();
+                if (!simpleName.isEmpty()
+                        && !decorators.contains(simpleName)) {
+                    if (ann.getElements().isEmpty()) {
+                        decorators.add(simpleName);
+                    } else {
+                        decorators.add(ann.toDecoratorString());
+                    }
+                }
+            }
+        }
+
+        // If annotations found decorators, use those
+        if (!decorators.isEmpty()) {
+            return decorators;
+        }
+
+        // Fallback to heuristic detection
         String name = abcClass.getName();
         if (name == null) {
             return decorators;
         }
-        // Detect common ArkTS decorator patterns from class name
         if (name.endsWith("Page") || name.contains("Page")) {
             decorators.add("Entry");
             decorators.add("Component");
         }
-        // Detect from field decorator patterns
         for (AbcField field : abcClass.getFields()) {
             String fieldName = field.getName();
             if (fieldName != null) {
@@ -1127,6 +1198,16 @@ public class ArkTSDecompiler {
                     stmts.addAll(processDoWhile(block, pattern, ctx, cfg,
                             visited));
                     break;
+                case FOR_OF_LOOP:
+                    visited.add(block);
+                    stmts.addAll(processForOfLoop(block, pattern, ctx, cfg,
+                            visited));
+                    break;
+                case FOR_IN_LOOP:
+                    visited.add(block);
+                    stmts.addAll(processForInLoop(block, pattern, ctx, cfg,
+                            visited));
+                    break;
                 case BREAK:
                     visited.add(block);
                     stmts.addAll(processBlockInstructions(block, ctx));
@@ -1172,7 +1253,7 @@ public class ArkTSDecompiler {
      * The type of control flow pattern detected.
      */
     private enum PatternType {
-        LINEAR, IF_ONLY, IF_ELSE, WHILE_LOOP, FOR_LOOP, DO_WHILE, BREAK,
+        LINEAR, IF_ONLY, IF_ELSE, WHILE_LOOP, FOR_LOOP, FOR_OF_LOOP, FOR_IN_LOOP, DO_WHILE, BREAK,
         CONTINUE, TERNARY, SHORT_CIRCUIT_AND, SHORT_CIRCUIT_OR, SWITCH,
         UNKNOWN
     }
@@ -1201,6 +1282,11 @@ public class ArkTSDecompiler {
 
         // Switch fields
         ArkTSExpression switchDiscriminant;
+
+        // For-of/for-in fields
+        String iteratorVarName;
+        ArkTSExpression iterableExpr;
+        BasicBlock iteratorSetupBlock;
         List<SwitchCaseInfo> switchCases;
         BasicBlock switchDefaultBlock;
         BasicBlock switchEndBlock;
@@ -1246,12 +1332,29 @@ public class ArkTSDecompiler {
             }
 
             // Check for while loop: one successor jumps back to this block
-            // or an earlier offset
-            if (trueBranch.getStartOffset() <= block.getStartOffset()
-                    || falseBranch.getStartOffset() <= block
-                            .getStartOffset()) {
-                BasicBlock loopBody = trueBranch.getStartOffset() > block
-                        .getStartOffset() ? trueBranch : falseBranch;
+            // or an earlier offset, or a successor eventually leads back
+            // to this block via a back edge
+            boolean trueLeadsBack = trueBranch.getStartOffset()
+                    <= block.getStartOffset()
+                    || hasBackEdgeTo(trueBranch, block, cfg);
+            boolean falseLeadsBack = falseBranch.getStartOffset()
+                    <= block.getStartOffset()
+                    || hasBackEdgeTo(falseBranch, block, cfg);
+            if (trueLeadsBack || falseLeadsBack) {
+                BasicBlock loopBody = trueLeadsBack
+                        ^ falseLeadsBack
+                        ? (trueLeadsBack ? trueBranch : falseBranch)
+                        : (trueBranch.getStartOffset() > block
+                                .getStartOffset() ? trueBranch
+                                : falseBranch);
+                ControlFlowPattern forOfP = detectForOfPattern(block, loopBody, cfg);
+                if (forOfP != null) {
+                    return forOfP;
+                }
+                ControlFlowPattern forInP = detectForInPattern(block, loopBody, cfg);
+                if (forInP != null) {
+                    return forInP;
+                }
                 ControlFlowPattern p = new ControlFlowPattern(
                         PatternType.WHILE_LOOP);
                 p.conditionBlock = block;
@@ -1769,6 +1872,320 @@ public class ArkTSDecompiler {
                 new ArkTSStatement.DoWhileStatement(bodyBlock, condition);
         stmts.add(doWhile);
 
+        return stmts;
+    }
+
+
+    private ControlFlowPattern detectForOfPattern(BasicBlock condBlock,
+            BasicBlock loopBody, ControlFlowGraph cfg) {
+        boolean hasGetIterator = false;
+        BasicBlock setupBlock = null;
+        for (ArkInstruction insn : condBlock.getInstructions()) {
+            if (ArkOpcodesCompat.isGetIterator(insn.getOpcode())) {
+                hasGetIterator = true;
+                break;
+            }
+        }
+        if (!hasGetIterator) {
+            for (CFGEdge pred : condBlock.getPredecessors()) {
+                BasicBlock predBlock = cfg.getBlockAt(pred.getFromOffset());
+                if (predBlock != null) {
+                    for (ArkInstruction insn : predBlock.getInstructions()) {
+                        if (ArkOpcodesCompat.isGetIterator(insn.getOpcode())) {
+                            hasGetIterator = true;
+                            setupBlock = predBlock;
+                            break;
+                        }
+                    }
+                    if (!hasGetIterator) {
+                        for (CFGEdge pred2 : predBlock.getPredecessors()) {
+                            BasicBlock pred2Block = cfg.getBlockAt(pred2.getFromOffset());
+                            if (pred2Block != null && pred2Block != condBlock) {
+                                for (ArkInstruction insn2 : pred2Block.getInstructions()) {
+                                    if (ArkOpcodesCompat.isGetIterator(insn2.getOpcode())) {
+                                        hasGetIterator = true;
+                                        setupBlock = pred2Block;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (hasGetIterator) {
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (hasGetIterator) {
+                    break;
+                }
+            }
+        }
+        if (!hasGetIterator) {
+            return null;
+        }
+        String iterVarName = null;
+        String itemVarName = null;
+        List<ArkInstruction> searchInsns = setupBlock != null
+                ? setupBlock.getInstructions() : condBlock.getInstructions();
+        for (int i = 0; i < searchInsns.size() - 1; i++) {
+            ArkInstruction insn = searchInsns.get(i);
+            if (ArkOpcodesCompat.isGetIterator(insn.getOpcode())) {
+                if (i + 1 < searchInsns.size()) {
+                    ArkInstruction nextInsn = searchInsns.get(i + 1);
+                    if (nextInsn.getOpcode() == ArkOpcodesCompat.STA) {
+                        iterVarName = "v" + nextInsn.getOperands().get(0).getValue();
+                    }
+                }
+                break;
+            }
+        }
+        for (int i = 0; i < condBlock.getInstructions().size(); i++) {
+            ArkInstruction insn = condBlock.getInstructions().get(i);
+            if (insn.getOpcode() == ArkOpcodesCompat.GETNEXTPROPNAME) {
+                if (i + 1 < condBlock.getInstructions().size()) {
+                    ArkInstruction nextInsn = condBlock.getInstructions().get(i + 1);
+                    if (nextInsn.getOpcode() == ArkOpcodesCompat.STA) {
+                        itemVarName = "v" + nextInsn.getOperands().get(0).getValue();
+                    }
+                }
+            }
+        }
+        if (itemVarName == null) {
+            for (int i = 0; i < loopBody.getInstructions().size(); i++) {
+                ArkInstruction insn = loopBody.getInstructions().get(i);
+                if (insn.getOpcode() == ArkOpcodesCompat.GETNEXTPROPNAME) {
+                    if (i + 1 < loopBody.getInstructions().size()) {
+                        ArkInstruction nextInsn = loopBody.getInstructions().get(i + 1);
+                        if (nextInsn.getOpcode() == ArkOpcodesCompat.STA) {
+                            itemVarName = "v" + nextInsn.getOperands().get(0).getValue();
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        if (itemVarName == null) {
+            itemVarName = "item";
+        }
+        ArkTSExpression iterableExpr = new ArkTSExpression.VariableExpression(
+                iterVarName != null ? iterVarName : "iterable");
+        ControlFlowPattern p = new ControlFlowPattern(PatternType.FOR_OF_LOOP);
+        p.conditionBlock = condBlock;
+        p.trueBlock = loopBody;
+        p.iteratorVarName = itemVarName;
+        p.iterableExpr = iterableExpr;
+        p.iteratorSetupBlock = setupBlock;
+        return p;
+    }
+
+    private ControlFlowPattern detectForInPattern(BasicBlock condBlock,
+            BasicBlock loopBody, ControlFlowGraph cfg) {
+        boolean hasPropIterator = false;
+        BasicBlock setupBlock = null;
+        for (CFGEdge pred : condBlock.getPredecessors()) {
+            BasicBlock predBlock = cfg.getBlockAt(pred.getFromOffset());
+            if (predBlock != null) {
+                for (ArkInstruction insn : predBlock.getInstructions()) {
+                    if (insn.getOpcode() == ArkOpcodesCompat.GETPROPITERATOR) {
+                        hasPropIterator = true;
+                        setupBlock = predBlock;
+                        break;
+                    }
+                }
+                if (!hasPropIterator) {
+                    for (CFGEdge pred2 : predBlock.getPredecessors()) {
+                        BasicBlock pred2Block = cfg.getBlockAt(pred2.getFromOffset());
+                        if (pred2Block != null && pred2Block != condBlock) {
+                            for (ArkInstruction insn2 : pred2Block.getInstructions()) {
+                                if (insn2.getOpcode() == ArkOpcodesCompat.GETPROPITERATOR) {
+                                    hasPropIterator = true;
+                                    setupBlock = pred2Block;
+                                    break;
+                                }
+                            }
+                        }
+                        if (hasPropIterator) {
+                            break;
+                        }
+                    }
+                }
+            }
+            if (hasPropIterator) {
+                break;
+            }
+        }
+        if (!hasPropIterator) {
+            return null;
+        }
+        String keyVarName = null;
+        String iterVarName = null;
+        if (setupBlock != null) {
+            List<ArkInstruction> setupInsns = setupBlock.getInstructions();
+            for (int i = 0; i < setupInsns.size() - 1; i++) {
+                if (setupInsns.get(i).getOpcode() == ArkOpcodesCompat.GETPROPITERATOR) {
+                    if (i + 1 < setupInsns.size()) {
+                        ArkInstruction nextInsn = setupInsns.get(i + 1);
+                        if (nextInsn.getOpcode() == ArkOpcodesCompat.STA) {
+                            iterVarName = "v" + nextInsn.getOperands().get(0).getValue();
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        for (int i = 0; i < condBlock.getInstructions().size(); i++) {
+            ArkInstruction insn = condBlock.getInstructions().get(i);
+            if (insn.getOpcode() == ArkOpcodesCompat.GETNEXTPROPNAME) {
+                if (i + 1 < condBlock.getInstructions().size()) {
+                    ArkInstruction nextInsn = condBlock.getInstructions().get(i + 1);
+                    if (nextInsn.getOpcode() == ArkOpcodesCompat.STA) {
+                        keyVarName = "v" + nextInsn.getOperands().get(0).getValue();
+                    }
+                }
+                break;
+            }
+        }
+        if (keyVarName == null) {
+            for (int i = 0; i < loopBody.getInstructions().size(); i++) {
+                ArkInstruction insn = loopBody.getInstructions().get(i);
+                if (insn.getOpcode() == ArkOpcodesCompat.GETNEXTPROPNAME) {
+                    if (i + 1 < loopBody.getInstructions().size()) {
+                        ArkInstruction nextInsn = loopBody.getInstructions().get(i + 1);
+                        if (nextInsn.getOpcode() == ArkOpcodesCompat.STA) {
+                            keyVarName = "v" + nextInsn.getOperands().get(0).getValue();
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        if (keyVarName == null) {
+            keyVarName = "key";
+        }
+        ArkTSExpression objectExpr = new ArkTSExpression.VariableExpression(
+                iterVarName != null ? iterVarName : "obj");
+        ControlFlowPattern p = new ControlFlowPattern(PatternType.FOR_IN_LOOP);
+        p.conditionBlock = condBlock;
+        p.trueBlock = loopBody;
+        p.iteratorVarName = keyVarName;
+        p.iterableExpr = objectExpr;
+        p.iteratorSetupBlock = setupBlock;
+        return p;
+    }
+
+    private List<ArkTSStatement> processForOfLoop(BasicBlock condBlock,
+            ControlFlowPattern pattern, DecompilationContext ctx,
+            ControlFlowGraph cfg, Set<BasicBlock> visited) {
+        List<ArkTSStatement> stmts = new ArrayList<>();
+        List<ArkTSStatement> preStmts =
+                processBlockInstructionsExcludingIterator(
+                        condBlock, ctx, condBlock.getLastInstruction());
+        stmts.addAll(preStmts);
+        int loopHeaderOffset = condBlock.getStartOffset();
+        int loopEndOffset = estimateLoopEndOffset(condBlock, pattern, cfg);
+        ctx.pushLoopContext(loopHeaderOffset, loopEndOffset);
+        visited.add(pattern.trueBlock);
+        List<ArkTSStatement> bodyStmts = processBlockInstructions(pattern.trueBlock, ctx);
+        ArkTSStatement bodyBlock = new ArkTSStatement.BlockStatement(bodyStmts);
+        ctx.popLoopContext();
+        ArkTSStatement forOfStmt = new ArkTSStatement.ForOfStatement(
+                "const", pattern.iteratorVarName, pattern.iterableExpr, bodyBlock);
+        stmts.add(forOfStmt);
+        return stmts;
+    }
+
+    private List<ArkTSStatement> processForInLoop(BasicBlock condBlock,
+            ControlFlowPattern pattern, DecompilationContext ctx,
+            ControlFlowGraph cfg, Set<BasicBlock> visited) {
+        List<ArkTSStatement> stmts = new ArrayList<>();
+        List<ArkTSStatement> preStmts =
+                processBlockInstructionsExcludingIterator(
+                        condBlock, ctx, condBlock.getLastInstruction());
+        stmts.addAll(preStmts);
+        int loopHeaderOffset = condBlock.getStartOffset();
+        int loopEndOffset = estimateLoopEndOffset(condBlock, pattern, cfg);
+        ctx.pushLoopContext(loopHeaderOffset, loopEndOffset);
+        visited.add(pattern.trueBlock);
+        List<ArkTSStatement> bodyStmts = processBlockInstructions(pattern.trueBlock, ctx);
+        ArkTSStatement bodyBlock = new ArkTSStatement.BlockStatement(bodyStmts);
+        ctx.popLoopContext();
+        ArkTSStatement forInStmt = new ArkTSStatement.ForInStatement(
+                "const", pattern.iteratorVarName, pattern.iterableExpr, bodyBlock);
+        stmts.add(forInStmt);
+        return stmts;
+    }
+
+    private List<ArkTSStatement> processBlockInstructionsExcludingIterator(
+            BasicBlock block, DecompilationContext ctx,
+            ArkInstruction excludeInsn) {
+        List<ArkTSStatement> stmts = new ArrayList<>();
+        Set<String> declaredVars = new HashSet<>();
+        for (int i = 0; i < ctx.numArgs; i++) {
+            declaredVars.add("v" + i);
+        }
+        ArkTSExpression accValue = null;
+        TypeInference typeInf = new TypeInference();
+        List<ArkInstruction> instructions = block.getInstructions();
+        for (int idx = 0; idx < instructions.size(); idx++) {
+            ArkInstruction insn = instructions.get(idx);
+            if (insn == excludeInsn) {
+                continue;
+            }
+            int opcode = insn.getOpcode();
+            if (ArkOpcodesCompat.isGetIterator(opcode)
+                    || ArkOpcodesCompat.isCloseIterator(opcode)
+                    || opcode == ArkOpcodesCompat.GETNEXTPROPNAME
+                    || opcode == ArkOpcodesCompat.GETPROPITERATOR) {
+                continue;
+            }
+            if (opcode == ArkOpcodesCompat.STA && idx > 0) {
+                int prevOpcode = instructions.get(idx - 1).getOpcode();
+                if (ArkOpcodesCompat.isGetIterator(prevOpcode)
+                        || prevOpcode == ArkOpcodesCompat.GETNEXTPROPNAME
+                        || prevOpcode == ArkOpcodesCompat.GETPROPITERATOR) {
+                    continue;
+                }
+            }
+            if (opcode == ArkOpcodesCompat.NOP) {
+                continue;
+            }
+            if (ArkOpcodesCompat.isUnconditionalJump(opcode)) {
+                if (isBreakJump(insn, block, ctx)) {
+                    stmts.add(new ArkTSStatement.BreakStatement());
+                    continue;
+                }
+                if (isContinueJump(insn, block, ctx)) {
+                    stmts.add(new ArkTSStatement.ContinueStatement());
+                    continue;
+                }
+                continue;
+            }
+            if (ArkOpcodesCompat.isConditionalBranch(opcode)) {
+                ctx.currentAccValue = accValue;
+                continue;
+            }
+            if (opcode == ArkOpcodesCompat.RETURN) {
+                stmts.add(new ArkTSStatement.ReturnStatement(accValue));
+                accValue = null;
+                continue;
+            }
+            if (opcode == ArkOpcodesCompat.RETURNUNDEFINED) {
+                stmts.add(new ArkTSStatement.ReturnStatement(null));
+                accValue = null;
+                continue;
+            }
+            StatementResult result = processInstruction(
+                    insn, ctx, accValue, declaredVars, typeInf);
+            if (result != null) {
+                if (result.statement != null) {
+                    stmts.add(result.statement);
+                }
+                accValue = result.newAccValue;
+            } else {
+                accValue = null;
+            }
+        }
+        ctx.currentAccValue = accValue;
         return stmts;
     }
 
@@ -3535,6 +3952,23 @@ public class ArkTSDecompiler {
                     spread);
         }
 
+        // --- Iterator opcodes ---
+        if (ArkOpcodesCompat.isGetIterator(opcode)) {
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression("iterator"));
+        }
+        if (ArkOpcodesCompat.isCloseIterator(opcode)) {
+            return null;
+        }
+        if (opcode == ArkOpcodesCompat.GETNEXTPROPNAME) {
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression("nextProp"));
+        }
+        if (opcode == ArkOpcodesCompat.GETPROPITERATOR) {
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression("propIterator"));
+        }
+
         // --- Fallback: emit a comment ---
         return new StatementResult(
                 new ArkTSStatement.ExpressionStatement(
@@ -3890,6 +4324,275 @@ public class ArkTSDecompiler {
                     ArkTSExpression.LiteralExpression.LiteralKind.STRING));
         }
         return elements;
+    }
+
+    // --- Template literal reconstruction ---
+
+    ArkTSExpression tryReconstructTemplateLiteral(ArkTSExpression accValue) {
+        if (accValue == null) {
+            return null;
+        }
+        List<ArkTSExpression> parts = new ArrayList<>();
+        flattenAddChain(accValue, parts);
+        List<String> quasis = new ArrayList<>();
+        List<ArkTSExpression> expressions = new ArrayList<>();
+        buildTemplateFromParts(parts, quasis, expressions);
+        // Only convert to template literal if at least one string literal
+        // is present (otherwise it is just a numeric addition)
+        boolean hasString = false;
+        for (ArkTSExpression part : parts) {
+            if (isStringLiteralExpr(part)) {
+                hasString = true;
+                break;
+            }
+        }
+        if (hasString && quasis.size() == expressions.size() + 1
+                && !quasis.isEmpty()) {
+            return new ArkTSExpression.TemplateLiteralExpression(
+                    quasis, expressions);
+        }
+        return accValue;
+    }
+
+    private void flattenAddChain(ArkTSExpression expr,
+            List<ArkTSExpression> parts) {
+        if (expr instanceof ArkTSExpression.BinaryExpression) {
+            ArkTSExpression.BinaryExpression bin =
+                    (ArkTSExpression.BinaryExpression) expr;
+            if ("+".equals(bin.getOperator())) {
+                flattenAddChain(bin.getLeft(), parts);
+                flattenAddChain(bin.getRight(), parts);
+                return;
+            }
+        }
+        parts.add(expr);
+    }
+
+    private void buildTemplateFromParts(List<ArkTSExpression> parts,
+            List<String> quasis, List<ArkTSExpression> expressions) {
+        StringBuilder currentQuasi = new StringBuilder();
+        for (ArkTSExpression part : parts) {
+            if (isStringLiteralExpr(part)) {
+                currentQuasi.append(extractStringValue(part));
+            } else {
+                quasis.add(currentQuasi.toString());
+                currentQuasi = new StringBuilder();
+                expressions.add(part);
+            }
+        }
+        quasis.add(currentQuasi.toString());
+    }
+
+    private boolean isStringLiteralExpr(ArkTSExpression expr) {
+        return expr instanceof ArkTSExpression.LiteralExpression
+                && ((ArkTSExpression.LiteralExpression) expr).getKind()
+                        == ArkTSExpression.LiteralExpression.LiteralKind.STRING;
+    }
+
+    private String extractStringValue(ArkTSExpression expr) {
+        if (expr instanceof ArkTSExpression.LiteralExpression) {
+            return ((ArkTSExpression.LiteralExpression) expr).getValue();
+        }
+        return "";
+    }
+
+    // --- Array destructuring detection ---
+
+    ArkTSStatement tryDetectArrayDestructuring(
+            List<ArkInstruction> instructions, int startIndex,
+            DecompilationContext ctx, Set<String> declaredVars,
+            List<ArkTSStatement> stmts) {
+
+        List<String> bindings = new ArrayList<>();
+        String restBinding = null;
+        String sourceVar = null;
+        int consecutiveIdx = 0;
+        int scanIdx = startIndex;
+
+        while (scanIdx < instructions.size()) {
+            ArkInstruction insn = instructions.get(scanIdx);
+            int opcode = insn.getOpcode();
+
+            if (opcode == ArkOpcodesCompat.NOP) {
+                scanIdx++;
+                continue;
+            }
+
+            if (opcode == ArkOpcodesCompat.LDA
+                    && scanIdx + 2 < instructions.size()) {
+                ArkInstruction nextInsn = instructions.get(scanIdx + 1);
+                ArkInstruction afterNext = instructions.get(scanIdx + 2);
+
+                if (nextInsn.getOpcode() == ArkOpcodesCompat.LDOBJBYINDEX
+                        && afterNext.getOpcode() == ArkOpcodesCompat.STA) {
+                    int srcReg = (int) insn.getOperands().get(0).getValue();
+                    String currentSource = "v" + srcReg;
+                    List<ArkOperand> ldOps = nextInsn.getOperands();
+                    int index = (int) ldOps.get(ldOps.size() - 1).getValue();
+                    int targetReg = (int) afterNext.getOperands().get(0)
+                            .getValue();
+                    String targetVar = "v" + targetReg;
+
+                    if (sourceVar == null) {
+                        sourceVar = currentSource;
+                    }
+
+                    if (currentSource.equals(sourceVar)
+                            && index == consecutiveIdx) {
+                        bindings.add(targetVar);
+                        declaredVars.add(targetVar);
+                        consecutiveIdx++;
+                        scanIdx += 3;
+                        continue;
+                    }
+                }
+            }
+            break;
+        }
+
+        if (bindings.size() >= 2 && sourceVar != null) {
+            ArkTSExpression source =
+                    new ArkTSExpression.VariableExpression(sourceVar);
+            ArkTSExpression destrExpr =
+                    new ArkTSExpression.ArrayDestructuringExpression(
+                            bindings, restBinding, source);
+            return new ArkTSStatement.DestructuringDeclaration(
+                    "const", destrExpr);
+        }
+        return null;
+    }
+
+    // --- Object destructuring detection ---
+
+    ArkTSStatement tryDetectObjectDestructuring(
+            List<ArkInstruction> instructions, int startIndex,
+            DecompilationContext ctx, Set<String> declaredVars,
+            List<ArkTSStatement> stmts) {
+
+        List<ArkTSExpression.ObjectDestructuringExpression.DestructuringBinding>
+                bindings = new ArrayList<>();
+        String sourceVar = null;
+        int scanIdx = startIndex;
+        int propertyCount = 0;
+
+        while (scanIdx < instructions.size()) {
+            ArkInstruction insn = instructions.get(scanIdx);
+            int opcode = insn.getOpcode();
+
+            if (opcode == ArkOpcodesCompat.NOP) {
+                scanIdx++;
+                continue;
+            }
+
+            if (opcode == ArkOpcodesCompat.LDA
+                    && scanIdx + 2 < instructions.size()) {
+                ArkInstruction nextInsn = instructions.get(scanIdx + 1);
+                ArkInstruction afterNext = instructions.get(scanIdx + 2);
+
+                if (nextInsn.getOpcode() == ArkOpcodesCompat.LDOBJBYNAME
+                        && afterNext.getOpcode() == ArkOpcodesCompat.STA) {
+                    int srcReg = (int) insn.getOperands().get(0).getValue();
+                    String currentSource = "v" + srcReg;
+                    String propName = ctx.resolveString(
+                            (int) nextInsn.getOperands().get(1).getValue());
+                    int targetReg = (int) afterNext.getOperands().get(0)
+                            .getValue();
+                    String targetVar = "v" + targetReg;
+
+                    if (sourceVar == null) {
+                        sourceVar = currentSource;
+                    }
+
+                    if (currentSource.equals(sourceVar)) {
+                        bindings.add(
+                                new ArkTSExpression.ObjectDestructuringExpression
+                                        .DestructuringBinding(propName, null));
+                        declaredVars.add(targetVar);
+                        propertyCount++;
+                        scanIdx += 3;
+                        continue;
+                    }
+                }
+            }
+            break;
+        }
+
+        if (propertyCount >= 2 && sourceVar != null) {
+            ArkTSExpression source =
+                    new ArkTSExpression.VariableExpression(sourceVar);
+            ArkTSExpression destrExpr =
+                    new ArkTSExpression.ObjectDestructuringExpression(
+                            bindings, source);
+            return new ArkTSStatement.DestructuringDeclaration(
+                    "const", destrExpr);
+        }
+        return null;
+    }
+
+    // --- Nullish coalescing detection ---
+
+    ArkTSExpression tryDetectNullishCoalescing(ArkTSExpression condition,
+            ArkTSExpression trueValue, ArkTSExpression falseValue) {
+        if (condition == null || trueValue == null || falseValue == null) {
+            return null;
+        }
+        if (isNullEqualityCheck(condition)) {
+            ArkTSExpression checkedValue =
+                    getNullCheckTarget(condition);
+            if (checkedValue != null && expressionsMatch(checkedValue,
+                    falseValue)) {
+                return new ArkTSExpression.NullishCoalescingExpression(
+                        falseValue, trueValue);
+            }
+        }
+        return null;
+    }
+
+    private boolean isNullEqualityCheck(ArkTSExpression expr) {
+        if (expr instanceof ArkTSExpression.BinaryExpression) {
+            ArkTSExpression.BinaryExpression bin =
+                    (ArkTSExpression.BinaryExpression) expr;
+            return "===".equals(bin.getOperator())
+                    || "==".equals(bin.getOperator());
+        }
+        return false;
+    }
+
+    private ArkTSExpression getNullCheckTarget(
+            ArkTSExpression condition) {
+        if (!(condition instanceof ArkTSExpression.BinaryExpression)) {
+            return null;
+        }
+        ArkTSExpression.BinaryExpression bin =
+                (ArkTSExpression.BinaryExpression) condition;
+        ArkTSExpression left = bin.getLeft();
+        ArkTSExpression right = bin.getRight();
+        if (isNullLiteralExpr(right)) {
+            return left;
+        }
+        if (isNullLiteralExpr(left)) {
+            return right;
+        }
+        return null;
+    }
+
+    private boolean isNullLiteralExpr(ArkTSExpression expr) {
+        if (expr instanceof ArkTSExpression.LiteralExpression) {
+            return ((ArkTSExpression.LiteralExpression) expr).getKind()
+                    == ArkTSExpression.LiteralExpression.LiteralKind.NULL;
+        }
+        return false;
+    }
+
+    private boolean expressionsMatch(ArkTSExpression a,
+            ArkTSExpression b) {
+        if (a == b) {
+            return true;
+        }
+        if (a == null || b == null) {
+            return false;
+        }
+        return a.toArkTS().equals(b.toArkTS());
     }
 
     // --- Helpers ---

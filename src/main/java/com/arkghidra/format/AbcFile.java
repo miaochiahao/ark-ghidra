@@ -3,8 +3,11 @@ package com.arkghidra.format;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.Consumer;
 
 /**
  * Top-level parser for Panda .abc binary files.
@@ -49,6 +52,13 @@ public class AbcFile {
      */
     private final Map<Integer, AbcCode> codeCache = new HashMap<>();
 
+    private final List<AbcAnnotation> annotations = new ArrayList<>();
+    private final Map<Long, AbcAnnotation> annotationCache = new HashMap<>();
+    private final Map<Integer, List<AbcAnnotation>> classAnnotations = new HashMap<>();
+    private final Map<Long, List<AbcAnnotation>> fieldAnnotations = new HashMap<>();
+    private final Map<Long, List<AbcAnnotation>> methodAnnotations = new HashMap<>();
+    private final Set<Long> annotationOffsets = new HashSet<>();
+
     // Tag constants for class_data TaggedValues
     private static final int CLASS_TAG_NOTHING = 0x00;
     private static final int CLASS_TAG_SOURCE_LANG = 0x02;
@@ -65,6 +75,7 @@ public class AbcFile {
     private static final int FIELD_TAG_NOTHING = 0x00;
     private static final int FIELD_TAG_INT_VALUE = 0x01;
     private static final int FIELD_TAG_VALUE = 0x02;
+    private static final int FIELD_TAG_ANNOTATION = 0x05;
 
     private AbcFile(AbcHeader header, List<AbcRegionHeader> regionHeaders,
             List<AbcClass> classes, List<AbcProto> protos,
@@ -101,6 +112,11 @@ public class AbcFile {
         List<AbcRegionHeader> regionHeaders = parseRegionHeaders(r,
                 header.getIndexSectionOff(), header.getNumIndexRegions());
 
+        Set<Long> collectedAnnotationOffsets = new HashSet<>();
+        Map<Long, Integer> annotationToClassIdx = new HashMap<>();
+        Map<Long, Long> annotationToFieldOff = new HashMap<>();
+        Map<Long, Long> annotationToMethodOff = new HashMap<>();
+        int classIdxCounter = 0;
         List<AbcClass> classes = new ArrayList<>();
         for (long classOff : classIndex) {
             if (classOff < 0 || classOff >= r.capacity()) {
@@ -108,7 +124,12 @@ public class AbcFile {
                         "Class offset " + classOff + " out of range [0, " + r.capacity() + ")");
             }
             r.position((int) classOff);
-            classes.add(parseClass(r, (int) classOff, header));
+            final int currentClassIdx = classIdxCounter;
+            classes.add(parseClass(r, (int) classOff, header,
+                    collectedAnnotationOffsets,
+                    annOff -> annotationToClassIdx.put(annOff, currentClassIdx),
+                    annotationToFieldOff, annotationToMethodOff));
+            classIdxCounter++;
         }
 
         List<AbcProto> protos = new ArrayList<>();
@@ -126,8 +147,12 @@ public class AbcFile {
             literalArrays.add(parseLiteralArray(r));
         }
 
-        return new AbcFile(header, regionHeaders, classes, protos, literalArrays,
+        AbcFile abcFile = new AbcFile(header, regionHeaders, classes, protos, literalArrays,
                 classIndex, lnpIndex, literalArrayIndex, data);
+        abcFile.initAnnotations(collectedAnnotationOffsets,
+                annotationToClassIdx, annotationToFieldOff,
+                annotationToMethodOff);
+        return abcFile;
     }
 
     /**
@@ -144,6 +169,92 @@ public class AbcFile {
                 }
             }
             classIdx++;
+        }
+    }
+
+    private void initAnnotations(Set<Long> collectedOffsets,
+            Map<Long, Integer> annotationToClassIdx,
+            Map<Long, Long> annotationToFieldOff,
+            Map<Long, Long> annotationToMethodOff) {
+        if (collectedOffsets.isEmpty()) {
+            return;
+        }
+        annotationOffsets.addAll(collectedOffsets);
+        for (Long annOff : collectedOffsets) {
+            AbcAnnotation annotation = parseAnnotationAt(annOff);
+            if (annotation != null) {
+                annotations.add(annotation);
+                annotationCache.put(annOff, annotation);
+
+                Integer cidx = annotationToClassIdx.get(annOff);
+                if (cidx != null) {
+                    classAnnotations.computeIfAbsent(cidx,
+                            k -> new ArrayList<>()).add(annotation);
+                }
+
+                Long fOff = annotationToFieldOff.get(annOff);
+                if (fOff != null) {
+                    fieldAnnotations.computeIfAbsent(fOff,
+                            k -> new ArrayList<>()).add(annotation);
+                }
+
+                Long mOff = annotationToMethodOff.get(annOff);
+                if (mOff != null) {
+                    methodAnnotations.computeIfAbsent(mOff,
+                            k -> new ArrayList<>()).add(annotation);
+                }
+            }
+        }
+    }
+
+    private AbcAnnotation parseAnnotationAt(long off) {
+        if (off <= 0 || off >= rawData.length) {
+            return null;
+        }
+        AbcReader r = new AbcReader(rawData);
+        r.position((int) off);
+        int typeIdx = (int) r.readU32();
+        int retention = r.readU8() & 0xFF;
+        long numElements = r.readUleb128();
+
+        String typeName = readStringAtCached(r, typeIdx);
+        List<AbcAnnotationElement> elements =
+                new ArrayList<>((int) numElements);
+        for (int i = 0; i < (int) numElements; i++) {
+            AbcAnnotationElement elem = parseAnnotationElement(r);
+            if (elem != null) {
+                elements.add(elem);
+            }
+        }
+
+        return new AbcAnnotation(typeIdx, typeName, elements, off);
+    }
+
+    private AbcAnnotationElement parseAnnotationElement(AbcReader r) {
+        int nameIdx = (int) r.readU32();
+        int tag = r.readU8() & 0xFF;
+        String name = readStringAtCached(r, nameIdx);
+
+        switch (tag) {
+            case AbcAnnotationElement.TAG_INT:
+                long intVal = r.readSleb128();
+                return new AbcAnnotationElement(nameIdx, name, tag, intVal);
+            case AbcAnnotationElement.TAG_DOUBLE:
+                long doubleBits = r.readU64();
+                double doubleVal = Double.longBitsToDouble(doubleBits);
+                return new AbcAnnotationElement(nameIdx, name, tag, doubleVal);
+            case AbcAnnotationElement.TAG_STRING:
+                int strIdx = (int) r.readU32();
+                String strVal = readStringAtCached(r, strIdx);
+                return new AbcAnnotationElement(nameIdx, name, tag, strVal,
+                        false);
+            case AbcAnnotationElement.TAG_ID:
+                int idIdx = (int) r.readU32();
+                String idVal = readStringAtCached(r, idIdx);
+                return new AbcAnnotationElement(nameIdx, name, tag, idVal,
+                        true);
+            default:
+                return null;
         }
     }
 
@@ -229,46 +340,57 @@ public class AbcFile {
                 r.readU32(), r.readU32());
     }
 
-    private static AbcClass parseClass(AbcReader r, int classOff, AbcHeader header) {
+    private static AbcClass parseClass(AbcReader r, int classOff,
+            AbcHeader header, Set<Long> annOffsets,
+            Consumer<Long> classAnnConsumer,
+            Map<Long, Long> annotationToFieldOff,
+            Map<Long, Long> annotationToMethodOff) {
         String name = r.readMutf8();
         long superClassOff = r.readU32();
         long accessFlags = r.readUleb128();
         long numFields = r.readUleb128();
         long numMethods = r.readUleb128();
-        long sourceFileOff = parseClassTags(r);
+        long sourceFileOff = parseClassTags(r, annOffsets,
+                classAnnConsumer);
 
         List<AbcField> fields = new ArrayList<>((int) numFields);
         for (int i = 0; i < (int) numFields; i++) {
-            fields.add(parseField(r));
+            fields.add(parseField(r, annOffsets,
+                    annotationToFieldOff));
         }
 
         List<AbcMethod> methods = new ArrayList<>((int) numMethods);
         for (int i = 0; i < (int) numMethods; i++) {
-            methods.add(parseMethod(r));
+            methods.add(parseMethod(r, annOffsets,
+                    annotationToMethodOff));
         }
 
         return new AbcClass(name, superClassOff, accessFlags, fields, methods,
                 classOff, sourceFileOff);
     }
 
-    private static AbcField parseField(AbcReader r) {
+    private static AbcField parseField(AbcReader r, Set<Long> annOffsets,
+            Map<Long, Long> annotationToFieldOff) {
         int fieldPos = r.position();
         int classIdx = r.readU16();
         int typeIdx = r.readU16();
         String name = readStringAt(r, (int) r.readU32());
         long accessFlags = r.readUleb128();
-        long intValue = parseFieldTags(r);
+        long intValue = parseFieldTags(r, annOffsets, fieldPos,
+                annotationToFieldOff);
         return new AbcField(classIdx, typeIdx, name, accessFlags, fieldPos, intValue);
     }
 
-    private static AbcMethod parseMethod(AbcReader r) {
+    private static AbcMethod parseMethod(AbcReader r, Set<Long> annOffsets,
+            Map<Long, Long> annotationToMethodOff) {
         int methodPos = r.position();
         int classIdx = r.readU16();
         int protoIdx = r.readU16();
         long nameOff = r.readU32();
         String name = readStringAt(r, (int) nameOff);
         long accessFlags = r.readUleb128();
-        long[] methodMeta = parseMethodTags(r);
+        long[] methodMeta = parseMethodTags(r, annOffsets, methodPos,
+                annotationToMethodOff);
         long codeOff = methodMeta[0];
         long debugInfoOff = methodMeta[1];
         return new AbcMethod(classIdx, protoIdx, name, accessFlags, codeOff,
@@ -280,7 +402,8 @@ public class AbcFile {
      *
      * @return a two-element array: [codeOff, debugInfoOff]
      */
-    private static long[] parseMethodTags(AbcReader r) {
+    private static long[] parseMethodTags(AbcReader r, Set<Long> annOffsets,
+            int methodPos, Map<Long, Long> annotationToMethodOff) {
         long codeOff = 0;
         long debugInfoOff = 0;
         while (true) {
@@ -298,7 +421,16 @@ public class AbcFile {
                 case METHOD_TAG_DEBUG_INFO:
                     debugInfoOff = r.readU32();
                     break;
-                case 0x04: case 0x05: case 0x06:
+                case 0x04:
+                    r.readU32();
+                    break;
+                case 0x05: case 0x06:
+                    long annOff = r.readU32();
+                    if (annOff > 0) {
+                        annOffsets.add(annOff);
+                        annotationToMethodOff.put(annOff, (long) methodPos);
+                    }
+                    break;
                 case 0x07: case 0x08: case 0x09:
                     r.readU32();
                     break;
@@ -315,7 +447,8 @@ public class AbcFile {
      *
      * @return the source file string table offset, or 0 if none
      */
-    private static long parseClassTags(AbcReader r) {
+    private static long parseClassTags(AbcReader r, Set<Long> annOffsets,
+            Consumer<Long> classAnnConsumer) {
         long sourceFileOff = 0;
         while (true) {
             int tag = r.readU8() & 0xFF;
@@ -329,9 +462,18 @@ public class AbcFile {
                 case CLASS_TAG_SOURCE_LANG:
                     r.readU8();
                     break;
-                case 0x01: case 0x03: case 0x04:
-                case 0x05: case 0x06:
+                case 0x01:
                     r.readU32();
+                    break;
+                case 0x03: case 0x04:
+                    r.readU32();
+                    break;
+                case 0x05: case 0x06:
+                    long annOff = r.readU32();
+                    if (annOff > 0) {
+                        annOffsets.add(annOff);
+                        classAnnConsumer.accept(annOff);
+                    }
                     break;
                 default:
                     throw new AbcFormatException(
@@ -354,7 +496,8 @@ public class AbcFile {
      *
      * @return the INT_VALUE, or 0 if none
      */
-    private static long parseFieldTags(AbcReader r) {
+    private static long parseFieldTags(AbcReader r, Set<Long> annOffsets,
+            int fieldPos, Map<Long, Long> annotationToFieldOff) {
         long intValue = 0;
         while (true) {
             int tag = r.readU8() & 0xFF;
@@ -368,8 +511,19 @@ public class AbcFile {
                 case FIELD_TAG_VALUE:
                     r.readU32();
                     break;
-                case 0x03: case 0x04: case 0x05: case 0x06:
-                    r.readU32();
+                case 0x03: case 0x04:
+                    long annOff3 = r.readU32();
+                    if (annOff3 > 0) {
+                        annOffsets.add(annOff3);
+                        annotationToFieldOff.put(annOff3, (long) fieldPos);
+                    }
+                    break;
+                case FIELD_TAG_ANNOTATION: case 0x06:
+                    long annOff5 = r.readU32();
+                    if (annOff5 > 0) {
+                        annOffsets.add(annOff5);
+                        annotationToFieldOff.put(annOff5, (long) fieldPos);
+                    }
                     break;
                 default:
                     throw new AbcFormatException(
@@ -560,6 +714,29 @@ public class AbcFile {
     }
     public byte[] getRawData() {
         return rawData;
+    }
+
+    public List<AbcAnnotation> getAnnotations() {
+        return Collections.unmodifiableList(annotations);
+    }
+
+    public List<AbcAnnotation> getAnnotationsForClass(int classIdx) {
+        return classAnnotations.getOrDefault(classIdx,
+                Collections.emptyList());
+    }
+
+    public List<AbcAnnotation> getAnnotationsForField(long fieldOffset) {
+        return fieldAnnotations.getOrDefault(fieldOffset,
+                Collections.emptyList());
+    }
+
+    public List<AbcAnnotation> getAnnotationsForMethod(long methodOffset) {
+        return methodAnnotations.getOrDefault(methodOffset,
+                Collections.emptyList());
+    }
+
+    public int getAnnotationCount() {
+        return annotations.size();
     }
 
     public boolean isForeignOffset(long off) {

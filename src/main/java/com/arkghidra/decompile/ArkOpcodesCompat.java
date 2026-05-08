@@ -176,6 +176,13 @@ final class ArkOpcodesCompat {
     static final int DELOBJPROP = ArkOpcodes.DELOBJPROP;
     static final int COPYDATAPROPERTIES = ArkOpcodes.COPYDATAPROPERTIES;
 
+    static final int GETPROPITERATOR = ArkOpcodes.GETPROPITERATOR;
+    static final int GETITERATOR_IMM8 = ArkOpcodes.GETITERATOR_IMM8;
+    static final int GETITERATOR_IMM16 = ArkOpcodes.GETITERATOR_IMM16;
+    static final int CLOSEITERATOR_IMM8 = ArkOpcodes.CLOSEITERATOR_IMM8;
+    static final int CLOSEITERATOR_IMM16 = ArkOpcodes.CLOSEITERATOR_IMM16;
+    static final int GETNEXTPROPNAME = ArkOpcodes.GETNEXTPROPNAME;
+
     static final int THROW = ArkOpcodes.PREFIX_THROW;
 
     private ArkOpcodesCompat() {
@@ -219,5 +226,13 @@ final class ArkOpcodesCompat {
     static boolean isTerminator(int opcode) {
         return isUnconditionalJump(opcode) || isConditionalBranch(opcode)
                 || opcode == RETURN || opcode == RETURNUNDEFINED;
+    }
+
+    static boolean isGetIterator(int opcode) {
+        return opcode == GETITERATOR_IMM8 || opcode == GETITERATOR_IMM16;
+    }
+
+    static boolean isCloseIterator(int opcode) {
+        return opcode == CLOSEITERATOR_IMM8 || opcode == CLOSEITERATOR_IMM16;
     }
 }

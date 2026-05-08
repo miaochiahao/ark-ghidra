@@ -4322,4 +4322,826 @@ class ArkTSDecompilerTest {
                 new ArkTSExpression.ObjectLiteralExpression(props);
         assertEquals("{ ...other }", expr.toArkTS());
     }
+
+    // ======== DESTRUCTURING, SPREAD, TEMPLATE LITERAL, NULLISH COALESCING ========
+
+    @Test
+    void testArrayDestructuringExpression_basic() {
+        ArkTSExpression source =
+                new ArkTSExpression.VariableExpression("arr");
+        ArkTSExpression.ArrayDestructuringExpression expr =
+                new ArkTSExpression.ArrayDestructuringExpression(
+                        List.of("a", "b", "c"), null, source);
+        assertEquals("[a, b, c] = arr", expr.toArkTS());
+    }
+
+    @Test
+    void testArrayDestructuringExpression_withRest() {
+        ArkTSExpression source =
+                new ArkTSExpression.VariableExpression("arr");
+        ArkTSExpression.ArrayDestructuringExpression expr =
+                new ArkTSExpression.ArrayDestructuringExpression(
+                        List.of("first", "second"), "rest", source);
+        assertEquals("[first, second, ...rest] = arr", expr.toArkTS());
+    }
+
+    @Test
+    void testObjectDestructuringExpression_basic() {
+        List<ArkTSExpression.ObjectDestructuringExpression.DestructuringBinding>
+                bindings = List.of(
+                        new ArkTSExpression.ObjectDestructuringExpression
+                                .DestructuringBinding("x", null),
+                        new ArkTSExpression.ObjectDestructuringExpression
+                                .DestructuringBinding("y", null));
+        ArkTSExpression source =
+                new ArkTSExpression.VariableExpression("obj");
+        ArkTSExpression.ObjectDestructuringExpression expr =
+                new ArkTSExpression.ObjectDestructuringExpression(
+                        bindings, source);
+        assertEquals("{ x, y } = obj", expr.toArkTS());
+    }
+
+    @Test
+    void testObjectDestructuringExpression_withRename() {
+        List<ArkTSExpression.ObjectDestructuringExpression.DestructuringBinding>
+                bindings = List.of(
+                        new ArkTSExpression.ObjectDestructuringExpression
+                                .DestructuringBinding("x", "a"),
+                        new ArkTSExpression.ObjectDestructuringExpression
+                                .DestructuringBinding("y", "b"));
+        ArkTSExpression source =
+                new ArkTSExpression.VariableExpression("obj");
+        ArkTSExpression.ObjectDestructuringExpression expr =
+                new ArkTSExpression.ObjectDestructuringExpression(
+                        bindings, source);
+        assertEquals("{ x: a, y: b } = obj", expr.toArkTS());
+    }
+
+    @Test
+    void testDestructuringDeclaration_array() {
+        ArkTSExpression source =
+                new ArkTSExpression.VariableExpression("arr");
+        ArkTSExpression pattern =
+                new ArkTSExpression.ArrayDestructuringExpression(
+                        List.of("a", "b"), null, source);
+        ArkTSStatement stmt =
+                new ArkTSStatement.DestructuringDeclaration("const", pattern);
+        assertEquals("const [a, b] = arr;", stmt.toArkTS(0));
+    }
+
+    @Test
+    void testDestructuringDeclaration_object() {
+        List<ArkTSExpression.ObjectDestructuringExpression.DestructuringBinding>
+                bindings = List.of(
+                        new ArkTSExpression.ObjectDestructuringExpression
+                                .DestructuringBinding("name", null),
+                        new ArkTSExpression.ObjectDestructuringExpression
+                                .DestructuringBinding("value", null));
+        ArkTSExpression source =
+                new ArkTSExpression.VariableExpression("obj");
+        ArkTSExpression pattern =
+                new ArkTSExpression.ObjectDestructuringExpression(
+                        bindings, source);
+        ArkTSStatement stmt =
+                new ArkTSStatement.DestructuringDeclaration("let", pattern);
+        assertEquals("let { name, value } = obj;", stmt.toArkTS(0));
+    }
+
+    @Test
+    void testSpreadExpression_inArray() {
+        ArkTSExpression spreadArg =
+                new ArkTSExpression.VariableExpression("arr");
+        ArkTSExpression spread =
+                new ArkTSExpression.SpreadExpression(spreadArg);
+        ArkTSExpression elem =
+                new ArkTSExpression.LiteralExpression("1",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSExpression.ArrayLiteralExpression expr =
+                new ArkTSExpression.ArrayLiteralExpression(
+                        List.of(spread, elem));
+        assertEquals("[...arr, 1]", expr.toArkTS());
+    }
+
+    @Test
+    void testSpreadExpression_inObject() {
+        ArkTSExpression spreadArg =
+                new ArkTSExpression.VariableExpression("defaults");
+        ArkTSExpression spread =
+                new ArkTSExpression.SpreadExpression(spreadArg);
+        ArkTSExpression value =
+                new ArkTSExpression.LiteralExpression("42",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        List<ArkTSExpression.ObjectLiteralExpression.ObjectProperty> props =
+                new ArrayList<>();
+        props.add(new ArkTSExpression.ObjectLiteralExpression.ObjectProperty(
+                null, spread));
+        props.add(new ArkTSExpression.ObjectLiteralExpression.ObjectProperty(
+                "x", value));
+        ArkTSExpression.ObjectLiteralExpression expr =
+                new ArkTSExpression.ObjectLiteralExpression(props);
+        assertEquals("{ ...defaults, x: 42 }", expr.toArkTS());
+    }
+
+    @Test
+    void testTemplateLiteralExpression_basic() {
+        ArkTSExpression nameExpr =
+                new ArkTSExpression.VariableExpression("name");
+        ArkTSExpression.TemplateLiteralExpression expr =
+                new ArkTSExpression.TemplateLiteralExpression(
+                        List.of("Hello ", "!"), List.of(nameExpr));
+        assertEquals("`Hello ${name}!`", expr.toArkTS());
+    }
+
+    @Test
+    void testTemplateLiteralExpression_multipleInterpolations() {
+        ArkTSExpression first =
+                new ArkTSExpression.VariableExpression("first");
+        ArkTSExpression last =
+                new ArkTSExpression.VariableExpression("last");
+        ArkTSExpression.TemplateLiteralExpression expr =
+                new ArkTSExpression.TemplateLiteralExpression(
+                        List.of("Hello ", " ", "!"),
+                        List.of(first, last));
+        assertEquals("`Hello ${first} ${last}!`", expr.toArkTS());
+    }
+
+    @Test
+    void testTemplateLiteralExpression_plainText() {
+        ArkTSExpression.TemplateLiteralExpression expr =
+                new ArkTSExpression.TemplateLiteralExpression(
+                        List.of("plain text"), Collections.emptyList());
+        assertEquals("`plain text`", expr.toArkTS());
+    }
+
+    @Test
+    void testTemplateLiteralExpression_escapeBacktick() {
+        ArkTSExpression.TemplateLiteralExpression expr =
+                new ArkTSExpression.TemplateLiteralExpression(
+                        List.of("contains `backtick`"),
+                        Collections.emptyList());
+        assertEquals("`contains \\`backtick\\``", expr.toArkTS());
+    }
+
+    @Test
+    void testTemplateLiteralExpression_escapeDollar() {
+        ArkTSExpression.TemplateLiteralExpression expr =
+                new ArkTSExpression.TemplateLiteralExpression(
+                        List.of("cost: $5"), Collections.emptyList());
+        assertEquals("`cost: \\$5`", expr.toArkTS());
+    }
+
+    @Test
+    void testOptionalChainExpression_dotAccess() {
+        ArkTSExpression obj =
+                new ArkTSExpression.VariableExpression("obj");
+        ArkTSExpression prop =
+                new ArkTSExpression.VariableExpression("name");
+        ArkTSExpression.OptionalChainExpression expr =
+                new ArkTSExpression.OptionalChainExpression(obj, prop, false);
+        assertEquals("obj?.name", expr.toArkTS());
+    }
+
+    @Test
+    void testOptionalChainExpression_bracketAccess() {
+        ArkTSExpression obj =
+                new ArkTSExpression.VariableExpression("obj");
+        ArkTSExpression prop =
+                new ArkTSExpression.VariableExpression("key");
+        ArkTSExpression.OptionalChainExpression expr =
+                new ArkTSExpression.OptionalChainExpression(obj, prop, true);
+        assertEquals("obj?.[key]", expr.toArkTS());
+    }
+
+    @Test
+    void testNullishCoalescingExpression_basic() {
+        ArkTSExpression left =
+                new ArkTSExpression.VariableExpression("value");
+        ArkTSExpression right =
+                new ArkTSExpression.LiteralExpression("default",
+                        ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        ArkTSExpression.NullishCoalescingExpression expr =
+                new ArkTSExpression.NullishCoalescingExpression(left, right);
+        assertEquals("(value ?? \"default\")", expr.toArkTS());
+    }
+
+    @Test
+    void testNullishCoalescingExpression_withNumber() {
+        ArkTSExpression left =
+                new ArkTSExpression.VariableExpression("x");
+        ArkTSExpression right =
+                new ArkTSExpression.LiteralExpression("0",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSExpression.NullishCoalescingExpression expr =
+                new ArkTSExpression.NullishCoalescingExpression(left, right);
+        assertEquals("(x ?? 0)", expr.toArkTS());
+    }
+
+    @Test
+    void testReconstructTemplateLiteral_stringPlusVariable() {
+        ArkTSExpression str = new ArkTSExpression.LiteralExpression("Hello ",
+                ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        ArkTSExpression name = new ArkTSExpression.VariableExpression("name");
+        ArkTSExpression binary = new ArkTSExpression.BinaryExpression(
+                str, "+", name);
+
+        ArkTSDecompiler decomp = new ArkTSDecompiler();
+        ArkTSExpression result =
+                decomp.tryReconstructTemplateLiteral(binary);
+        assertTrue(result instanceof ArkTSExpression.TemplateLiteralExpression);
+        assertEquals("`Hello ${name}`", result.toArkTS());
+    }
+
+    @Test
+    void testReconstructTemplateLiteral_chained() {
+        ArkTSExpression str1 = new ArkTSExpression.LiteralExpression("Hello ",
+                ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        ArkTSExpression name = new ArkTSExpression.VariableExpression("name");
+        ArkTSExpression inner = new ArkTSExpression.BinaryExpression(
+                str1, "+", name);
+        ArkTSExpression str2 = new ArkTSExpression.LiteralExpression("!",
+                ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        ArkTSExpression outer = new ArkTSExpression.BinaryExpression(
+                inner, "+", str2);
+
+        ArkTSDecompiler decomp = new ArkTSDecompiler();
+        ArkTSExpression result =
+                decomp.tryReconstructTemplateLiteral(outer);
+        assertTrue(result instanceof ArkTSExpression.TemplateLiteralExpression);
+        assertEquals("`Hello ${name}!`", result.toArkTS());
+    }
+
+    @Test
+    void testReconstructTemplateLiteral_nonStringNotReconstructed() {
+        ArkTSExpression x = new ArkTSExpression.VariableExpression("x");
+        ArkTSExpression y = new ArkTSExpression.VariableExpression("y");
+        ArkTSExpression binary = new ArkTSExpression.BinaryExpression(
+                x, "+", y);
+
+        ArkTSDecompiler decomp = new ArkTSDecompiler();
+        ArkTSExpression result =
+                decomp.tryReconstructTemplateLiteral(binary);
+        assertFalse(result instanceof ArkTSExpression.TemplateLiteralExpression);
+    }
+
+    @Test
+    void testReconstructTemplateLiteral_nullInput() {
+        ArkTSDecompiler decomp = new ArkTSDecompiler();
+        assertNull(decomp.tryReconstructTemplateLiteral(null));
+    }
+
+    @Test
+    void testDetectNullishCoalescing_fromTernary() {
+        ArkTSExpression x = new ArkTSExpression.VariableExpression("x");
+        ArkTSExpression nullLit = new ArkTSExpression.LiteralExpression("null",
+                ArkTSExpression.LiteralExpression.LiteralKind.NULL);
+        ArkTSExpression condition = new ArkTSExpression.BinaryExpression(
+                x, "===", nullLit);
+        ArkTSExpression defaultVal = new ArkTSExpression.LiteralExpression(
+                "default",
+                ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+
+        ArkTSDecompiler decomp = new ArkTSDecompiler();
+        ArkTSExpression result = decomp.tryDetectNullishCoalescing(
+                condition, defaultVal, x);
+        assertTrue(result instanceof ArkTSExpression.NullishCoalescingExpression);
+        assertEquals("(x ?? \"default\")", result.toArkTS());
+    }
+
+    @Test
+    void testDetectNullishCoalescing_notNullCheck_returnsNull() {
+        ArkTSExpression x = new ArkTSExpression.VariableExpression("x");
+        ArkTSExpression zero = new ArkTSExpression.LiteralExpression("0",
+                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSExpression condition = new ArkTSExpression.BinaryExpression(
+                x, ">", zero);
+        ArkTSExpression one = new ArkTSExpression.LiteralExpression("1",
+                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+
+        ArkTSDecompiler decomp = new ArkTSDecompiler();
+        ArkTSExpression result = decomp.tryDetectNullishCoalescing(
+                condition, one, x);
+        assertNull(result);
+    }
+
+    // --- For-of/for-in statement tests ---
+
+    @Test
+    void testForOfStatement_toArkTS() {
+        ArkTSExpression iterable =
+                new ArkTSExpression.VariableExpression("arr");
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSStatement.ForOfStatement stmt =
+                new ArkTSStatement.ForOfStatement("const", "item",
+                        iterable, body);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.startsWith("for (const item of arr)"));
+        assertTrue(result.contains("{"));
+    }
+
+    @Test
+    void testForOfStatement_withBody() {
+        ArkTSExpression iterable =
+                new ArkTSExpression.VariableExpression("arr");
+        ArkTSExpression value =
+                new ArkTSExpression.VariableExpression("item");
+        List<ArkTSStatement> bodyStmts = List.of(
+                new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.CallExpression(
+                                new ArkTSExpression.VariableExpression("console.log"),
+                                List.of(value))));
+        ArkTSStatement body =
+                new ArkTSStatement.BlockStatement(bodyStmts);
+        ArkTSStatement.ForOfStatement stmt =
+                new ArkTSStatement.ForOfStatement("const", "item",
+                        iterable, body);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.contains("for (const item of arr)"));
+        assertTrue(result.contains("console.log(item)"));
+    }
+
+    @Test
+    void testForOfStatement_withIndent() {
+        ArkTSExpression iterable =
+                new ArkTSExpression.VariableExpression("data");
+        ArkTSStatement body =
+                new ArkTSStatement.BlockStatement(Collections.emptyList());
+        ArkTSStatement.ForOfStatement stmt =
+                new ArkTSStatement.ForOfStatement("const", "x",
+                        iterable, body);
+        String result = stmt.toArkTS(1);
+        assertTrue(result.startsWith("    for (const x of data)"));
+    }
+
+    @Test
+    void testForInStatement_toArkTS() {
+        ArkTSExpression object =
+                new ArkTSExpression.VariableExpression("obj");
+        ArkTSStatement body =
+                new ArkTSStatement.BlockStatement(Collections.emptyList());
+        ArkTSStatement.ForInStatement stmt =
+                new ArkTSStatement.ForInStatement("const", "key",
+                        object, body);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.startsWith("for (const key in obj)"));
+        assertTrue(result.contains("{"));
+    }
+
+    @Test
+    void testForInStatement_withBody() {
+        ArkTSExpression object =
+                new ArkTSExpression.VariableExpression("obj");
+        ArkTSExpression key =
+                new ArkTSExpression.VariableExpression("key");
+        List<ArkTSStatement> bodyStmts = List.of(
+                new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.CallExpression(
+                                new ArkTSExpression.VariableExpression("print"),
+                                List.of(key))));
+        ArkTSStatement body =
+                new ArkTSStatement.BlockStatement(bodyStmts);
+        ArkTSStatement.ForInStatement stmt =
+                new ArkTSStatement.ForInStatement("const", "key",
+                        object, body);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.contains("for (const key in obj)"));
+        assertTrue(result.contains("print(key)"));
+    }
+
+    @Test
+    void testForInStatement_withIndent() {
+        ArkTSExpression object =
+                new ArkTSExpression.VariableExpression("data");
+        ArkTSStatement body =
+                new ArkTSStatement.BlockStatement(Collections.emptyList());
+        ArkTSStatement.ForInStatement stmt =
+                new ArkTSStatement.ForInStatement("const", "k",
+                        object, body);
+        String result = stmt.toArkTS(2);
+        assertTrue(result.startsWith("        for (const k in data)"));
+    }
+
+    @Test
+    void testForOfStatement_getters() {
+        ArkTSExpression iterable =
+                new ArkTSExpression.VariableExpression("items");
+        ArkTSStatement body =
+                new ArkTSStatement.BlockStatement(Collections.emptyList());
+        ArkTSStatement.ForOfStatement stmt =
+                new ArkTSStatement.ForOfStatement("let", "elem",
+                        iterable, body);
+        assertEquals("let", stmt.getVariableKind());
+        assertEquals("elem", stmt.getVariableName());
+        assertEquals("items", stmt.getIterable().toArkTS());
+    }
+
+    @Test
+    void testForInStatement_getters() {
+        ArkTSExpression object =
+                new ArkTSExpression.VariableExpression("target");
+        ArkTSStatement body =
+                new ArkTSStatement.BlockStatement(Collections.emptyList());
+        ArkTSStatement.ForInStatement stmt =
+                new ArkTSStatement.ForInStatement("let", "prop",
+                        object, body);
+        assertEquals("let", stmt.getVariableKind());
+        assertEquals("prop", stmt.getVariableName());
+        assertEquals("target", stmt.getObject().toArkTS());
+    }
+
+    @Test
+    void testDecompile_forOfLoopPattern() {
+        List<ArkInstruction> insns = new ArrayList<>();
+        // offset 0: CREATEARRAYWITHBUFFER (len 3)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.CREATEARRAYWITHBUFFER,
+                "createarraywithbuffer", ArkInstructionFormat.IMM8_IMM16,
+                0, 3, List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE8, 0),
+                        new ArkOperand(ArkOperand.Type.IMMEDIATE16, 0)),
+                false));
+        // offset 3: GETITERATOR (len 2)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.GETITERATOR_IMM8,
+                "getiterator", ArkInstructionFormat.IMM8_V8,
+                3, 2, List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE8, 0),
+                        new ArkOperand(ArkOperand.Type.REGISTER, 0)),
+                false));
+        // offset 5: STA v1 (len 2)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.STA, "sta",
+                ArkInstructionFormat.V8, 5, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 1)),
+                false));
+        // offset 7: LDA v1 (len 2) -- loop header
+        insns.add(new ArkInstruction(ArkOpcodesCompat.LDA, "lda",
+                ArkInstructionFormat.V8, 7, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 1)),
+                false));
+        // offset 9: GETNEXTPROPNAME v1 (len 2)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.GETNEXTPROPNAME,
+                "getnextpropname", ArkInstructionFormat.V8, 9, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 1)),
+                false));
+        // offset 11: STA v2 (len 2)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.STA, "sta",
+                ArkInstructionFormat.V8, 11, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 2)),
+                false));
+        // offset 13: LDA v2 (len 2)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.LDA, "lda",
+                ArkInstructionFormat.V8, 13, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 2)),
+                false));
+        // offset 15: JEQZ_IMM8 → offset 22 (len 2), offset_val = 22-17 = 5
+        insns.add(new ArkInstruction(ArkOpcodesCompat.JEQZ_IMM8, "jeqz",
+                ArkInstructionFormat.IMM8, 15, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE8_SIGNED, 5)),
+                false));
+        // offset 17: STA v3 (len 2) -- loop body
+        insns.add(new ArkInstruction(ArkOpcodesCompat.STA, "sta",
+                ArkInstructionFormat.V8, 17, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 3)),
+                false));
+        // offset 19: JMP_IMM16 → offset 7 (len 3), offset_val = 7-22 = -15
+        insns.add(new ArkInstruction(ArkOpcodesCompat.JMP_IMM16, "jmp",
+                ArkInstructionFormat.IMM16, 19, 3,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE16_SIGNED, -15)),
+                false));
+        // offset 22: RETURNUNDEFINED (len 1)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.RETURNUNDEFINED,
+                "returnundefined", ArkInstructionFormat.NONE, 22, 1,
+                Collections.emptyList(), false));
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result,
+                "Should decompile iterator instructions without error");
+    }
+
+    @Test
+    void testDecompile_iteratorOpcodesHandled() {
+        ArkInstruction getIter = new ArkInstruction(
+                ArkOpcodesCompat.GETITERATOR_IMM8, "getiterator",
+                ArkInstructionFormat.IMM8_V8, 0, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE8, 0),
+                        new ArkOperand(ArkOperand.Type.REGISTER, 0)),
+                false);
+        ArkInstruction closeIter = new ArkInstruction(
+                ArkOpcodesCompat.CLOSEITERATOR_IMM8, "closeiterator",
+                ArkInstructionFormat.IMM8_V8_V8, 0, 3,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE8, 0),
+                        new ArkOperand(ArkOperand.Type.REGISTER, 0),
+                        new ArkOperand(ArkOperand.Type.REGISTER, 1)),
+                false);
+        ArkInstruction getNext = new ArkInstruction(
+                ArkOpcodesCompat.GETNEXTPROPNAME, "getnextpropname",
+                ArkInstructionFormat.V8, 0, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 0)),
+                false);
+        String result = decompiler.decompileInstructions(
+                List.of(getIter, closeIter, getNext,
+                        new ArkInstruction(ArkOpcodesCompat.RETURNUNDEFINED,
+                                "returnundefined", ArkInstructionFormat.NONE,
+                                6, 1, Collections.emptyList(), false)));
+        assertNotNull(result);
+    }
+
+    @Test
+    void testDecompile_forOfWithBreak() {
+        List<ArkInstruction> insns = new ArrayList<>();
+        // offset 0: CREATEARRAYWITHBUFFER (len 3)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.CREATEARRAYWITHBUFFER,
+                "createarraywithbuffer", ArkInstructionFormat.IMM8_IMM16,
+                0, 3, List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE8, 0),
+                        new ArkOperand(ArkOperand.Type.IMMEDIATE16, 0)),
+                false));
+        // offset 3: GETITERATOR (len 2)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.GETITERATOR_IMM8,
+                "getiterator", ArkInstructionFormat.IMM8_V8,
+                3, 2, List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE8, 0),
+                        new ArkOperand(ArkOperand.Type.REGISTER, 0)),
+                false));
+        // offset 5: STA v1 (len 2)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.STA, "sta",
+                ArkInstructionFormat.V8, 5, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 1)),
+                false));
+        // offset 7: LDA v1 (len 2) -- loop header
+        insns.add(new ArkInstruction(ArkOpcodesCompat.LDA, "lda",
+                ArkInstructionFormat.V8, 7, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 1)),
+                false));
+        // offset 9: GETNEXTPROPNAME v1 (len 2)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.GETNEXTPROPNAME,
+                "getnextpropname", ArkInstructionFormat.V8, 9, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 1)),
+                false));
+        // offset 11: STA v2 (len 2)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.STA, "sta",
+                ArkInstructionFormat.V8, 11, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 2)),
+                false));
+        // offset 13: LDA v2 (len 2)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.LDA, "lda",
+                ArkInstructionFormat.V8, 13, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 2)),
+                false));
+        // offset 15: JEQZ_IMM8 → offset 25 (len 2), offset_val = 25-17 = 8
+        insns.add(new ArkInstruction(ArkOpcodesCompat.JEQZ_IMM8, "jeqz",
+                ArkInstructionFormat.IMM8, 15, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE8_SIGNED, 8)),
+                false));
+        // offset 17: STA v3 (len 2) -- loop body start
+        insns.add(new ArkInstruction(ArkOpcodesCompat.STA, "sta",
+                ArkInstructionFormat.V8, 17, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 3)),
+                false));
+        // offset 19: JMP_IMM16 → offset 25 (len 3) -- break out of loop
+        insns.add(new ArkInstruction(ArkOpcodesCompat.JMP_IMM16, "jmp",
+                ArkInstructionFormat.IMM16, 19, 3,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE16_SIGNED, 3)),
+                false));
+        // offset 22: JMP_IMM16 → offset 7 (len 3) -- continue loop back
+        // offset_val = 7 - 25 = -18
+        insns.add(new ArkInstruction(ArkOpcodesCompat.JMP_IMM16, "jmp",
+                ArkInstructionFormat.IMM16, 22, 3,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE16_SIGNED, -18)),
+                false));
+        // offset 25: RETURNUNDEFINED (len 1)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.RETURNUNDEFINED,
+                "returnundefined", ArkInstructionFormat.NONE, 25, 1,
+                Collections.emptyList(), false));
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result);
+    }
+
+    @Test
+    void testDecompile_forOfWithContinue() {
+        List<ArkInstruction> insns = new ArrayList<>();
+        // offset 0: CREATEARRAYWITHBUFFER (len 3)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.CREATEARRAYWITHBUFFER,
+                "createarraywithbuffer", ArkInstructionFormat.IMM8_IMM16,
+                0, 3, List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE8, 0),
+                        new ArkOperand(ArkOperand.Type.IMMEDIATE16, 0)),
+                false));
+        // offset 3: GETITERATOR (len 2)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.GETITERATOR_IMM8,
+                "getiterator", ArkInstructionFormat.IMM8_V8,
+                3, 2, List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE8, 0),
+                        new ArkOperand(ArkOperand.Type.REGISTER, 0)),
+                false));
+        // offset 5: STA v1 (len 2)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.STA, "sta",
+                ArkInstructionFormat.V8, 5, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 1)),
+                false));
+        // offset 7: LDA v1 (len 2) -- loop header
+        insns.add(new ArkInstruction(ArkOpcodesCompat.LDA, "lda",
+                ArkInstructionFormat.V8, 7, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 1)),
+                false));
+        // offset 9: GETNEXTPROPNAME v1 (len 2)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.GETNEXTPROPNAME,
+                "getnextpropname", ArkInstructionFormat.V8, 9, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 1)),
+                false));
+        // offset 11: STA v2 (len 2)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.STA, "sta",
+                ArkInstructionFormat.V8, 11, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 2)),
+                false));
+        // offset 13: LDA v2 (len 2)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.LDA, "lda",
+                ArkInstructionFormat.V8, 13, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 2)),
+                false));
+        // offset 15: JEQZ_IMM8 → offset 25 (len 2), offset_val = 25-17 = 8
+        insns.add(new ArkInstruction(ArkOpcodesCompat.JEQZ_IMM8, "jeqz",
+                ArkInstructionFormat.IMM8, 15, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE8_SIGNED, 8)),
+                false));
+        // offset 17: STA v3 (len 2) -- loop body start
+        insns.add(new ArkInstruction(ArkOpcodesCompat.STA, "sta",
+                ArkInstructionFormat.V8, 17, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 3)),
+                false));
+        // offset 19: JMP_IMM16 → offset 7 (len 3) -- continue (back to header)
+        // offset_val = 7 - 22 = -15
+        insns.add(new ArkInstruction(ArkOpcodesCompat.JMP_IMM16, "jmp",
+                ArkInstructionFormat.IMM16, 19, 3,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE16_SIGNED, -15)),
+                false));
+        // offset 22: JMP_IMM16 → offset 7 (len 3) -- loop back edge
+        // offset_val = 7 - 25 = -18
+        insns.add(new ArkInstruction(ArkOpcodesCompat.JMP_IMM16, "jmp",
+                ArkInstructionFormat.IMM16, 22, 3,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE16_SIGNED, -18)),
+                false));
+        // offset 25: RETURNUNDEFINED (len 1)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.RETURNUNDEFINED,
+                "returnundefined", ArkInstructionFormat.NONE, 25, 1,
+                Collections.emptyList(), false));
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result);
+    }
+
+    @Test
+    void testDecompile_cfgDetectsIteratorPattern() {
+        List<ArkInstruction> insns = new ArrayList<>();
+        insns.add(new ArkInstruction(ArkOpcodesCompat.GETITERATOR_IMM8,
+                "getiterator", ArkInstructionFormat.IMM8_V8,
+                0, 2, List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE8, 0),
+                        new ArkOperand(ArkOperand.Type.REGISTER, 0)),
+                false));
+        insns.add(new ArkInstruction(ArkOpcodesCompat.STA, "sta",
+                ArkInstructionFormat.V8, 2, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 1)),
+                false));
+        ControlFlowGraph cfg = ControlFlowGraph.build(insns);
+        assertNotNull(cfg);
+        assertEquals(1, cfg.getBlocks().size());
+    }
+
+    @Test
+    void testDecompile_forInLoopPattern() {
+        List<ArkInstruction> insns = new ArrayList<>();
+        // offset 0: GETPROPITERATOR (len 1)
+        insns.add(new ArkInstruction(0x66,
+                "getpropiterator", ArkInstructionFormat.NONE,
+                0, 1, Collections.emptyList(), false));
+        // offset 1: STA v1 (len 2)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.STA, "sta",
+                ArkInstructionFormat.V8, 1, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 1)),
+                false));
+        // offset 3: LDA v1 (len 2) -- loop header
+        insns.add(new ArkInstruction(ArkOpcodesCompat.LDA, "lda",
+                ArkInstructionFormat.V8, 3, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 1)),
+                false));
+        // offset 5: GETNEXTPROPNAME v1 (len 2)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.GETNEXTPROPNAME,
+                "getnextpropname", ArkInstructionFormat.V8, 5, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 1)),
+                false));
+        // offset 7: STA v2 (len 2)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.STA, "sta",
+                ArkInstructionFormat.V8, 7, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 2)),
+                false));
+        // offset 9: LDA v2 (len 2)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.LDA, "lda",
+                ArkInstructionFormat.V8, 9, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 2)),
+                false));
+        // offset 11: JEQZ_IMM8 → offset 18 (len 2), offset_val = 18-13 = 5
+        insns.add(new ArkInstruction(ArkOpcodesCompat.JEQZ_IMM8, "jeqz",
+                ArkInstructionFormat.IMM8, 11, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE8_SIGNED, 5)),
+                false));
+        // offset 13: STA v3 (len 2) -- loop body
+        insns.add(new ArkInstruction(ArkOpcodesCompat.STA, "sta",
+                ArkInstructionFormat.V8, 13, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 3)),
+                false));
+        // offset 15: JMP_IMM16 → offset 3 (len 3), offset_val = 3-18 = -15
+        insns.add(new ArkInstruction(ArkOpcodesCompat.JMP_IMM16, "jmp",
+                ArkInstructionFormat.IMM16, 15, 3,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE16_SIGNED, -15)),
+                false));
+        // offset 18: RETURNUNDEFINED (len 1)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.RETURNUNDEFINED,
+                "returnundefined", ArkInstructionFormat.NONE, 18, 1,
+                Collections.emptyList(), false));
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result,
+                "Should decompile for-in instructions without error");
+    }
+
+    @Test
+    void testDecompile_nestedForOfLoop() {
+        ArkTSExpression outerIterable =
+                new ArkTSExpression.VariableExpression("matrix");
+        ArkTSExpression innerIterable =
+                new ArkTSExpression.VariableExpression("row");
+        ArkTSStatement innerBody =
+                new ArkTSStatement.BlockStatement(Collections.emptyList());
+        ArkTSStatement innerForOf =
+                new ArkTSStatement.ForOfStatement("const", "cell",
+                        innerIterable, innerBody);
+        ArkTSStatement outerBody =
+                new ArkTSStatement.BlockStatement(List.of(innerForOf));
+        ArkTSStatement outerForOf =
+                new ArkTSStatement.ForOfStatement("const", "row",
+                        outerIterable, outerBody);
+        String result = outerForOf.toArkTS(0);
+        assertTrue(result.contains("for (const row of matrix)"));
+        assertTrue(result.contains("for (const cell of row)"));
+    }
+
+    @Test
+    void testForOfStatement_forStatementArkTSOutput() {
+        ArkTSExpression init =
+                new ArkTSExpression.LiteralExpression("0",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSStatement initStmt = new ArkTSStatement.VariableDeclaration(
+                "let", "i", null, init);
+        ArkTSExpression condition = new ArkTSExpression.BinaryExpression(
+                new ArkTSExpression.VariableExpression("i"), "<",
+                new ArkTSExpression.LiteralExpression("10",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER));
+        ArkTSExpression update = new ArkTSExpression.BinaryExpression(
+                new ArkTSExpression.VariableExpression("i"), "+",
+                new ArkTSExpression.LiteralExpression("1",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER));
+        ArkTSStatement body =
+                new ArkTSStatement.BlockStatement(Collections.emptyList());
+        ArkTSStatement forStmt = new ArkTSStatement.ForStatement(
+                initStmt, condition, update, body);
+        String result = forStmt.toArkTS(0);
+        assertTrue(result.startsWith("for ("));
+        assertTrue(result.contains("let i = 0"));
+        assertTrue(result.contains("i < 10"));
+        assertTrue(result.contains("i + 1"));
+    }
 }
