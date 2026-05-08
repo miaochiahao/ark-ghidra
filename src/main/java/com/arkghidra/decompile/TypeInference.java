@@ -134,7 +134,8 @@ public class TypeInference {
      * @param inferredType the inferred type (may be null)
      * @return the type annotation string, or null if type is unknown or redundant
      */
-    public static String formatTypeAnnotation(String registerName, String inferredType) {
+    public static String formatTypeAnnotation(String registerName,
+            String inferredType) {
         if (inferredType == null) {
             return null;
         }
@@ -143,6 +144,71 @@ public class TypeInference {
             return null;
         }
         return inferredType;
+    }
+
+    /**
+     * Returns a type annotation suitable for a variable declaration,
+     * omitting the annotation when the initializer makes the type obvious.
+     *
+     * <p>For example, {@code let x: number = 42} simplifies to
+     * {@code let x = 42} because the numeric literal makes the type clear.
+     * Similarly, boolean and string literals do not need annotations.
+     *
+     * @param inferredType the inferred type (may be null)
+     * @param initializer the initializer expression (may be null)
+     * @return the type annotation string, or null if redundant
+     */
+    public static String formatTypeAnnotationForDeclaration(
+            String inferredType, ArkTSExpression initializer) {
+        if (inferredType == null) {
+            return null;
+        }
+        if ("Object".equals(inferredType)) {
+            return null;
+        }
+        if (isTypeObviousFromLiteral(inferredType, initializer)) {
+            return null;
+        }
+        return inferredType;
+    }
+
+    /**
+     * Checks whether the type is obvious from the literal initializer.
+     *
+     * @param type the inferred type
+     * @param expr the initializer expression
+     * @return true if the type is obvious from the expression
+     */
+    static boolean isTypeObviousFromLiteral(String type,
+            ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.LiteralExpression)) {
+            return false;
+        }
+        ArkTSExpression.LiteralExpression.LiteralKind kind =
+                ((ArkTSExpression.LiteralExpression) expr).getKind();
+        switch (type) {
+            case "number":
+                return kind == ArkTSExpression.LiteralExpression
+                        .LiteralKind.NUMBER
+                        || kind == ArkTSExpression.LiteralExpression
+                                .LiteralKind.NAN
+                        || kind == ArkTSExpression.LiteralExpression
+                                .LiteralKind.INFINITY;
+            case "boolean":
+                return kind == ArkTSExpression.LiteralExpression
+                        .LiteralKind.BOOLEAN;
+            case "string":
+                return kind == ArkTSExpression.LiteralExpression
+                        .LiteralKind.STRING;
+            case "null":
+                return kind == ArkTSExpression.LiteralExpression
+                        .LiteralKind.NULL;
+            case "undefined":
+                return kind == ArkTSExpression.LiteralExpression
+                        .LiteralKind.UNDEFINED;
+            default:
+                return false;
+        }
     }
 
     /**

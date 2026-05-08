@@ -3,6 +3,7 @@ package com.arkghidra.decompile;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -163,7 +164,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v0: number = 10"));
+        assertTrue(result.contains("let v0 = 10"));
     }
 
     @Test
@@ -177,7 +178,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v0: number = 5"));
+        assertTrue(result.contains("let v0 = 5"));
         assertTrue(result.contains("v0 = 10"));
     }
 
@@ -206,8 +207,8 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v0: boolean = true"));
-        assertTrue(result.contains("let v1: boolean = false"));
+        assertTrue(result.contains("let v0 = true"));
+        assertTrue(result.contains("let v1 = false"));
     }
 
     @Test
@@ -618,7 +619,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileMethod(method, code, null);
         assertNotNull(result);
         assertTrue(result.contains("function getAnswer()"));
-        assertTrue(result.contains("let v0: number = 42"));
+        assertTrue(result.contains("let v0 = 42"));
         assertTrue(result.contains("return v0"));
     }
 
@@ -801,8 +802,8 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v0: number = 2"));
-        assertTrue(result.contains("let v1: number = 3"));
+        assertTrue(result.contains("let v0 = 2"));
+        assertTrue(result.contains("let v1 = 3"));
         assertTrue(result.contains("let v2: number = (v0 + v1)"));
         assertTrue(result.contains("return v2"));
     }
@@ -1226,7 +1227,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v0: number = 42"));
+        assertTrue(result.contains("let v0 = 42"));
     }
 
     @Test
@@ -1239,7 +1240,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v0: string = \"str_0\""));
+        assertTrue(result.contains("let v0 = \"str_0\""));
     }
 
     @Test
@@ -1252,7 +1253,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v0: boolean = true"));
+        assertTrue(result.contains("let v0 = true"));
     }
 
     @Test
@@ -2825,7 +2826,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         // Without an ABC file, it should still produce a placeholder
         assertTrue(result.contains("str_0"));
-        assertTrue(result.contains("let v0: string"));
+        assertTrue(result.contains("let v0 = \"str_0\""));
     }
 
     // --- 5. Cross-method reference resolution ---
@@ -2936,7 +2937,7 @@ class ArkTSDecompilerTest {
                 AbcAccessFlags.ACC_PUBLIC, 0, 0);
         String result = decompiler.decompileMethod(method, code, null);
         assertNotNull(result);
-        assertTrue(result.contains("let v0: number = 42"));
+        assertTrue(result.contains("let v0 = 42"));
         // The trailing return; should be stripped
         assertFalse(result.contains("return;"));
     }
@@ -5160,8 +5161,8 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertNotNull(result,
                 "Should produce output even with unknown opcode");
-        assertTrue(result.contains("unhandled"),
-                "Should contain comment about unhandled opcode, got: "
+        assertTrue(result.contains("unknown_opcode"),
+                "Should contain comment about unknown opcode, got: "
                         + result);
     }
 
@@ -5233,7 +5234,7 @@ class ArkTSDecompilerTest {
                 Collections.emptyList(), false);
         List<ArkInstruction> insns = List.of(unknownInsn, retInsn);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("unhandled: reserved_future_opcode"),
+        assertTrue(result.contains("reserved_future_opcode"),
                 "Should contain placeholder comment for unknown opcode, "
                         + "got: " + result);
     }
@@ -5258,7 +5259,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertNotNull(result,
                 "Should produce output despite unhandled instruction");
-        assertTrue(result.contains("unhandled: custom_unhandled"),
+        assertTrue(result.contains("custom_unhandled"),
                 "Should contain comment about unhandled instruction");
     }
 
@@ -5890,6 +5891,209 @@ class ArkTSDecompilerTest {
                 "SimpleClass", null, Collections.emptyList());
         String ns = ArkTSDecompiler.extractNamespace(cls);
         assertNull(ns);
+    }
+
+    // --- Issue #42: Output quality and placeholder removal tests ---
+
+    @Test
+    void testNoPlaceholderForCommonInstructions() {
+        // ldai 42; sta v0; ldtrue; sta v1; ldfalse; sta v2;
+        // ldundefined; sta v3; ldnull; sta v4; return
+        byte[] code = concat(
+            bytes(0x62), le32(42),      // ldai 42
+            bytes(0x61, 0x00),           // sta v0
+            bytes(0x02),                 // ldtrue
+            bytes(0x61, 0x01),           // sta v1
+            bytes(0x03),                 // ldfalse
+            bytes(0x61, 0x02),           // sta v2
+            bytes(0x00),                 // ldundefined
+            bytes(0x61, 0x03),           // sta v3
+            bytes(0x01),                 // ldnull
+            bytes(0x61, 0x04),           // sta v4
+            bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertFalse(result.contains("unhandled"),
+                "Common instructions should not produce unhandled output: "
+                        + result);
+        assertFalse(result.contains("/* op */"),
+                "Should not produce operator placeholder: " + result);
+        assertTrue(result.contains("let v0 = 42"));
+        assertTrue(result.contains("let v1 = true"));
+        assertTrue(result.contains("let v2 = false"));
+        assertTrue(result.contains("let v3 = undefined"));
+        assertTrue(result.contains("let v4 = null"));
+    }
+
+    @Test
+    void testTypeAnnotationSimplification_numberLiteral() {
+        // ldai 100; sta v0; return
+        byte[] code = concat(
+            bytes(0x62), le32(100),
+            bytes(0x61, 0x00),
+            bytes(0x64)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("let v0 = 100"),
+                "Number literal should not have redundant type annotation: "
+                        + result);
+        assertFalse(result.contains("let v0: number = 100"),
+                "Should not have ': number' for literal 100: " + result);
+    }
+
+    @Test
+    void testTypeAnnotationPreserved_forComputedValue() {
+        // lda v0; add2 0, v1; sta v2; return
+        byte[] code = concat(
+            bytes(0x60, 0x00),
+            bytes(0x0A, 0x00, 0x01),
+            bytes(0x61, 0x02),
+            bytes(0x64)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("let v2: number = (v0 + v1)"),
+                "Computed value should preserve type annotation: " + result);
+    }
+
+    @Test
+    void testTypeAnnotationSimplification_booleanLiteral() {
+        // ldtrue; sta v0; ldfalse; sta v1; return
+        byte[] code = concat(
+            bytes(0x02),
+            bytes(0x61, 0x00),
+            bytes(0x03),
+            bytes(0x61, 0x01),
+            bytes(0x64)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertFalse(result.contains(": boolean = true"),
+                "Boolean literal should not have redundant annotation: "
+                        + result);
+        assertFalse(result.contains(": boolean = false"),
+                "Boolean literal should not have redundant annotation: "
+                        + result);
+    }
+
+    @Test
+    void testSemicolonConsistency_allStatements() {
+        // ldai 1; sta v0; lda v0; return
+        byte[] code = concat(
+            bytes(0x62), le32(1),
+            bytes(0x61, 0x00),
+            bytes(0x60, 0x00),
+            bytes(0x64)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        String[] lines = result.split("\n");
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (!trimmed.isEmpty() && !trimmed.startsWith("//")) {
+                assertTrue(trimmed.endsWith(";"),
+                        "Every statement should end with semicolon: '"
+                                + trimmed + "'");
+            }
+        }
+    }
+
+    @Test
+    void testFormatting_multipleStatements() {
+        // ldai 10; sta v0; ldai 20; sta v1; lda v0; add2 0, v1; sta v2;
+        // return v2
+        byte[] code = concat(
+            bytes(0x62), le32(10),       // ldai 10
+            bytes(0x61, 0x00),           // sta v0
+            bytes(0x62), le32(20),       // ldai 20
+            bytes(0x61, 0x01),           // sta v1
+            bytes(0x60, 0x00),           // lda v0
+            bytes(0x0A, 0x00, 0x01),     // add2 0, v1
+            bytes(0x61, 0x02),           // sta v2
+            bytes(0x60, 0x02),           // lda v2
+            bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("let v0 = 10;"),
+                "First declaration should have no type annotation: "
+                        + result);
+        assertTrue(result.contains("let v1 = 20;"),
+                "Second declaration should have no type annotation: "
+                        + result);
+        assertTrue(result.contains("let v2: number = (v0 + v1);"),
+                "Computed result should have type annotation: " + result);
+        assertTrue(result.contains("return v2;"),
+                "Return should have semicolon: " + result);
+    }
+
+    @Test
+    void testTypeInference_isTypeObviousFromLiteral_number() {
+        ArkTSExpression lit = new ArkTSExpression.LiteralExpression("42",
+                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        assertTrue(TypeInference.isTypeObviousFromLiteral("number", lit));
+        assertFalse(TypeInference.isTypeObviousFromLiteral("string", lit));
+    }
+
+    @Test
+    void testTypeInference_isTypeObviousFromLiteral_boolean() {
+        ArkTSExpression lit = new ArkTSExpression.LiteralExpression("true",
+                ArkTSExpression.LiteralExpression.LiteralKind.BOOLEAN);
+        assertTrue(TypeInference.isTypeObviousFromLiteral("boolean", lit));
+        assertFalse(TypeInference.isTypeObviousFromLiteral("number", lit));
+    }
+
+    @Test
+    void testTypeInference_isTypeObviousFromLiteral_string() {
+        ArkTSExpression lit = new ArkTSExpression.LiteralExpression("hello",
+                ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        assertTrue(TypeInference.isTypeObviousFromLiteral("string", lit));
+    }
+
+    @Test
+    void testTypeInference_isTypeObviousFromLiteral_nonLiteralNotObvious() {
+        ArkTSExpression varExpr =
+                new ArkTSExpression.VariableExpression("v0");
+        assertFalse(TypeInference.isTypeObviousFromLiteral("number",
+                varExpr));
+        assertFalse(TypeInference.isTypeObviousFromLiteral("string",
+                varExpr));
+    }
+
+    @Test
+    void testTypeInference_formatTypeAnnotationForDeclaration_nullType() {
+        assertNull(TypeInference.formatTypeAnnotationForDeclaration(null,
+                new ArkTSExpression.LiteralExpression("42",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER)));
+    }
+
+    @Test
+    void testTypeInference_formatTypeAnnotationForDeclaration_objectSkipped() {
+        assertEquals(null,
+                TypeInference.formatTypeAnnotationForDeclaration("Object",
+                        new ArkTSExpression.VariableExpression("v0")));
+    }
+
+    @Test
+    void testDescriptiveFallbackForUnknownOpcode() {
+        ArkInstruction unknownInsn = new ArkInstruction(
+                0xEE, "custom_op", ArkInstructionFormat.IMM8,
+                0, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE8, 7)),
+                false);
+        ArkInstruction retInsn = new ArkInstruction(
+                ArkOpcodesCompat.RETURNUNDEFINED, "returnundefined",
+                ArkInstructionFormat.NONE, 2, 1,
+                Collections.emptyList(), false);
+        List<ArkInstruction> insns = List.of(unknownInsn, retInsn);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("custom_op"),
+                "Should contain mnemonic for unknown opcode: " + result);
+        assertTrue(result.contains("7"),
+                "Should contain operand values: " + result);
     }
 
 }

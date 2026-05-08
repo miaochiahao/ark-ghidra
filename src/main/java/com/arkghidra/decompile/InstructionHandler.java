@@ -286,11 +286,46 @@ class InstructionHandler {
 
         // --- Define getter/setter by value ---
         if (opcode == ArkOpcodesCompat.DEFINEGETTERSETTERBYVALUE) {
+            ArkTSExpression obj = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            int keyReg = (int) operands.get(
+                    operands.size() - 2).getValue();
+            int getterReg = (int) operands.get(
+                    operands.size() - 1).getValue();
+            ArkTSExpression prop =
+                    new ArkTSExpression.VariableExpression("v" + keyReg);
+            ArkTSExpression getter =
+                    new ArkTSExpression.VariableExpression("v" + getterReg);
+            ArkTSExpression getterPair =
+                    new ArkTSExpression.MemberExpression(
+                            new ArkTSExpression.LiteralExpression("get",
+                                    ArkTSExpression.LiteralExpression
+                                            .LiteralKind.STRING),
+                            getter, false);
+            ArkTSExpression setterPair = null;
+            if (operands.size() >= 4) {
+                int setterReg = (int) operands.get(
+                        operands.size() - 3).getValue();
+                if (setterReg != getterReg) {
+                    setterPair =
+                            new ArkTSExpression.MemberExpression(
+                                    new ArkTSExpression.LiteralExpression(
+                                            "set",
+                                            ArkTSExpression.LiteralExpression
+                                                    .LiteralKind.STRING),
+                                    new ArkTSExpression.VariableExpression(
+                                            "v" + setterReg),
+                                    false);
+                }
+            }
+            ArkTSExpression target =
+                    new ArkTSExpression.MemberExpression(obj, prop, true);
             return new StatementResult(
                     new ArkTSStatement.ExpressionStatement(
-                            new ArkTSExpression.VariableExpression(
-                                    "/* definegettersetterbyvalue */")),
-                    null);
+                            new ArkTSExpression.AssignExpression(
+                                    target, getterPair)),
+                    accValue);
         }
 
         // --- Delete object property ---
@@ -481,12 +516,22 @@ class InstructionHandler {
             return result;
         }
 
-        // --- Fallback: emit a comment for unhandled opcode ---
-        String fallbackMsg = "unhandled: " + insn.getMnemonic();
+        // --- Fallback: emit a descriptive comment for unhandled opcode ---
+        String mnemonic = insn.getMnemonic();
+        StringBuilder fb = new StringBuilder();
+        fb.append("/* ").append(mnemonic).append("(");
+        List<ArkOperand> fbOperands = insn.getOperands();
+        for (int i = 0; i < fbOperands.size(); i++) {
+            if (i > 0) {
+                fb.append(", ");
+            }
+            fb.append(fbOperands.get(i).getValue());
+        }
+        fb.append(") */");
         return new StatementResult(
                 new ArkTSStatement.ExpressionStatement(
                         new ArkTSExpression.VariableExpression(
-                                "/* " + fallbackMsg + " */")),
+                                fb.toString())),
                 null);
     }
 
@@ -547,12 +592,12 @@ class InstructionHandler {
         int reg = (int) operands.get(0).getValue();
         String varName = "v" + reg;
         if (accValue != null) {
+            String accType =
+                    OperatorHandler.getAccType(accValue, typeInf);
+            typeInf.setRegisterType(varName, accType);
             String typeAnnotation =
-                    TypeInference.formatTypeAnnotation(varName,
-                            OperatorHandler.getAccType(accValue, typeInf));
-            OperatorHandler.getAccType(accValue, typeInf);
-            typeInf.setRegisterType(varName,
-                    OperatorHandler.getAccType(accValue, typeInf));
+                    TypeInference.formatTypeAnnotationForDeclaration(
+                            accType, accValue);
 
             if (!declaredVars.contains(varName)
                     && !(reg < ctx.numArgs)) {

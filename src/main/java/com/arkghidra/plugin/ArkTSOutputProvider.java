@@ -1,6 +1,7 @@
 package com.arkghidra.plugin;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Font;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
@@ -15,8 +16,12 @@ import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
-import javax.swing.JTextArea;
+import javax.swing.JTextPane;
 import javax.swing.JToolBar;
+import javax.swing.text.BadLocationException;
+import javax.swing.text.SimpleAttributeSet;
+import javax.swing.text.StyleConstants;
+import javax.swing.text.StyledDocument;
 
 import docking.ComponentProvider;
 import docking.Tool;
@@ -26,29 +31,44 @@ import ghidra.util.HelpLocation;
 import ghidra.util.Msg;
 
 /**
- * Component provider that displays decompiled ArkTS source code.
+ * Component provider that displays decompiled ArkTS source code
+ * with syntax highlighting.
  *
- * <p>Provides a text area with monospaced font for viewing results, along
- * with toolbar actions for copying to clipboard and saving to file.</p>
+ * <p>Provides a styled text pane with monospaced font for viewing
+ * results, along with toolbar actions for copying to clipboard and
+ * saving to file. ArkTS keywords, types, strings, comments,
+ * decorators, and numbers are each rendered in a distinct color.</p>
  */
 public class ArkTSOutputProvider extends ComponentProvider {
 
     private static final String OWNER =
             ArkTSOutputProvider.class.getSimpleName();
 
+    // Syntax highlighting colors
+    private static final Color COLOR_KEYWORD = new Color(0x0000CC);
+    private static final Color COLOR_TYPE = new Color(0x008080);
+    private static final Color COLOR_STRING = new Color(0x008000);
+    private static final Color COLOR_COMMENT = new Color(0x808080);
+    private static final Color COLOR_DECORATOR = new Color(0x800080);
+    private static final Color COLOR_NUMBER = new Color(0xFF8C00);
+    private static final Color COLOR_MODIFIER = new Color(0x0000CC);
+    private static final Color COLOR_PLAIN = Color.BLACK;
+
     private final JPanel mainPanel;
-    private final JTextArea codeArea;
+    private final JTextPane codePane;
     private final JLabel headerLabel;
+    private final ArkTSColorizer colorizer;
 
     public ArkTSOutputProvider(Tool tool, String owner) {
         super(tool, "ArkTS Output", owner);
 
-        codeArea = new JTextArea(20, 60);
-        codeArea.setEditable(false);
-        codeArea.setFont(new Font("Monospaced", Font.PLAIN, 13));
-        codeArea.setTabSize(4);
+        colorizer = new ArkTSColorizer();
 
-        JScrollPane scrollPane = new JScrollPane(codeArea);
+        codePane = new JTextPane();
+        codePane.setEditable(false);
+        codePane.setFont(new Font("Monospaced", Font.PLAIN, 13));
+
+        JScrollPane scrollPane = new JScrollPane(codePane);
 
         headerLabel = new JLabel("No decompiled code");
 
@@ -74,15 +94,14 @@ public class ArkTSOutputProvider extends ComponentProvider {
     }
 
     /**
-     * Displays decompiled ArkTS source code.
+     * Displays decompiled ArkTS source code with syntax highlighting.
      *
      * @param functionName the name of the decompiled function
      * @param code the decompiled source code
      */
     public void showDecompiledCode(String functionName, String code) {
         headerLabel.setText("Decompiled: " + functionName);
-        codeArea.setText(code);
-        codeArea.setCaretPosition(0);
+        renderHighlightedCode(code);
     }
 
     /**
@@ -92,7 +111,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
      */
     public void showMessage(String message) {
         headerLabel.setText("Info");
-        codeArea.setText(message);
+        codePane.setText(message);
     }
 
     /**
@@ -101,7 +120,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
      * @return the code text
      */
     public String getCodeText() {
-        return codeArea.getText();
+        return codePane.getText();
     }
 
     private void addToolbarButtons(JToolBar toolBar) {
@@ -148,8 +167,108 @@ public class ArkTSOutputProvider extends ComponentProvider {
         addLocalAction(saveAction);
     }
 
+    private void renderHighlightedCode(String code) {
+        StyledDocument doc = codePane.getStyledDocument();
+        try {
+            doc.remove(0, doc.getLength());
+        } catch (BadLocationException e) {
+            Msg.warn(OWNER, "Failed to clear document: " + e.getMessage());
+            codePane.setText(code);
+            return;
+        }
+
+        java.util.List<java.util.List<ArkTSColorizer.StyledSegment>>
+                allLines = colorizer.colorizeSource(code);
+
+        SimpleAttributeSet plainStyle = createStyle(COLOR_PLAIN, false);
+        SimpleAttributeSet keywordStyle = createStyle(
+                COLOR_KEYWORD, true);
+        SimpleAttributeSet typeStyle = createStyle(COLOR_TYPE, true);
+        SimpleAttributeSet stringStyle = createStyle(COLOR_STRING, false);
+        SimpleAttributeSet commentStyle = createStyle(
+                COLOR_COMMENT, false);
+        SimpleAttributeSet decoratorStyle = createStyle(
+                COLOR_DECORATOR, true);
+        SimpleAttributeSet numberStyle = createStyle(COLOR_NUMBER, false);
+        SimpleAttributeSet modifierStyle = createStyle(
+                COLOR_MODIFIER, true);
+
+        for (int i = 0; i < allLines.size(); i++) {
+            java.util.List<ArkTSColorizer.StyledSegment> lineSegments =
+                    allLines.get(i);
+            for (ArkTSColorizer.StyledSegment seg : lineSegments) {
+                SimpleAttributeSet style =
+                        styleForType(seg.getTokenType(),
+                                plainStyle, keywordStyle, typeStyle,
+                                stringStyle, commentStyle,
+                                decoratorStyle, numberStyle,
+                                modifierStyle);
+                try {
+                    doc.insertString(doc.getLength(),
+                            seg.getText(), style);
+                } catch (BadLocationException e) {
+                    Msg.warn(OWNER,
+                            "Failed to insert styled text: "
+                                    + e.getMessage());
+                }
+            }
+            if (i < allLines.size() - 1) {
+                try {
+                    doc.insertString(doc.getLength(), "\n",
+                            plainStyle);
+                } catch (BadLocationException e) {
+                    Msg.warn(OWNER,
+                            "Failed to insert newline: "
+                                    + e.getMessage());
+                }
+            }
+        }
+
+        codePane.setCaretPosition(0);
+    }
+
+    private static SimpleAttributeSet styleForType(
+            ArkTSColorizer.TokenType type,
+            SimpleAttributeSet plainStyle,
+            SimpleAttributeSet keywordStyle,
+            SimpleAttributeSet typeStyle,
+            SimpleAttributeSet stringStyle,
+            SimpleAttributeSet commentStyle,
+            SimpleAttributeSet decoratorStyle,
+            SimpleAttributeSet numberStyle,
+            SimpleAttributeSet modifierStyle) {
+        switch (type) {
+            case KEYWORD:
+                return keywordStyle;
+            case TYPE:
+                return typeStyle;
+            case STRING:
+                return stringStyle;
+            case COMMENT:
+                return commentStyle;
+            case DECORATOR:
+                return decoratorStyle;
+            case NUMBER:
+                return numberStyle;
+            case MODIFIER:
+                return modifierStyle;
+            default:
+                return plainStyle;
+        }
+    }
+
+    private static SimpleAttributeSet createStyle(Color color,
+            boolean bold) {
+        SimpleAttributeSet style = new SimpleAttributeSet();
+        StyleConstants.setForeground(style, color);
+        StyleConstants.setBold(style, bold);
+        StyleConstants.setFontFamily(style, "Monospaced");
+        StyleConstants.setFontSize(style, 13);
+        return style;
+    }
+
     private void copyToClipboard() {
-        String text = codeArea.getText();
+        String text = codePane.getText();
         if (text == null || text.isEmpty()) {
             return;
         }
@@ -159,7 +278,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
     }
 
     private void saveToFile() {
-        String text = codeArea.getText();
+        String text = codePane.getText();
         if (text == null || text.isEmpty()) {
             Msg.warn(OWNER, "No code to save");
             return;
@@ -183,7 +302,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
     }
 
     private void clearOutput() {
-        codeArea.setText("");
+        codePane.setText("");
         headerLabel.setText("No decompiled code");
     }
 }
