@@ -242,6 +242,11 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Constant folding:** `OperatorHandler.tryFoldConstants()` evaluates binary expressions with two numeric literal operands at decompile time. Supports +, -, *, /, %, &, |, ^, <<, >>, >>>. Returns `BinaryExpression` unchanged when operands aren't both numeric.
 - **Dead code elimination:** `ControlFlowReconstructor.eliminateDeadCode()` removes top-level statements after `return`/`throw` terminators. Simple but effective for removing unreachable instructions.
 - **Agent test opcode errors (recurring):** Agents frequently use wrong opcode values. ALWAYS verify: EQ=0x0F, NOTEQ=0x10, STRICTEQ=0x28, STRICTNOTEQ=0x27, AND2=0x18, OR2=0x19, XOR2=0x1A, SHL2=0x15, SHR2=0x16, ASHR2=0x17. Before running tests after agent changes, check test bytecode constants against `ArkOpcodes`.
+- **Compact if rendering:** `IfStatement.toArkTS()` uses compact form when then-block is a single return/break/continue with no else: `if (cond) return val;`. `isCompactEligible()` checks statement type. Does NOT apply to if-else or multi-statement blocks.
+- **OptionalChainCallExpression:** AST node in ArkTSAccessExpressions for `obj?.method(args)` and `obj?.[key](args)`. Rendering: `object?.property(args)` for dot notation, `object?.[property](args)` for computed.
+- **Agent rate limit (429) handling:** When agents hit 429 rate limits, they produce no code changes. Always check `git diff --stat` after agent completion. If empty, the agent failed and the task needs manual implementation or retry.
+- **Agent broken code patterns:** Agents sometimes add method calls referencing variables not in scope (e.g., `ctx` in static methods). Always compile after agent changes. Remove broken stubs before committing.
+- **Guard clause detection:** BranchProcessor has `detectGuardClausePattern()` that identifies early return patterns. Used for converting nested if-return patterns to flat guard clauses.
 <!-- LINT_RULES_END -->
 
 ---
