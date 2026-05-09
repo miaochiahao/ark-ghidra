@@ -51,6 +51,12 @@ class DeclarationBuilder {
                     abcClass, abcFile, className, seenImports);
         }
 
+        // Detect annotation class: ACC_ANNOTATION flag
+        if (isAnnotationClass(abcClass)) {
+            return buildAnnotationClassDeclaration(
+                    abcClass, abcFile, className, seenImports);
+        }
+
         List<String> decorators = detectDecorators(abcClass, abcFile,
                 seenImports);
 
@@ -769,6 +775,10 @@ class DeclarationBuilder {
             AbcFile abcFile, Set<String> seenImports) {
         List<String> decorators = new ArrayList<>();
 
+        if (abcFile == null) {
+            return decorators;
+        }
+
         int classIdx = abcFile.getClasses().indexOf(abcClass);
         if (classIdx >= 0) {
             List<AbcAnnotation> classAnns =
@@ -1457,6 +1467,42 @@ class DeclarationBuilder {
         return false;
     }
 
+    private boolean isAnnotationClass(AbcClass abcClass) {
+        return (abcClass.getAccessFlags()
+                & AbcAccessFlags.ACC_ANNOTATION) != 0;
+    }
+
+    private ArkTSStatement buildAnnotationClassDeclaration(
+            AbcClass abcClass, AbcFile abcFile, String className,
+            Set<String> seenImports) {
+        // Render as a class with a comment indicating it's an annotation type
+        List<ArkTSStatement> members = new ArrayList<>();
+        for (AbcField field : abcClass.getFields()) {
+            ArkTSStatement fieldDecl = buildFieldDeclaration(
+                    field, abcFile);
+            members.add(fieldDecl);
+        }
+        for (AbcMethod method : abcClass.getMethods()) {
+            if (isConstructorMethod(method, className)) {
+                ArkTSStatement constructor =
+                        buildConstructorDeclaration(method, abcFile,
+                                abcClass.getFields());
+                if (constructor != null) {
+                    members.add(constructor);
+                }
+            } else {
+                ArkTSStatement methodDecl = buildMethodOrAccessor(
+                        method, abcFile, className, false);
+                if (methodDecl != null) {
+                    members.add(methodDecl);
+                }
+            }
+        }
+        return new ArkTSDeclarations.ClassDeclaration(
+                className, null, Collections.emptyList(), members,
+                abcClass.getName(), Collections.emptyList(), false, false);
+    }
+
     // --- Interface detection ---
 
     private boolean isInterfaceClass(AbcClass abcClass) {
@@ -1466,23 +1512,26 @@ class DeclarationBuilder {
             return true;
         }
         // Heuristic: abstract class with no fields and all abstract methods
+        // Must have at least one non-constructor method
         if ((flags & AbcAccessFlags.ACC_ABSTRACT) == 0) {
             return false;
         }
         if (!abcClass.getFields().isEmpty()) {
             return false;
         }
+        String className = sanitizeClassName(abcClass.getName());
+        boolean hasAbstractMethods = false;
         for (AbcMethod method : abcClass.getMethods()) {
+            if (isConstructorMethod(method, className)) {
+                continue;
+            }
+            hasAbstractMethods = true;
             if ((method.getAccessFlags()
                     & AbcAccessFlags.ACC_ABSTRACT) == 0) {
-                // Constructor or static initializer — skip
-                if (!isConstructorMethod(method,
-                        sanitizeClassName(abcClass.getName()))) {
-                    return false;
-                }
+                return false;
             }
         }
-        return true;
+        return hasAbstractMethods;
     }
 
     private ArkTSStatement buildInterfaceDeclaration(AbcClass abcClass,

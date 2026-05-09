@@ -172,9 +172,9 @@ public class ArkTSDecompiler {
             }
 
             bodyStmts = detectSwitchExpressions(
-                    mergeNestedIfConditions(
-                            ExpressionVisitor.inlineSingleUseVariables(
-                                    applyConstOptimization(bodyStmts))));
+                            mergeNestedIfConditions(
+                                    ExpressionVisitor.inlineSingleUseVariables(
+                                            applyConstOptimization(bodyStmts))));
         } catch (Exception e) {
             List<ArkTSStatement> fallbackStmts = new ArrayList<>();
             fallbackStmts.add(new ArkTSStatement.ExpressionStatement(
