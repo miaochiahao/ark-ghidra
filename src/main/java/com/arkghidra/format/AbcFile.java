@@ -59,6 +59,13 @@ public class AbcFile {
     private final Map<Integer, AbcDebugInfo> debugInfoCache = new HashMap<>();
 
     /**
+     * Cache of LNP string index to decoded string. Populated once on first
+     * access, then shared across all decompilation contexts for this file.
+     * Eliminates per-method string re-decoding overhead.
+     */
+    private volatile String[] lnpStringCache;
+
+    /**
      * Lazily computed flat method list. Built once on first access, then
      * returned as an unmodifiable list on subsequent calls.
      */
@@ -704,6 +711,81 @@ public class AbcFile {
      */
     public int getStringCacheSize() {
         return stringCache.size();
+    }
+
+    /**
+     * Resolves a string by LNP index using a file-level cache.
+     * The cache is populated lazily on first access and shared across
+     * all decompilation contexts, avoiding per-method re-decoding.
+     *
+     * @param stringIdx the LNP string index
+     * @return the decoded string, or a placeholder if resolution fails
+     */
+    public String resolveStringByIndex(int stringIdx) {
+        if (lnpStringCache == null) {
+            synchronized (this) {
+                if (lnpStringCache == null) {
+                    lnpStringCache = buildLnpStringCache();
+                }
+            }
+        }
+        if (stringIdx >= 0 && stringIdx < lnpStringCache.length) {
+            String val = lnpStringCache[stringIdx];
+            return val != null ? val : "str_" + stringIdx;
+        }
+        return "str_" + stringIdx;
+    }
+
+    private String[] buildLnpStringCache() {
+        List<Long> index = lnpIndex;
+        String[] cache = new String[index.size()];
+        if (rawData == null) {
+            return cache;
+        }
+        for (int i = 0; i < index.size(); i++) {
+            long off = index.get(i);
+            if (off >= 0 && off < rawData.length) {
+                cache[i] = readMutf8At(rawData, (int) off);
+            }
+        }
+        return cache;
+    }
+
+    static String readMutf8At(byte[] data, int offset) {
+        int pos = offset;
+        StringBuilder sb = new StringBuilder();
+        while (pos < data.length && data[pos] != 0) {
+            int b = data[pos] & 0xFF;
+            if (b < 0x80) {
+                sb.append((char) b);
+                pos++;
+            } else if ((b & 0xE0) == 0xC0) {
+                if (pos + 1 < data.length) {
+                    int b2 = data[pos + 1] & 0xFF;
+                    char ch = (char) (((b & 0x1F) << 6)
+                            | (b2 & 0x3F));
+                    sb.append(ch);
+                    pos += 2;
+                } else {
+                    break;
+                }
+            } else if ((b & 0xF0) == 0xE0) {
+                if (pos + 2 < data.length) {
+                    int b2 = data[pos + 1] & 0xFF;
+                    int b3 = data[pos + 2] & 0xFF;
+                    char ch = (char) (((b & 0x0F) << 12)
+                            | ((b2 & 0x3F) << 6)
+                            | (b3 & 0x3F));
+                    sb.append(ch);
+                    pos += 3;
+                } else {
+                    break;
+                }
+            } else {
+                pos++;
+            }
+        }
+        return sb.toString();
     }
 
     /**

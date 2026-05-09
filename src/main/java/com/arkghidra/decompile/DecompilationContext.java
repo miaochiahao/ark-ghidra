@@ -81,10 +81,10 @@ public class DecompilationContext {
 
     /**
      * Cache for string resolution keyed by string table index.
-     * Avoids redundant MUTF-8 decoding when the same string index
-     * is referenced multiple times during decompilation.
+     * Delegates to the file-level cache in AbcFile when available;
+     * falls back to a per-method cache when no AbcFile is set.
      */
-    private final Map<Integer, String> stringResolveCache = new HashMap<>();
+    private Map<Integer, String> stringResolveCache;
 
     /**
      * Maps register numbers to debug variable names.
@@ -130,7 +130,11 @@ public class DecompilationContext {
         this.code = code;
         this.proto = proto;
         this.abcFile = abcFile;
-        prePopulateStringCache();
+        if (abcFile != null) {
+            stringResolveCache = null;
+        } else {
+            stringResolveCache = new HashMap<>();
+        }
         this.cfg = cfg;
         this.instructions = instructions;
         this.numArgs = code != null ? (int) code.getNumArgs() : 0;
@@ -268,33 +272,18 @@ public class DecompilationContext {
     }
 
     /**
-     * Pre-populates the string resolution cache by decoding all strings
-     * from the ABC file's LNP index table upfront. This avoids repeated
-     * MUTF-8 decoding for large files with thousands of string references.
-     */
-    private void prePopulateStringCache() {
-        if (abcFile == null) {
-            return;
-        }
-        try {
-            List<Long> lnpIndex = abcFile.getLnpIndex();
-            for (int i = 0; i < lnpIndex.size(); i++) {
-                stringResolveCache.put(i, resolveStringUncached(i));
-            }
-        } catch (Exception e) {
-            // Partial cache is acceptable; resolveString will fill gaps
-        }
-    }
-
-    /**
      * Resolves a string table index to a string value.
      * Returns a placeholder if the string cannot be resolved.
-     * Results are cached per string index.
+     * When an AbcFile is available, delegates to the file-level cache.
+     * Otherwise uses a per-method cache.
      *
      * @param stringIdx the string table index
      * @return the resolved string or a placeholder
      */
     public String resolveString(int stringIdx) {
+        if (abcFile != null) {
+            return abcFile.resolveStringByIndex(stringIdx);
+        }
         String cached = stringResolveCache.get(stringIdx);
         if (cached != null) {
             return cached;
