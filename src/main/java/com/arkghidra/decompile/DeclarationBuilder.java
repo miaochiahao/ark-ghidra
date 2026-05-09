@@ -44,6 +44,13 @@ class DeclarationBuilder {
             AbcFile abcFile, Set<String> seenImports) {
         String className = sanitizeClassName(abcClass.getName());
 
+        // Detect interface: ACC_INTERFACE flag or ACC_ABSTRACT with all
+        // abstract methods and no fields
+        if (isInterfaceClass(abcClass)) {
+            return buildInterfaceDeclaration(
+                    abcClass, abcFile, className, seenImports);
+        }
+
         List<String> decorators = detectDecorators(abcClass, abcFile,
                 seenImports);
 
@@ -1448,5 +1455,113 @@ class DeclarationBuilder {
             }
         }
         return false;
+    }
+
+    // --- Interface detection ---
+
+    private boolean isInterfaceClass(AbcClass abcClass) {
+        long flags = abcClass.getAccessFlags();
+        // Direct interface flag
+        if ((flags & AbcAccessFlags.ACC_INTERFACE) != 0) {
+            return true;
+        }
+        // Heuristic: abstract class with no fields and all abstract methods
+        if ((flags & AbcAccessFlags.ACC_ABSTRACT) == 0) {
+            return false;
+        }
+        if (!abcClass.getFields().isEmpty()) {
+            return false;
+        }
+        for (AbcMethod method : abcClass.getMethods()) {
+            if ((method.getAccessFlags()
+                    & AbcAccessFlags.ACC_ABSTRACT) == 0) {
+                // Constructor or static initializer — skip
+                if (!isConstructorMethod(method,
+                        sanitizeClassName(abcClass.getName()))) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private ArkTSStatement buildInterfaceDeclaration(AbcClass abcClass,
+            AbcFile abcFile, String className, Set<String> seenImports) {
+        List<String> extendsInterfaces = resolveInterfaceNames(
+                abcClass.getInterfaceOffsets(), abcFile);
+
+        for (String ifaceName : extendsInterfaces) {
+            if (ifaceName.contains(".")) {
+                String module = ifaceName.substring(0,
+                        ifaceName.lastIndexOf('.'));
+                seenImports.add(module);
+            }
+        }
+
+        List<ArkTSTypeDeclarations.InterfaceDeclaration.InterfaceMember>
+                members = new ArrayList<>();
+        for (AbcMethod method : abcClass.getMethods()) {
+            if (isConstructorMethod(method, className)) {
+                continue;
+            }
+            String methodName = method.getName();
+            AbcProto proto = decompiler.resolveProto(method, abcFile);
+            String returnType = inferReturnTypeFromProto(proto);
+            List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                    buildParamsFromProto(proto,
+                            proto != null
+                                    ? Math.max(0,
+                                            proto.getShorty().size() - 1)
+                                    : 0);
+            members.add(new ArkTSTypeDeclarations.InterfaceDeclaration
+                    .InterfaceMember("method", methodName, returnType,
+                            params, false));
+        }
+
+        return new ArkTSTypeDeclarations.InterfaceDeclaration(
+                className, extendsInterfaces, members);
+    }
+
+    private String inferReturnTypeFromProto(AbcProto proto) {
+        if (proto == null) {
+            return null;
+        }
+        AbcProto.ShortyType retType = proto.getReturnType();
+        if (retType == null) {
+            return null;
+        }
+        return switch (retType) {
+            case VOID -> "void";
+            case U1 -> "boolean";
+            case I8, U8, I16, U16, I32, U32, I64, U64, F32, F64 -> "number";
+            case REF, ANY -> null;
+        };
+    }
+
+    private List<ArkTSDeclarations.FunctionDeclaration.FunctionParam>
+            buildParamsFromProto(AbcProto proto, int numArgs) {
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                new ArrayList<>();
+        if (proto == null || proto.getShorty().size() <= 1) {
+            for (int i = 0; i < numArgs; i++) {
+                params.add(new ArkTSDeclarations.FunctionDeclaration
+                        .FunctionParam("param_" + i, null));
+            }
+            return params;
+        }
+        List<AbcProto.ShortyType> shorty = proto.getShorty();
+        // shorty[0] = return type, shorty[1..] = param types
+        int paramCount = Math.min(numArgs, shorty.size() - 1);
+        for (int i = 0; i < paramCount; i++) {
+            AbcProto.ShortyType typeChar = shorty.get(i + 1);
+            String typeName = switch (typeChar) {
+                case U1 -> "boolean";
+                case I8, U8, I16, U16, I32, U32, I64, U64, F32, F64 -> "number";
+                default -> null;
+            };
+            params.add(new ArkTSDeclarations.FunctionDeclaration
+                    .FunctionParam("param_" + i, typeName));
+        }
+        return params;
     }
 }
