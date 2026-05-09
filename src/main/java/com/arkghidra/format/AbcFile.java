@@ -623,16 +623,19 @@ public class AbcFile {
 
     private static AbcLiteralArray parseLiteralArray(AbcReader r) {
         long numLiterals = r.readU32();
-        List<byte[]> literals = new ArrayList<>((int) numLiterals);
-        for (int i = 0; i < (int) numLiterals / 2; i++) {
+        int count = (int) numLiterals / 2;
+        List<byte[]> literals = new ArrayList<>(count);
+        List<Integer> tags = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
             int tag = r.readU8() & 0xFF;
             byte[] value = readLiteralValue(r, tag);
             literals.add(value);
+            tags.add(tag);
             if (tag >= 0x0A && tag <= 0x15) {
                 break;
             }
         }
-        return new AbcLiteralArray(numLiterals, literals);
+        return new AbcLiteralArray(numLiterals, literals, tags);
     }
 
     private static byte[] readLiteralValue(AbcReader r, int tag) {

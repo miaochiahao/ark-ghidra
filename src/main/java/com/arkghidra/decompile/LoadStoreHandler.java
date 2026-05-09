@@ -180,15 +180,26 @@ class LoadStoreHandler {
         // --- Create array/object with buffer ---
         if (opcode == ArkOpcodesCompat.CREATEARRAYWITHBUFFER) {
             int numElements = (int) operands.get(0).getValue();
+            int literalIdx = operands.size() > 1
+                    ? (int) operands.get(1).getValue() : -1;
+            List<ArkTSExpression> elements =
+                    resolveLiteralArrayElements(ctx, literalIdx,
+                            numElements);
             ArkTSExpression expr =
                     new ArkTSAccessExpressions.ArrayLiteralExpression(
-                            createPlaceholderElements(numElements));
+                            elements);
             return new InstructionHandler.StatementResult(null, expr);
         }
         if (opcode == ArkOpcodesCompat.CREATEOBJECTWITHBUFFER) {
+            int literalIdx = operands.size() > 1
+                    ? (int) operands.get(1).getValue() : -1;
+            List<ArkTSAccessExpressions
+                    .ObjectLiteralExpression.ObjectProperty> props =
+                            resolveLiteralObjectProperties(
+                                    ctx, literalIdx);
             ArkTSExpression expr =
                     new ArkTSAccessExpressions.ObjectLiteralExpression(
-                            Collections.emptyList());
+                            props);
             return new InstructionHandler.StatementResult(null, expr);
         }
 
@@ -554,6 +565,237 @@ class LoadStoreHandler {
                             .LiteralKind.STRING));
         }
         return elements;
+    }
+
+    /**
+     * Resolves elements from a literal array for CREATEARRAYWITHBUFFER.
+     * Falls back to placeholder elements when literal data is unavailable.
+     */
+    private static List<ArkTSExpression> resolveLiteralArrayElements(
+            DecompilationContext ctx, int literalIdx, int count) {
+        if (ctx == null || ctx.abcFile == null || literalIdx < 0) {
+            return createPlaceholderElements(count);
+        }
+        try {
+            List<com.arkghidra.format.AbcLiteralArray> arrays =
+                    ctx.abcFile.getLiteralArrays();
+            if (literalIdx >= arrays.size()) {
+                return createPlaceholderElements(count);
+            }
+            com.arkghidra.format.AbcLiteralArray la =
+                    arrays.get(literalIdx);
+            List<ArkTSExpression> elements = new ArrayList<>();
+            int limit = Math.min(count, la.size());
+            for (int i = 0; i < limit; i++) {
+                ArkTSExpression expr = parseLiteralToExpression(la, i);
+                if (expr != null) {
+                    elements.add(expr);
+                } else {
+                    elements.add(new ArkTSExpression.LiteralExpression(
+                            "/* element_" + i + " */",
+                            ArkTSExpression.LiteralExpression
+                                    .LiteralKind.STRING));
+                }
+            }
+            for (int i = elements.size(); i < count; i++) {
+                elements.add(new ArkTSExpression.LiteralExpression(
+                        "/* element_" + i + " */",
+                        ArkTSExpression.LiteralExpression
+                                .LiteralKind.STRING));
+            }
+            return elements;
+        } catch (Exception e) {
+            return createPlaceholderElements(count);
+        }
+    }
+
+    /**
+     * Resolves key-value pairs from a literal array for
+     * CREATEOBJECTWITHBUFFER.
+     * Literal arrays for objects store pairs: key_tag, key_val,
+     * value_tag, value_val.
+     */
+    private static List<ArkTSAccessExpressions
+            .ObjectLiteralExpression.ObjectProperty>
+            resolveLiteralObjectProperties(
+                    DecompilationContext ctx, int literalIdx) {
+        if (ctx == null || ctx.abcFile == null || literalIdx < 0) {
+            return Collections.emptyList();
+        }
+        try {
+            List<com.arkghidra.format.AbcLiteralArray> arrays =
+                    ctx.abcFile.getLiteralArrays();
+            if (literalIdx >= arrays.size()) {
+                return Collections.emptyList();
+            }
+            com.arkghidra.format.AbcLiteralArray la =
+                    arrays.get(literalIdx);
+            List<ArkTSAccessExpressions
+                    .ObjectLiteralExpression.ObjectProperty> props =
+                            new ArrayList<>();
+            for (int i = 0; i + 1 < la.size(); i += 2) {
+                String key = parseLiteralToString(la, i);
+                ArkTSExpression value = parseLiteralToExpression(
+                        la, i + 1);
+                if (key != null && value != null) {
+                    props.add(new ArkTSAccessExpressions
+                            .ObjectLiteralExpression.ObjectProperty(
+                                    key, value));
+                }
+            }
+            return props;
+        } catch (Exception e) {
+            return Collections.emptyList();
+        }
+    }
+
+    private static ArkTSExpression parseLiteralToExpression(
+            com.arkghidra.format.AbcLiteralArray la, int index) {
+        if (index >= la.size()) {
+            return null;
+        }
+        int tag = la.getTag(index);
+        byte[] value = la.getValue(index);
+        if (value == null) {
+            return null;
+        }
+        switch (tag) {
+            case 0x01: { // int8 as signed
+                int v = value.length > 0 ? value[0] : 0;
+                return new ArkTSExpression.LiteralExpression(
+                        String.valueOf(v),
+                        ArkTSExpression.LiteralExpression
+                                .LiteralKind.NUMBER);
+            }
+            case 0x02: case 0x03: { // 32-bit float or int32
+                if (value.length >= 4) {
+                    int bits = ((value[3] & 0xFF) << 24)
+                            | ((value[2] & 0xFF) << 16)
+                            | ((value[1] & 0xFF) << 8)
+                            | (value[0] & 0xFF);
+                    float f = Float.intBitsToFloat(bits);
+                    if (f == (int) f && !Float.isInfinite(f)) {
+                        return new ArkTSExpression.LiteralExpression(
+                                String.valueOf((int) f),
+                                ArkTSExpression.LiteralExpression
+                                        .LiteralKind.NUMBER);
+                    }
+                    return new ArkTSExpression.LiteralExpression(
+                            String.valueOf(f),
+                            ArkTSExpression.LiteralExpression
+                                    .LiteralKind.NUMBER);
+                }
+                break;
+            }
+            case 0x04: { // int64 / double
+                if (value.length >= 8) {
+                    long bits = ((long) (value[7] & 0xFF) << 56)
+                            | ((long) (value[6] & 0xFF) << 48)
+                            | ((long) (value[5] & 0xFF) << 40)
+                            | ((long) (value[4] & 0xFF) << 32)
+                            | ((long) (value[3] & 0xFF) << 24)
+                            | ((long) (value[2] & 0xFF) << 16)
+                            | ((long) (value[1] & 0xFF) << 8)
+                            | (value[0] & 0xFF);
+                    double d = Double.longBitsToDouble(bits);
+                    if (d == (long) d && !Double.isInfinite(d)) {
+                        return new ArkTSExpression.LiteralExpression(
+                                String.valueOf((long) d),
+                                ArkTSExpression.LiteralExpression
+                                        .LiteralKind.NUMBER);
+                    }
+                    return new ArkTSExpression.LiteralExpression(
+                            String.valueOf(d),
+                            ArkTSExpression.LiteralExpression
+                                    .LiteralKind.NUMBER);
+                }
+                break;
+            }
+            case 0x05: case 0x06: case 0x07: { // float32 variants
+                if (value.length >= 4) {
+                    int bits = ((value[3] & 0xFF) << 24)
+                            | ((value[2] & 0xFF) << 16)
+                            | ((value[1] & 0xFF) << 8)
+                            | (value[0] & 0xFF);
+                    float f = Float.intBitsToFloat(bits);
+                    return new ArkTSExpression.LiteralExpression(
+                            String.valueOf(f),
+                            ArkTSExpression.LiteralExpression
+                                    .LiteralKind.NUMBER);
+                }
+                break;
+            }
+            case 0x08: { // uint8 / int8
+                int v = value.length > 0 ? (value[0] & 0xFF) : 0;
+                return new ArkTSExpression.LiteralExpression(
+                        String.valueOf(v),
+                        ArkTSExpression.LiteralExpression
+                                .LiteralKind.NUMBER);
+            }
+            case 0x09: { // int16
+                if (value.length >= 2) {
+                    int v = ((value[1] & 0xFF) << 8)
+                            | (value[0] & 0xFF);
+                    return new ArkTSExpression.LiteralExpression(
+                            String.valueOf(v),
+                            ArkTSExpression.LiteralExpression
+                                    .LiteralKind.NUMBER);
+                }
+                break;
+            }
+            case 0x19: { // boolean
+                boolean b = value.length > 0 && value[0] != 0;
+                return new ArkTSExpression.LiteralExpression(
+                        String.valueOf(b),
+                        ArkTSExpression.LiteralExpression
+                                .LiteralKind.BOOLEAN);
+            }
+            case 0xFF: { // null
+                return new ArkTSExpression.LiteralExpression("null",
+                        ArkTSExpression.LiteralExpression
+                                .LiteralKind.NULL);
+            }
+            default:
+                break;
+        }
+        return null;
+    }
+
+    private static String parseLiteralToString(
+            com.arkghidra.format.AbcLiteralArray la, int index) {
+        if (index >= la.size()) {
+            return null;
+        }
+        int tag = la.getTag(index);
+        byte[] value = la.getValue(index);
+        if (value == null) {
+            return null;
+        }
+        // String keys come as number tags with the string offset
+        // encoded as an integer
+        if (tag == 0x02 || tag == 0x03) {
+            if (value.length >= 4) {
+                int strIdx = ((value[3] & 0xFF) << 24)
+                        | ((value[2] & 0xFF) << 16)
+                        | ((value[1] & 0xFF) << 8)
+                        | (value[0] & 0xFF);
+                if (la.getNumLiterals() > 0) {
+                    return "key_" + strIdx;
+                }
+            }
+        }
+        if (tag == 0x08) {
+            return value.length > 0
+                    ? "key_" + (value[0] & 0xFF) : null;
+        }
+        if (tag == 0x09) {
+            if (value.length >= 2) {
+                int v = ((value[1] & 0xFF) << 8)
+                        | (value[0] & 0xFF);
+                return "key_" + v;
+            }
+        }
+        return null;
     }
 
     /**
