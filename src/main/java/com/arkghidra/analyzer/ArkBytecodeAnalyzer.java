@@ -216,12 +216,82 @@ public class ArkBytecodeAnalyzer extends AbstractAnalyzer {
 
     private void annotateStrings(Program program, AbcFile abc,
             TaskMonitor monitor, MessageLog log) {
+        Listing listing = program.getListing();
+        AddressSpace space = program.getAddressFactory().getDefaultAddressSpace();
+        byte[] rawData = abc.getRawData();
+        if (rawData == null) {
+            return;
+        }
+
+        List<Long> stringOffsets = abc.getLnpIndex();
+        int annotated = 0;
+        for (int i = 0; i < stringOffsets.size(); i++) {
+            if (monitor.isCancelled()) {
+                break;
+            }
+            long strOff = stringOffsets.get(i);
+            if (strOff <= 0 || strOff >= rawData.length) {
+                continue;
+            }
+            String value = readMutf8String(rawData, (int) strOff);
+            if (value == null || value.isEmpty()) {
+                continue;
+            }
+            Address addr = space.getAddress(strOff);
+            String existing = listing.getComment(CommentType.PLATE, addr);
+            String comment = "str[" + i + "]: \"" + value + "\"";
+            if (existing != null && !existing.isEmpty()) {
+                comment = existing + "\n" + comment;
+            }
+            listing.setComment(addr, CommentType.PLATE, comment);
+            annotated++;
+        }
+
+        // Also annotate literal arrays
+        int laIdx = 0;
         for (AbcLiteralArray la : abc.getLiteralArrays()) {
             if (monitor.isCancelled()) {
                 break;
             }
+            List<Long> laIdxList = abc.getLiteralArrayIndex();
+            if (laIdx < laIdxList.size()) {
+                long laOff = laIdxList.get(laIdx);
+                if (laOff > 0 && laOff < rawData.length) {
+                    Address addr = space.getAddress(laOff);
+                    listing.setComment(addr, CommentType.PLATE,
+                            "literal_array[" + laIdx + "]: "
+                                    + la.getNumLiterals() + " elements");
+                }
+            }
+            laIdx++;
         }
 
-        Msg.info(OWNER, "String annotation pass complete");
+        Msg.info(OWNER, "String annotation pass complete: "
+                + annotated + " strings annotated");
+    }
+
+    private static String readMutf8String(byte[] data, int offset) {
+        int pos = offset;
+        StringBuilder sb = new StringBuilder();
+        while (pos < data.length && data[pos] != 0) {
+            int b = data[pos] & 0xFF;
+            if (b < 0x80) {
+                sb.append((char) b);
+                pos++;
+            } else if ((b & 0xE0) == 0xC0 && pos + 1 < data.length) {
+                int b2 = data[pos + 1] & 0xFF;
+                sb.append((char) (((b & 0x1F) << 6) | (b2 & 0x3F)));
+                pos += 2;
+            } else if ((b & 0xF0) == 0xE0 && pos + 2 < data.length) {
+                int b2 = data[pos + 1] & 0xFF;
+                int b3 = data[pos + 2] & 0xFF;
+                sb.append((char) (((b & 0x0F) << 12)
+                        | ((b2 & 0x3F) << 6) | (b3 & 0x3F)));
+                pos += 3;
+            } else {
+                pos++;
+            }
+        }
+        return sb.toString();
     }
 }
