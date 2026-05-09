@@ -759,12 +759,114 @@ class ExpressionVisitor {
             return new ArkTSPropertyExpressions
                     .ObjectDestructuringExpression(newBindings, src);
         }
+        // Function boundary expressions — don't traverse into closures
+        if (expr instanceof ArkTSAccessExpressions.ArrowFunctionExpression
+                || expr instanceof ArkTSAccessExpressions
+                        .AnonymousFunctionExpression
+                || expr instanceof ArkTSAccessExpressions
+                        .GeneratorFunctionExpression
+                || expr instanceof ArkTSAccessExpressions.ClosureExpression) {
+            return expr;
+        }
+        // SpreadNewExpression: replace in callee and arguments
+        if (expr instanceof ArkTSAccessExpressions.SpreadNewExpression) {
+            ArkTSAccessExpressions.SpreadNewExpression sn =
+                    (ArkTSAccessExpressions.SpreadNewExpression) expr;
+            ArkTSExpression callee =
+                    replaceVariableImpl(sn.getCallee(), varName, replacement);
+            if (callee == null) {
+                return null;
+            }
+            List<ArkTSExpression> newArgs = new ArrayList<>();
+            for (ArkTSExpression a : sn.getArguments()) {
+                ArkTSExpression r =
+                        replaceVariableImpl(a, varName, replacement);
+                if (r == null) {
+                    return null;
+                }
+                newArgs.add(r);
+            }
+            return new ArkTSAccessExpressions.SpreadNewExpression(
+                    callee, newArgs);
+        }
+        // TaggedTemplateExpression: replace in expressions
+        if (expr instanceof ArkTSAccessExpressions
+                .TaggedTemplateExpression) {
+            ArkTSAccessExpressions.TaggedTemplateExpression tte =
+                    (ArkTSAccessExpressions.TaggedTemplateExpression) expr;
+            List<ArkTSExpression> newExprs = new ArrayList<>();
+            for (ArkTSExpression e : tte.getExpressions()) {
+                ArkTSExpression r =
+                        replaceVariableImpl(e, varName, replacement);
+                if (r == null) {
+                    return null;
+                }
+                newExprs.add(r);
+            }
+            return new ArkTSAccessExpressions.TaggedTemplateExpression(
+                    tte.getTag(), tte.getQuasis(), newExprs);
+        }
+        // RuntimeCallExpression: replace in arguments
+        if (expr instanceof ArkTSAccessExpressions.RuntimeCallExpression) {
+            ArkTSAccessExpressions.RuntimeCallExpression rc =
+                    (ArkTSAccessExpressions.RuntimeCallExpression) expr;
+            List<ArkTSExpression> newArgs = new ArrayList<>();
+            for (ArkTSExpression a : rc.getArguments()) {
+                ArkTSExpression r =
+                        replaceVariableImpl(a, varName, replacement);
+                if (r == null) {
+                    return null;
+                }
+                newArgs.add(r);
+            }
+            return new ArkTSAccessExpressions.RuntimeCallExpression(
+                    rc.getRuntimeName(), newArgs);
+        }
+        // IifeExpression: replace in function expression and arguments
+        if (expr instanceof ArkTSAccessExpressions.IifeExpression) {
+            ArkTSAccessExpressions.IifeExpression iife =
+                    (ArkTSAccessExpressions.IifeExpression) expr;
+            ArkTSExpression func =
+                    replaceVariableImpl(iife.getFunctionExpression(),
+                            varName, replacement);
+            if (func == null) {
+                return null;
+            }
+            List<ArkTSExpression> newArgs = new ArrayList<>();
+            for (ArkTSExpression a : iife.getArguments()) {
+                ArkTSExpression r =
+                        replaceVariableImpl(a, varName, replacement);
+                if (r == null) {
+                    return null;
+                }
+                newArgs.add(r);
+            }
+            return new ArkTSAccessExpressions.IifeExpression(func, newArgs);
+        }
+        // DynamicImportExpression: replace in specifier
+        if (expr instanceof ArkTSAccessExpressions.DynamicImportExpression) {
+            ArkTSExpression spec = replaceVariableImpl(
+                    ((ArkTSAccessExpressions.DynamicImportExpression) expr)
+                            .getSpecifier(), varName, replacement);
+            if (spec == null) {
+                return null;
+            }
+            return new ArkTSAccessExpressions.DynamicImportExpression(spec);
+        }
         // Leaf expressions that never contain variables — return as-is
         if (expr instanceof ArkTSExpression.LiteralExpression
                 || expr instanceof ArkTSExpression.ThisExpression
+                || expr instanceof ArkTSAccessExpressions
+                        .RegExpLiteralExpression
+                || expr instanceof ArkTSAccessExpressions
+                        .TypeReferenceExpression
+                || expr instanceof ArkTSAccessExpressions
+                        .RestParameterExpression
                 || expr instanceof ArkTSPropertyExpressions.SuperExpression
                 || expr instanceof ArkTSPropertyExpressions
-                        .TemplateObjectExpression) {
+                        .TemplateObjectExpression
+                || expr instanceof ArkTSPropertyExpressions
+                        .PrivateFieldDeclarationExpression) {
             return expr;
         }
         // For unknown expression types, don't attempt replacement
