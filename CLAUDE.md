@@ -146,8 +146,11 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 59. ~~Variable name inference — constructors, static calls, well-known names (#147)~~ DONE
 60. ~~Object key resolution from string table in literal arrays (#148)~~ DONE
 61. ~~CFG pattern detection optimization — mergeBlockCache (#149)~~ DONE
-62. ~~Source line number comments from debug info (#128)~~ DONE
-63. ~~Variable name inference from usage context (#133)~~ DONE
+62. ~~Expression type naming — arrays, objects, templates, arrow functions (#150)~~ DONE
+63. ~~Const optimization — LabeledStatement, SwitchStatement coverage (#151)~~ DONE
+64. ~~Expression visitor — replaceVariable coverage for all types (#152)~~ DONE
+65. ~~Source line number comments from debug info (#128)~~ DONE
+66. ~~Variable name inference from usage context (#133)~~ DONE
 64. ~~Comprehensive opcode decompilation tests (#134)~~ DONE
 65. ~~decompileFile() integration tests (#135)~~ DONE
 66. ~~Field initializers, readonly detection, type inference improvements (#136)~~ DONE
@@ -235,7 +238,7 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Try/catch decompilation:** Use `AbcCode.getTryBlocks()` → `AbcTryBlock.getCatchBlocks()` → `AbcCatchBlock` to reconstruct exception handling. Map try start/end PC ranges to CFG block addresses. Catch-all blocks (typeIdx=0) map to `finally`.
 - **Jump offset calculation:** `jmp +0` at offset 0 with instruction length 2 gives target = 0+2+0 = 2 (not 0). For infinite loop (jmp to self), need negative offset = -instruction_length (e.g., `0xFE` for 2-byte jmp).
 - **Parameter naming convention:** Use `param_0`, `param_1` etc. (not `p0`/`p1`) for better readability. Falls back to untyped when no proto info available.
-- **Test count tracking:** 1610 tests across 27 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
+- **Test count tracking:** 1673 tests across 29 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
 - **AST node immutability:** `BlockStatement.body`, `SwitchCase.body`, `VariableDeclaration` fields use `Collections.unmodifiableList` or `final`. Don't use `List.set()` to modify — use mutable fields (`setKind()`) or rebuild nodes. `VariableDeclaration.kind` is now mutable via `setKind()` for const/let optimization.
 - **Post-processing pattern:** `applyConstOptimization()` in ArkTSDecompiler traverses all AST statement types recursively. When adding new AST node types, add them to both `collectVarUsage` and `rewriteLetToConst`. Must handle `IfStatement.getThenBlock()`/`getElseBlock()` (returns `ArkTSStatement`, not List) — use `extractBodyList()` helper.
 - **Opcode values for tests:** STA=0x61, LDA=0x60, LDAI=0x62, RETURN=0x64, RETURNUNDEFINED=0x65. Always verify against `ArkOpcodes` constants — NOT 0x06 for STA.
@@ -354,6 +357,9 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Variable name inference maps:** `BUILTIN_CLASS_VAR_NAMES` maps class names to variable names (Error→error, Map→map, Array→arr). `STATIC_CALL_RESULT_NAMES` maps static calls to result names (JSON.parse→parsed, Object.keys→keys). Both in InstructionHandler.
 - **Object key resolution:** `parseLiteralToString()` in LoadStoreHandler accepts `DecompilationContext` to resolve string table offsets. Key tags 0x02/0x03 contain int32 string table index, resolved via `ctx.resolveString()`.
 - **CFG merge block cache:** `ControlFlowReconstructor.mergeBlockCache` maps `"offsetA:offsetB"` to merge block offset. Cleared per CFG in `reconstructControlFlow()`. Stores `-1` sentinel for "no merge found".
+- **Expression type naming:** `inferNameFromExpression()` handles ArrayLiteral→items, ObjectLiteral→config, TemplateLiteral→template, ArrowFunction (delegates to body), AwaitExpression/YieldExpression (delegates to argument). `sanitizeName()` strips get/set/is/has/can/will/should prefixes.
+- **Const optimization completeness:** `collectVarUsageFromStmt()` and `rewriteLetToConstInStmt()` now handle LabeledStatement (unwrap inner statement). SwitchStatement was already covered. All non-leaf statement types are handled.
+- **replaceVariable completeness:** `ExpressionVisitor.replaceVariable()` handles ALL 35+ expression types across ArkTSExpression, ArkTSAccessExpressions, and ArkTSPropertyExpressions. Recursive replacement in all child expressions.
 <!-- LINT_RULES_END -->
 
 ---
