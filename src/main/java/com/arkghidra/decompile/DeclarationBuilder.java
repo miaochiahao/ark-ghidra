@@ -455,9 +455,16 @@ class DeclarationBuilder {
                 for (AbcField field : cls.getFields()) {
                     if ((field.getAccessFlags()
                             & AbcAccessFlags.ACC_STATIC) != 0) {
+                        long intVal = field.getIntValue();
+                        ArkTSExpression valueExpr = intVal != 0
+                                ? new ArkTSExpression.LiteralExpression(
+                                        String.valueOf(intVal),
+                                        ArkTSExpression.LiteralExpression
+                                                .LiteralKind.NUMBER)
+                                : null;
                         members.add(
                                 new ArkTSTypeDeclarations.EnumDeclaration
-                                        .EnumMember(field.getName(), null));
+                                        .EnumMember(field.getName(), valueExpr));
                     }
                 }
                 if (!members.isEmpty()) {
