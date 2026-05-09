@@ -11768,4 +11768,164 @@ class ArkTSDecompilerTest {
         assertFalse(result.contains("99"),
                 "Should not contain unreachable code (99): " + result);
     }
+
+    // --- Null-safe access and optional chaining tests (issue #79) ---
+
+    @Test
+    void testOptionalChainExpression_dotRendersCorrectly() {
+        ArkTSExpression obj =
+                new ArkTSExpression.VariableExpression("user");
+        ArkTSExpression prop =
+                new ArkTSExpression.VariableExpression("name");
+        ArkTSAccessExpressions.OptionalChainExpression expr =
+                new ArkTSAccessExpressions.OptionalChainExpression(
+                        obj, prop, false);
+        assertEquals("user?.name", expr.toArkTS());
+    }
+
+    @Test
+    void testOptionalChainExpression_bracketRendersCorrectly() {
+        ArkTSExpression obj =
+                new ArkTSExpression.VariableExpression("data");
+        ArkTSExpression key =
+                new ArkTSExpression.VariableExpression("key");
+        ArkTSAccessExpressions.OptionalChainExpression expr =
+                new ArkTSAccessExpressions.OptionalChainExpression(
+                        obj, key, true);
+        assertEquals("data?.[key]", expr.toArkTS());
+    }
+
+    @Test
+    void testOptionalChainCallExpression_rendersCorrectly() {
+        ArkTSExpression obj =
+                new ArkTSExpression.VariableExpression("obj");
+        ArkTSExpression method =
+                new ArkTSExpression.VariableExpression("getData");
+        List<ArkTSExpression> args = List.of(
+                new ArkTSExpression.LiteralExpression("id",
+                        ArkTSExpression.LiteralExpression
+                                .LiteralKind.STRING));
+        ArkTSAccessExpressions.OptionalChainCallExpression expr =
+                new ArkTSAccessExpressions.OptionalChainCallExpression(
+                        obj, method, false, args);
+        assertEquals("obj?.getData(\"id\")", expr.toArkTS());
+    }
+
+    @Test
+    void testOptionalChainCallExpression_noArgsRendersCorrectly() {
+        ArkTSExpression obj =
+                new ArkTSExpression.VariableExpression("config");
+        ArkTSExpression method =
+                new ArkTSExpression.VariableExpression("reload");
+        ArkTSAccessExpressions.OptionalChainCallExpression expr =
+                new ArkTSAccessExpressions.OptionalChainCallExpression(
+                        obj, method, false, Collections.emptyList());
+        assertEquals("config?.reload()", expr.toArkTS());
+    }
+
+    @Test
+    void testOptionalChainCallExpression_computedRendersCorrectly() {
+        ArkTSExpression obj =
+                new ArkTSExpression.VariableExpression("obj");
+        ArkTSExpression key =
+                new ArkTSExpression.VariableExpression("methodName");
+        List<ArkTSExpression> args = List.of(
+                new ArkTSExpression.VariableExpression("arg"));
+        ArkTSAccessExpressions.OptionalChainCallExpression expr =
+                new ArkTSAccessExpressions.OptionalChainCallExpression(
+                        obj, key, true, args);
+        assertEquals("obj?.[methodName](arg)", expr.toArkTS());
+    }
+
+    @Test
+    void testNonNullExpression_rendersCorrectly() {
+        ArkTSExpression inner =
+                new ArkTSExpression.MemberExpression(
+                        new ArkTSExpression.VariableExpression("user"),
+                        new ArkTSExpression.VariableExpression("name"),
+                        false);
+        ArkTSAccessExpressions.NonNullExpression expr =
+                new ArkTSAccessExpressions.NonNullExpression(inner);
+        assertEquals("user.name!", expr.toArkTS());
+    }
+
+    @Test
+    void testNonNullExpression_onVariable() {
+        ArkTSExpression inner =
+                new ArkTSExpression.VariableExpression("value");
+        ArkTSAccessExpressions.NonNullExpression expr =
+                new ArkTSAccessExpressions.NonNullExpression(inner);
+        assertEquals("value!", expr.toArkTS());
+    }
+
+    @Test
+    void testGuardClause_nullCheckEarlyReturn() {
+        // Pattern: if (arg == null) { return null }
+        // Bytecode: lda v0; jeqnull +offset_to_return_null; ...
+        // The branch block is just: ldnull; return
+        //
+        // Layout:
+        // offset 0: lda v0         (2 bytes)
+        // offset 2: jeqnull +5     (2 bytes) -> offset 9 (return null)
+        // offset 4: ldai 42        (5 bytes)  -- main body
+        // offset 9: ldnull         (1 byte)
+        // offset 10: return        (1 byte)
+        byte[] code = concat(
+                bytes(0x60, 0x00),              // lda v0
+                bytes(0x54, 0x05),              // jeqnull +5 -> offset 9
+                bytes(0x62), le32(42),          // ldai 42
+                bytes(0x64),                    // return
+                bytes(0x01),                    // ldnull
+                bytes(0x64)                     // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        // Should detect the guard clause pattern
+        assertFalse(result.isEmpty(),
+                "Should produce output: " + result);
+        assertTrue(result.contains("if"),
+                "Should contain if for guard clause: " + result);
+        assertTrue(result.contains("return"),
+                "Should contain return in guard: " + result);
+    }
+
+    @Test
+    void testOptionalChain_fromNullCheckPropertyLoad() {
+        // Pattern: obj.name accessed, then null check, optional chain
+        // Bytecode:
+        // lda v0; ldobjbyname 0, "name"; sta v1; lda v1; jeqnull +offset
+        // ... (null path: ldnull; sta v1)
+        // ... (non-null path: use v1)
+        //
+        // This tests the AST rendering rather than full CFG detection
+        // since CFG-based detection requires complex bytecode setup.
+        ArkTSExpression obj =
+                new ArkTSExpression.VariableExpression("v0");
+        ArkTSExpression prop =
+                new ArkTSExpression.VariableExpression("name");
+        ArkTSExpression member =
+                new ArkTSExpression.MemberExpression(obj, prop, false);
+        ArkTSExpression optional =
+                new ArkTSAccessExpressions.OptionalChainExpression(
+                        obj, prop, false);
+
+        // Verify both render differently
+        assertEquals("v0.name", member.toArkTS());
+        assertEquals("v0?.name", optional.toArkTS());
+    }
+
+    @Test
+    void testNonNullAssertion_withOptionalChain() {
+        // Nested: (obj?.prop)!
+        ArkTSExpression obj =
+                new ArkTSExpression.VariableExpression("obj");
+        ArkTSExpression prop =
+                new ArkTSExpression.VariableExpression("value");
+        ArkTSExpression optional =
+                new ArkTSAccessExpressions.OptionalChainExpression(
+                        obj, prop, false);
+        ArkTSExpression asserted =
+                new ArkTSAccessExpressions.NonNullExpression(optional);
+        assertEquals("obj?.value!", asserted.toArkTS());
+    }
 }
