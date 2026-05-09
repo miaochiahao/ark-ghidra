@@ -136,8 +136,9 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 49. ~~Template literal improvements — $-escaping, multi-segment (#112)~~ DONE
 50. ~~Abstract class detection, constructor parameter properties (#113)~~ DONE
 51. ~~Loose boolean comparison simplification, nullish coalescing (#114)~~ DONE
-52. feat: test with real HarmonyOS .abc files from Ark compiler #25
-53. Performance: large file handling and incremental decompilation
+52. ~~Logical compound assignments, typeof+null simplification, nullable types (#115)~~ DONE
+53. feat: test with real HarmonyOS .abc files from Ark compiler #25
+54. Performance: large file handling and incremental decompilation
 
 ### Rules for the loop
 
@@ -218,7 +219,7 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Try/catch decompilation:** Use `AbcCode.getTryBlocks()` → `AbcTryBlock.getCatchBlocks()` → `AbcCatchBlock` to reconstruct exception handling. Map try start/end PC ranges to CFG block addresses. Catch-all blocks (typeIdx=0) map to `finally`.
 - **Jump offset calculation:** `jmp +0` at offset 0 with instruction length 2 gives target = 0+2+0 = 2 (not 0). For infinite loop (jmp to self), need negative offset = -instruction_length (e.g., `0xFE` for 2-byte jmp).
 - **Parameter naming convention:** Use `param_0`, `param_1` etc. (not `p0`/`p1`) for better readability. Falls back to untyped when no proto info available.
-- **Test count tracking:** 1452 tests across 22 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
+- **Test count tracking:** 1499 tests across 24 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
 - **AST node immutability:** `BlockStatement.body`, `SwitchCase.body`, `VariableDeclaration` fields use `Collections.unmodifiableList` or `final`. Don't use `List.set()` to modify — use mutable fields (`setKind()`) or rebuild nodes. `VariableDeclaration.kind` is now mutable via `setKind()` for const/let optimization.
 - **Post-processing pattern:** `applyConstOptimization()` in ArkTSDecompiler traverses all AST statement types recursively. When adding new AST node types, add them to both `collectVarUsage` and `rewriteLetToConst`. Must handle `IfStatement.getThenBlock()`/`getElseBlock()` (returns `ArkTSStatement`, not List) — use `extractBodyList()` helper.
 - **Opcode values for tests:** STA=0x61, LDA=0x60, LDAI=0x62, RETURN=0x64, RETURNUNDEFINED=0x65. Always verify against `ArkOpcodes` constants — NOT 0x06 for STA.
@@ -309,6 +310,11 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Try-finally detection:** TryCatchProcessor checks `finallyOnly` flag on TryCatchRegion. When true, emits `try { ... } finally { ... }` without catch clause. Exception type resolution uses handler `typeName` for typed catch: `catch (e: TypeError)`.
 - **Type annotation simplification:** `isTypeObviousFromLiteral()` extended to handle empty arrays (`let arr = []`), empty objects (`let obj = {}`), and well-known constructors (Error, Array, Map, Set, Promise). Omit type annotation when initializer makes type obvious.
 - **Stale build artifacts (recurring):** Always run `clean` before `test` after code changes. Incremental compilation can produce stale class files that cause spurious test failures. If tests fail unexpectedly, run `./gradlew clean test`.
+- **Logical compound assignments:** `LogicalAssignExpression` AST node for `&&=`, `||=`, `??=`. Detection in `BranchProcessor.detectLogicalAssignPattern()` — checks for trivial skip block + assignment to same variable as condition. `ControlFlowReconstructor` dispatches to `processLogicalAssign()`.
+- **Typeof+null simplification:** `OperatorHandler.simplifyRedundantTypeofNull()` merges `typeof x !== "undefined" && x !== null` → `x != null`. Standalone: `typeof x !== "undefined"` → `x !== undefined`. Does NOT simplify non-undefined typeof checks (e.g., `typeof x === "string"` is preserved).
+- **Nullable type inference:** `TypeInference.inferNullableType()` builds `T | null` / `T | undefined` union types. `inferTypeFromNullAssignment()` widens type on null/undefined assignment. `DeclarationBuilder.analyzeFieldNullability()` scans constructors for `this.field = null` patterns.
+- **Agent duplicate method injection:** When agents add methods to BranchProcessor (or similar files), they may add duplicate copies AFTER the class closing `}`. Always check for code after the final `}` and remove it. Use `head -n` with caution — verify the exact line count matches expectations.
+- **LiteralExpression test values:** String literal values in tests should NOT include surrounding quotes. `LiteralExpression("hello", STRING)` renders as `"hello"` — the `toArkTS()` method adds quotes. Test assertions should use the already-quoted form in expected strings.
 <!-- LINT_RULES_END -->
 
 ---
