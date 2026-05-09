@@ -260,4 +260,28 @@ public abstract class ArkTSStatement {
             sb.append(body.toArkTS(indent)).append("\n");
         }
     }
+
+    /**
+     * Normalizes blank lines in decompiled output: replaces three or more
+     * consecutive newlines with exactly two (one blank line), and strips
+     * trailing whitespace from each line.
+     *
+     * @param text the raw decompiled output
+     * @return normalized text with no double-blank lines
+     */
+    public static String normalizeBlankLines(String text) {
+        if (text == null || text.isEmpty()) {
+            return text;
+        }
+        String result = text.replaceAll("\n{3,}", "\n\n");
+        String[] lines = result.split("\n", -1);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < lines.length; i++) {
+            sb.append(lines[i].stripTrailing());
+            if (i < lines.length - 1) {
+                sb.append("\n");
+            }
+        }
+        return sb.toString();
+    }
 }

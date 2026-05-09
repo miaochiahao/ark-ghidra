@@ -1,7 +1,9 @@
 package com.arkghidra.decompile;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import com.arkghidra.disasm.ArkInstruction;
 import com.arkghidra.format.AbcCode;
@@ -48,7 +50,24 @@ public class DecompilationContext {
      */
     final List<int[]> loopContextStack;
 
-    DecompilationContext(AbcMethod method, AbcCode code,
+    /**
+     * Cache for string resolution keyed by string table index.
+     * Avoids redundant MUTF-8 decoding when the same string index
+     * is referenced multiple times during decompilation.
+     */
+    private final Map<Integer, String> stringResolveCache = new HashMap<>();
+
+    /**
+     * Constructs a decompilation context.
+     *
+     * @param method the method being decompiled
+     * @param code the method's code section
+     * @param proto the method's prototype (may be null)
+     * @param abcFile the parent ABC file (may be null)
+     * @param cfg the control flow graph
+     * @param instructions the decoded instructions
+     */
+    public DecompilationContext(AbcMethod method, AbcCode code,
             AbcProto proto, AbcFile abcFile,
             ControlFlowGraph cfg,
             List<ArkInstruction> instructions) {
@@ -101,11 +120,22 @@ public class DecompilationContext {
     /**
      * Resolves a string table index to a string value.
      * Returns a placeholder if the string cannot be resolved.
+     * Results are cached per string index.
      *
      * @param stringIdx the string table index
      * @return the resolved string or a placeholder
      */
     public String resolveString(int stringIdx) {
+        String cached = stringResolveCache.get(stringIdx);
+        if (cached != null) {
+            return cached;
+        }
+        String result = resolveStringUncached(stringIdx);
+        stringResolveCache.put(stringIdx, result);
+        return result;
+    }
+
+    private String resolveStringUncached(int stringIdx) {
         if (abcFile != null) {
             try {
                 List<Long> lnpIndex = abcFile.getLnpIndex();
@@ -138,11 +168,9 @@ public class DecompilationContext {
         while (pos < data.length && data[pos] != 0) {
             int b = data[pos] & 0xFF;
             if (b < 0x80) {
-                // Single byte (ASCII)
                 sb.append((char) b);
                 pos++;
             } else if ((b & 0xE0) == 0xC0) {
-                // Two-byte sequence
                 if (pos + 1 < data.length) {
                     int b2 = data[pos + 1] & 0xFF;
                     char ch = (char) (((b & 0x1F) << 6)
@@ -153,7 +181,6 @@ public class DecompilationContext {
                     break;
                 }
             } else if ((b & 0xF0) == 0xE0) {
-                // Three-byte sequence
                 if (pos + 2 < data.length) {
                     int b2 = data[pos + 1] & 0xFF;
                     int b3 = data[pos + 2] & 0xFF;
@@ -165,7 +192,6 @@ public class DecompilationContext {
                     break;
                 }
             } else {
-                // Unknown byte, skip
                 pos++;
             }
         }

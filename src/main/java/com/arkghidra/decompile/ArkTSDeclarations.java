@@ -276,6 +276,7 @@ public class ArkTSDeclarations {
      */
     public static class ClassDeclaration extends ArkTSStatement {
         private final String name;
+        private final String rawName;
         private final String superClass;
         private final List<ArkTSStatement> members;
 
@@ -354,7 +355,21 @@ public class ArkTSDeclarations {
          */
         public ClassDeclaration(String name, String superClass,
                 List<ArkTSStatement> members) {
+            this(name, superClass, members, null);
+        }
+
+        /**
+         * Constructs a class declaration with raw name.
+         *
+         * @param name the sanitized class name
+         * @param superClass the super class name (may be null)
+         * @param members the class members
+         * @param rawName the original ABC class name (e.g. "Lcom/example/Foo;")
+         */
+        public ClassDeclaration(String name, String superClass,
+                List<ArkTSStatement> members, String rawName) {
             this.name = name;
+            this.rawName = rawName;
             this.superClass = superClass;
             this.members = Collections.unmodifiableList(
                     new ArrayList<>(members));
@@ -362,6 +377,10 @@ public class ArkTSDeclarations {
 
         public String getName() {
             return name;
+        }
+
+        public String getRawName() {
+            return rawName;
         }
 
         public String getSuperClass() {

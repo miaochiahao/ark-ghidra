@@ -155,14 +155,26 @@ public class ArkTSDecompiler {
         if (instructions.isEmpty()) {
             return "";
         }
-        ControlFlowGraph cfg = ControlFlowGraph.build(instructions);
+        ControlFlowGraph cfg;
+        try {
+            cfg = ControlFlowGraph.build(instructions);
+        } catch (Exception e) {
+            return buildFallbackInstructionListing(instructions,
+                    "CFG construction failed: " + e.getMessage());
+        }
         AbcCode code = new AbcCode(0, 0, 0, new byte[0],
                 Collections.emptyList(), 0);
         AbcMethod method = new AbcMethod(0, 0, "f", 0, 0, 0);
         DecompilationContext ctx = new DecompilationContext(
                 method, code, null, null, cfg, instructions);
 
-        List<ArkTSStatement> stmts = generateStatements(ctx);
+        List<ArkTSStatement> stmts;
+        try {
+            stmts = generateStatements(ctx);
+        } catch (Exception e) {
+            return buildFallbackInstructionListing(instructions,
+                    "statement generation failed: " + e.getMessage());
+        }
         StringBuilder sb = new StringBuilder();
         for (ArkTSStatement stmt : stmts) {
             sb.append(stmt.toArkTS(0)).append("\n");
@@ -310,16 +322,29 @@ public class ArkTSDecompiler {
         }
 
         for (AbcClass abcClass : abcFile.getClasses()) {
-            ArkTSStatement classDecl =
-                    declBuilder.buildClassDeclaration(
-                            abcClass, abcFile, seenImportPaths);
-            if (classDecl != null) {
-                if (declBuilder.isExported(abcClass)) {
-                    exports.add(new ArkTSDeclarations.ExportStatement(
-                            Collections.emptyList(), classDecl, false));
-                } else {
-                    declarations.add(classDecl);
+            try {
+                ArkTSStatement classDecl =
+                        declBuilder.buildClassDeclaration(
+                                abcClass, abcFile, seenImportPaths);
+                if (classDecl != null) {
+                    if (declBuilder.isExported(abcClass)) {
+                        exports.add(
+                                new ArkTSDeclarations.ExportStatement(
+                                        Collections.emptyList(),
+                                        classDecl, false));
+                    } else {
+                        declarations.add(classDecl);
+                    }
                 }
+            } catch (Exception e) {
+                String clsName = DeclarationBuilder.sanitizeClassName(
+                        abcClass.getName());
+                declarations.add(
+                        new ArkTSStatement.ExpressionStatement(
+                                new ArkTSExpression.VariableExpression(
+                                        "/* error decompiling class "
+                                                + clsName + ": "
+                                                + e.getMessage() + " */")));
             }
         }
 
@@ -418,6 +443,18 @@ public class ArkTSDecompiler {
 
     // --- Fallback listings ---
 
+    private String buildFallbackInstructionListing(
+            List<ArkInstruction> instructions, String reason) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("/* decompilation fallback: ").append(reason)
+                .append(" */\n");
+        for (ArkInstruction insn : instructions) {
+            sb.append("/* ").append(formatInstructionText(insn))
+                    .append(" */\n");
+        }
+        return sb.toString().trim();
+    }
+
     private List<ArkTSStatement> fallbackLinearListing(
             List<ArkInstruction> instructions, String reason) {
         List<ArkTSStatement> stmts = new ArrayList<>();
@@ -474,7 +511,11 @@ public class ArkTSDecompiler {
             }
         }
         if (!exports.isEmpty()) {
-            sb.append("\n\n");
+            if (!declarations.isEmpty()) {
+                sb.append("\n\n");
+            } else if (!imports.isEmpty()) {
+                sb.append("\n");
+            }
             for (int i = 0; i < exports.size(); i++) {
                 sb.append(exports.get(i).toArkTS(0));
                 if (i < exports.size() - 1) {
@@ -482,7 +523,7 @@ public class ArkTSDecompiler {
                 }
             }
         }
-        return sb.toString();
+        return ArkTSStatement.normalizeBlankLines(sb.toString());
     }
 
     private String buildEmptyMethod(AbcMethod method, AbcProto proto) {
@@ -709,6 +750,14 @@ public class ArkTSDecompiler {
      * @return the namespace string, or null
      */
     static String extractNamespace(ArkTSStatement decl) {
+        if (decl instanceof ArkTSDeclarations.ClassDeclaration) {
+            String rawName =
+                    ((ArkTSDeclarations.ClassDeclaration) decl)
+                            .getRawName();
+            if (rawName != null) {
+                return namespaceFromClassName(rawName);
+            }
+        }
         String className = getDeclarationName(decl);
         if (className == null) {
             return null;

@@ -8,7 +8,6 @@ import java.util.Set;
 import com.arkghidra.disasm.ArkInstruction;
 import com.arkghidra.disasm.ArkOpcodes;
 import com.arkghidra.disasm.ArkOperand;
-import com.arkghidra.format.AbcClass;
 import com.arkghidra.format.AbcCode;
 import com.arkghidra.format.AbcMethod;
 
@@ -813,16 +812,7 @@ class InstructionHandler {
         if (ctx == null || ctx.abcFile == null || methodIdx < 0) {
             return null;
         }
-        int idx = 0;
-        for (AbcClass cls : ctx.abcFile.getClasses()) {
-            for (AbcMethod m : cls.getMethods()) {
-                if (idx == methodIdx) {
-                    return m;
-                }
-                idx++;
-            }
-        }
-        return null;
+        return ctx.abcFile.getMethodByFlatIndex(methodIdx);
     }
 
     /**

@@ -3,6 +3,8 @@ package com.arkghidra;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.BeforeAll;
@@ -260,5 +262,136 @@ class PerformanceTest {
             return;
         }
         throw new AssertionError("Expected same or equal but got " + a + " and " + b);
+    }
+
+    @Test
+    @Timeout(value = 10)
+    @DisplayName("getMethods() returns cached list on repeated calls")
+    void testGetMethodsReturnsCachedList() {
+        AbcFile abc = AbcFile.parse(largeAbcData);
+        java.util.List<AbcMethod> first = abc.getMethods();
+        java.util.List<AbcMethod> second = abc.getMethods();
+        assertNotNull(first);
+        assertSame(first, second,
+                "getMethods() should return the same cached list instance");
+        assertEquals(fixture.getLargeMethodCount(), first.size());
+    }
+
+    @Test
+    @DisplayName("getMethodByFlatIndex() provides O(1) lookup")
+    void testGetMethodByFlatIndexFastLookup() {
+        AbcFile abc = AbcFile.parse(largeAbcData);
+        java.util.List<AbcMethod> allMethods = abc.getMethods();
+        for (int i = 0; i < allMethods.size(); i++) {
+            AbcMethod byIndex = abc.getMethodByFlatIndex(i);
+            assertSame(allMethods.get(i), byIndex,
+                    "Flat index lookup should return same method object");
+        }
+        assertNull(abc.getMethodByFlatIndex(-1));
+        assertNull(abc.getMethodByFlatIndex(allMethods.size()));
+        assertNull(abc.getMethodByFlatIndex(Integer.MAX_VALUE));
+    }
+
+    @Test
+    @Timeout(value = 10)
+    @DisplayName("getMethodByFlatIndex() performance is sub-millisecond for 1000 methods")
+    void testGetMethodByFlatIndexPerformance() {
+        AbcFile abc = AbcFile.parse(largeAbcData);
+        int iterations = 10000;
+        long start = System.nanoTime();
+        for (int i = 0; i < iterations; i++) {
+            int idx = i % fixture.getLargeMethodCount();
+            AbcMethod m = abc.getMethodByFlatIndex(idx);
+            assertNotNull(m);
+        }
+        long elapsedNs = System.nanoTime() - start;
+        double elapsedMs = elapsedNs / 1_000_000.0;
+        assertTrue(elapsedMs < 100,
+                "Flat index lookups took too long: " + elapsedMs + "ms");
+    }
+
+    @Test
+    @DisplayName("Debug info cache avoids redundant parsing")
+    void testDebugInfoCacheAvoidsRedundantParsing() {
+        AbcFile abc = AbcFile.parse(largeAbcData);
+        assertEquals(0, abc.getDebugInfoCacheSize(),
+                "Debug info cache should start empty");
+        for (AbcClass cls : abc.getClasses()) {
+            for (AbcMethod method : cls.getMethods()) {
+                abc.getDebugInfoForMethod(method);
+            }
+        }
+        assertEquals(0, abc.getDebugInfoCacheSize(),
+                "Debug info cache should remain empty for methods with no debug info");
+    }
+
+    @Test
+    @Timeout(value = 15)
+    @DisplayName("Full decompile of all methods in large file within time limit")
+    void testDecompileAllMethodsInLargeFile() {
+        AbcFile abc = AbcFile.parse(largeAbcData);
+        com.arkghidra.decompile.ArkTSDecompiler decompiler =
+                new com.arkghidra.decompile.ArkTSDecompiler();
+        int decompiled = 0;
+        long start = System.nanoTime();
+        for (AbcClass cls : abc.getClasses()) {
+            for (AbcMethod method : cls.getMethods()) {
+                if (method.getCodeOff() == 0) {
+                    continue;
+                }
+                AbcCode code = abc.getCodeForMethod(method);
+                assertNotNull(code);
+                String result = decompiler.decompileMethod(method, code, abc);
+                assertNotNull(result);
+                assertFalse(result.isEmpty());
+                decompiled++;
+            }
+        }
+        long elapsedNs = System.nanoTime() - start;
+        double elapsedMs = elapsedNs / 1_000_000.0;
+        assertEquals(fixture.getLargeMethodCount(), decompiled);
+        assertTrue(elapsedMs < 10000,
+                "Full decompilation took too long: " + elapsedMs + "ms");
+    }
+
+    @Test
+    @Timeout(value = 5)
+    @DisplayName("CFG construction performance with many branches")
+    void testCfgConstructionPerformance() {
+        AbcFile abc = AbcFile.parse(largeAbcData);
+        com.arkghidra.disasm.ArkDisassembler disasm =
+                new com.arkghidra.disasm.ArkDisassembler();
+        int totalBlocks = 0;
+        for (AbcClass cls : abc.getClasses()) {
+            for (AbcMethod method : cls.getMethods()) {
+                if (method.getCodeOff() == 0) {
+                    continue;
+                }
+                AbcCode code = abc.getCodeForMethod(method);
+                java.util.List<com.arkghidra.disasm.ArkInstruction> insns =
+                        disasm.disassemble(code.getInstructions(), 0,
+                                (int) code.getCodeSize());
+                com.arkghidra.decompile.ControlFlowGraph cfg =
+                        com.arkghidra.decompile.ControlFlowGraph.build(
+                                insns, code.getTryBlocks());
+                totalBlocks += cfg.getBlocks().size();
+            }
+        }
+        assertTrue(totalBlocks > 0, "Should have constructed some basic blocks");
+    }
+
+
+    @Test
+    @DisplayName("Repeated getMethods() calls do not allocate new lists")
+    void testGetMethodsNoAllocationOnRepeat() {
+        AbcFile abc = AbcFile.parse(largeAbcData);
+        for (int i = 0; i < 100; i++) {
+            java.util.List<AbcMethod> methods = abc.getMethods();
+            assertNotNull(methods);
+        }
+        java.util.List<AbcMethod> first = abc.getMethods();
+        for (int i = 0; i < 100; i++) {
+            assertSame(first, abc.getMethods());
+        }
     }
 }

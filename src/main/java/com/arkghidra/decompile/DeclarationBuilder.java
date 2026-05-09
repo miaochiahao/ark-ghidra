@@ -95,7 +95,7 @@ class DeclarationBuilder {
                     className, typeParams, superClassName, members);
         }
         return new ArkTSDeclarations.ClassDeclaration(
-                className, superClassName, members);
+                className, superClassName, members, abcClass.getName());
     }
 
     /**

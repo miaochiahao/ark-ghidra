@@ -2,11 +2,11 @@ package com.arkghidra.decompile;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeSet;
 
 import com.arkghidra.disasm.ArkInstruction;
 import com.arkghidra.disasm.ArkOpcodes;
@@ -79,7 +79,7 @@ public class ControlFlowGraph {
         }
 
         // Identify all basic block boundaries
-        Set<Integer> leaders = new TreeSet<>();
+        Set<Integer> leaders = new HashSet<>();
         // First instruction is always a leader
         leaders.add(instructions.get(0).getOffset());
 

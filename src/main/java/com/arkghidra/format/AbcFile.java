@@ -52,6 +52,24 @@ public class AbcFile {
      */
     private final Map<Integer, AbcCode> codeCache = new HashMap<>();
 
+    /**
+     * Cache of debug info offset to parsed AbcDebugInfo. Avoids re-parsing the
+     * same debug info section when multiple components request it.
+     */
+    private final Map<Integer, AbcDebugInfo> debugInfoCache = new HashMap<>();
+
+    /**
+     * Lazily computed flat method list. Built once on first access, then
+     * returned as an unmodifiable list on subsequent calls.
+     */
+    private volatile List<AbcMethod> flatMethodList;
+
+    /**
+     * Lazily computed method lookup array. Indexed by flat method index.
+     * Built alongside flatMethodList on first access.
+     */
+    private volatile AbcMethod[] flatMethodArray;
+
     private final List<AbcAnnotation> annotations = new ArrayList<>();
     private final Map<Long, AbcAnnotation> annotationCache = new HashMap<>();
     private final Map<Integer, List<AbcAnnotation>> classAnnotations = new HashMap<>();
@@ -688,6 +706,15 @@ public class AbcFile {
         return stringCache.size();
     }
 
+    /**
+     * Returns the number of debug info entries currently cached.
+     *
+     * @return cached debug info count
+     */
+    public int getDebugInfoCacheSize() {
+        return debugInfoCache.size();
+    }
+
     public AbcHeader getHeader() {
         return header;
     }
@@ -700,16 +727,43 @@ public class AbcFile {
 
     /**
      * Returns a flat list of all methods across all classes.
+     * Lazily computed and cached on first access.
      *
      * @return all methods in the file
      */
     public List<AbcMethod> getMethods() {
+        if (flatMethodList != null) {
+            return flatMethodList;
+        }
         List<AbcMethod> allMethods = new ArrayList<>();
         for (AbcClass cls : classes) {
             allMethods.addAll(cls.getMethods());
         }
-        return allMethods;
+        flatMethodList = Collections.unmodifiableList(allMethods);
+        flatMethodArray = allMethods.toArray(new AbcMethod[0]);
+        return flatMethodList;
     }
+
+    /**
+     * Returns the method at the given flat index across all classes.
+     * O(1) lookup via pre-computed array.
+     *
+     * @param flatIndex the 0-based flat method index
+     * @return the method, or null if the index is out of range
+     */
+    public AbcMethod getMethodByFlatIndex(int flatIndex) {
+        if (flatIndex < 0) {
+            return null;
+        }
+        if (flatMethodArray == null) {
+            getMethods();
+        }
+        if (flatIndex >= flatMethodArray.length) {
+            return null;
+        }
+        return flatMethodArray[flatIndex];
+    }
+
     public List<AbcProto> getProtos() {
         return protos;
     }
@@ -812,6 +866,7 @@ public class AbcFile {
 
     /**
      * Parses and returns debug info for a method, if available.
+     * Results are cached by debug info offset.
      *
      * @param method the method
      * @return the debug info, or null if none
@@ -820,8 +875,14 @@ public class AbcFile {
         if (method.getDebugInfoOff() == 0) {
             return null;
         }
-        return parseDebugInfo(new AbcReader(rawData),
-                (int) method.getDebugInfoOff());
+        int off = (int) method.getDebugInfoOff();
+        AbcDebugInfo cached = debugInfoCache.get(off);
+        if (cached != null) {
+            return cached;
+        }
+        AbcDebugInfo debugInfo = parseDebugInfo(new AbcReader(rawData), off);
+        debugInfoCache.put(off, debugInfo);
+        return debugInfo;
     }
 
     /**

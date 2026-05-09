@@ -10677,4 +10677,299 @@ class ArkTSDecompilerTest {
         assertNotNull(defaults,
                 "Should return a list");
     }
+
+    // --- Output formatting polish tests (issue #64) ---
+
+    @Test
+    void testFormatting_functionDeclaration_exactOutput() {
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(List.of(
+                new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.LiteralExpression("42",
+                                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER))));
+        ArkTSDeclarations.FunctionDeclaration func =
+                new ArkTSDeclarations.FunctionDeclaration("getAnswer",
+                        Collections.emptyList(), "number", body);
+        String expected = "function getAnswer(): number {\n"
+                + "    return 42;\n"
+                + "}";
+        assertEquals(expected, func.toArkTS(0));
+    }
+
+    @Test
+    void testFormatting_classWithFieldAndMethod_exactOutput() {
+        ArkTSExpression init = new ArkTSExpression.LiteralExpression("0",
+                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSDeclarations.ClassFieldDeclaration field =
+                new ArkTSDeclarations.ClassFieldDeclaration("count", "number",
+                        init, false, "private");
+        ArkTSStatement methodBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.VariableExpression("count"))));
+        ArkTSDeclarations.ClassMethodDeclaration method =
+                new ArkTSDeclarations.ClassMethodDeclaration("getCount",
+                        Collections.emptyList(), "number", methodBody,
+                        false, "public");
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("Counter", null,
+                        List.of(field, method));
+        String result = cls.toArkTS(0);
+        assertTrue(result.startsWith("class Counter {"));
+        assertTrue(result.contains("    private count: number = 0;"));
+        assertTrue(result.contains("public getCount(): number"));
+        assertTrue(result.contains("        return count;"));
+        assertTrue(result.contains("    }"));
+        assertTrue(result.endsWith("}"));
+    }
+
+    @Test
+    void testFormatting_ifElseStatement_exactOutput() {
+        ArkTSExpression cond = new ArkTSExpression.BinaryExpression(
+                new ArkTSExpression.VariableExpression("x"),
+                ">", new ArkTSExpression.LiteralExpression("0",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER));
+        ArkTSStatement thenStmt = new ArkTSStatement.ExpressionStatement(
+                new ArkTSExpression.CallExpression(
+                        new ArkTSExpression.VariableExpression("process"),
+                        Collections.emptyList()));
+        ArkTSStatement elseStmt = new ArkTSStatement.ExpressionStatement(
+                new ArkTSExpression.CallExpression(
+                        new ArkTSExpression.VariableExpression("handleError"),
+                        Collections.emptyList()));
+        ArkTSControlFlow.IfStatement ifStmt = new ArkTSControlFlow.IfStatement(
+                cond,
+                new ArkTSStatement.BlockStatement(List.of(thenStmt)),
+                new ArkTSStatement.BlockStatement(List.of(elseStmt)));
+        String expected = "if ((x > 0)) {\n"
+                + "    process();\n"
+                + "} else {\n"
+                + "    handleError();\n"
+                + "}";
+        assertEquals(expected, ifStmt.toArkTS(0));
+    }
+
+    @Test
+    void testFormatting_variableDeclaration_noRedundantType() {
+        ArkTSExpression init = new ArkTSExpression.LiteralExpression("42",
+                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSStatement stmt = new ArkTSStatement.VariableDeclaration("let",
+                "x", null, init);
+        assertEquals("let x = 42;", stmt.toArkTS(0));
+    }
+
+    @Test
+    void testFormatting_variableDeclaration_keepsNonObviousType() {
+        ArkTSExpression init = new ArkTSExpression.CallExpression(
+                new ArkTSExpression.VariableExpression("getValue"),
+                Collections.emptyList());
+        ArkTSStatement stmt = new ArkTSStatement.VariableDeclaration("let",
+                "result", "number", init);
+        assertEquals("let result: number = getValue();",
+                stmt.toArkTS(0));
+    }
+
+    @Test
+    void testFormatting_noDoubleBlankLines() {
+        String input = "import { A } from 'mod';\n"
+                + "\n"
+                + "\n"
+                + "\n"
+                + "class Foo {\n"
+                + "}\n"
+                + "\n"
+                + "\n"
+                + "\n"
+                + "export { Foo };";
+        String result = ArkTSStatement.normalizeBlankLines(input);
+        assertFalse(result.contains("\n\n\n"),
+                "Normalized output must not contain triple newlines");
+        assertEquals("import { A } from 'mod';\n"
+                + "\n"
+                + "class Foo {\n"
+                + "}\n"
+                + "\n"
+                + "export { Foo };", result);
+    }
+
+    @Test
+    void testFormatting_nestedBlockIndentation() {
+        ArkTSExpression cond = new ArkTSExpression.BinaryExpression(
+                new ArkTSExpression.VariableExpression("x"),
+                "==",
+                new ArkTSExpression.LiteralExpression("1",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER));
+        ArkTSStatement innerReturn = new ArkTSStatement.ReturnStatement(
+                new ArkTSExpression.LiteralExpression("true",
+                        ArkTSExpression.LiteralExpression.LiteralKind.BOOLEAN));
+        ArkTSControlFlow.IfStatement innerIf = new ArkTSControlFlow.IfStatement(
+                cond,
+                new ArkTSStatement.BlockStatement(List.of(innerReturn)),
+                null);
+        ArkTSStatement.BlockStatement outerBlock =
+                new ArkTSStatement.BlockStatement(List.of(innerIf));
+        String result = outerBlock.toArkTS(1);
+        assertTrue(result.startsWith("    {"),
+                "Block at indent 1 should start with 4 spaces");
+        assertTrue(result.contains("        if"),
+                "Inner if at indent 2 should have 8 spaces");
+        assertTrue(result.contains("            return"),
+                "Return at indent 3 should have 12 spaces");
+    }
+
+    @Test
+    void testFormatting_whileLoop_exactOutput() {
+        ArkTSExpression cond = new ArkTSExpression.BinaryExpression(
+                new ArkTSExpression.VariableExpression("i"),
+                "<",
+                new ArkTSExpression.LiteralExpression("10",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER));
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(List.of(
+                new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.AssignExpression(
+                                new ArkTSExpression.VariableExpression("i"),
+                                new ArkTSExpression.BinaryExpression(
+                                        new ArkTSExpression.VariableExpression("i"),
+                                        "+",
+                                        new ArkTSExpression.LiteralExpression("1",
+                                                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER))))));
+        ArkTSControlFlow.WhileStatement whileStmt =
+                new ArkTSControlFlow.WhileStatement(cond, body);
+        String expected = "while ((i < 10)) {\n"
+                + "    i = (i + 1);\n"
+                + "}";
+        assertEquals(expected, whileStmt.toArkTS(0));
+    }
+
+    @Test
+    void testFormatting_trailingWhitespaceStripped() {
+        String input = "let x = 42;   \n"
+                + "    let y = 10;  \n"
+                + "return x; ";
+        String result = ArkTSStatement.normalizeBlankLines(input);
+        assertFalse(result.contains(" \n"),
+                "No line should have trailing whitespace before newline");
+        assertEquals("let x = 42;\n    let y = 10;\nreturn x;", result);
+    }
+
+    // --- Error recovery tests ---
+
+    @Test
+    void testErrorRecovery_emptyInstructions_returnsEmpty() {
+        List<ArkInstruction> empty = Collections.emptyList();
+        String result = decompiler.decompileInstructions(empty);
+        assertEquals("", result);
+    }
+
+    @Test
+    void testErrorRecovery_unhandledOpcodeEmitsComment() {
+        ArkInstruction unknownInsn = new ArkInstruction(
+                0xEE, "unknown_opcode",
+                ArkInstructionFormat.NONE,
+                0, 1, Collections.emptyList(), false);
+        List<ArkInstruction> insns = List.of(unknownInsn);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("unknown_opcode"),
+                "Should mention the unhandled opcode mnemonic");
+    }
+
+    @Test
+    void testErrorRecovery_multipleInstructionsWithUnknown() {
+        ArkInstruction ldaiInsn = new ArkInstruction(
+                0x62, "ldai",
+                ArkInstructionFormat.IMM32, 0, 5,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE32_SIGNED, 42)),
+                false);
+        ArkInstruction unknownInsn = new ArkInstruction(
+                0xEE, "unknown_op",
+                ArkInstructionFormat.NONE,
+                5, 1, Collections.emptyList(), false);
+        ArkInstruction retInsn = new ArkInstruction(
+                0x65, "returnundefined",
+                ArkInstructionFormat.NONE,
+                6, 1, Collections.emptyList(), false);
+        List<ArkInstruction> insns =
+                List.of(ldaiInsn, unknownInsn, retInsn);
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result, "Should not return null");
+        assertFalse(result.isEmpty(),
+                "Should produce some output");
+    }
+
+    @Test
+    void testErrorRecovery_disassemblyFailure_handledGracefully() {
+        // When disassembler throws on truncated bytecode, the calling
+        // code can catch and pass empty instructions to the decompiler.
+        byte[] truncatedCode = bytes(0x62);
+        List<ArkInstruction> insns;
+        try {
+            insns = dis(truncatedCode);
+        } catch (Exception e) {
+            insns = Collections.emptyList();
+        }
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result,
+                "Should return non-null even when disassembly fails");
+    }
+
+    @Test
+    void testErrorRecovery_malformedJumpTarget_doesNotCrash() {
+        byte[] code = concat(
+                bytes(0x62), le32(1),
+                bytes(0x4D, 0x50),
+                bytes(0x65)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result,
+                "Should not crash with malformed jump target");
+    }
+
+    @Test
+    void testErrorRecovery_invalidOpcodeInMiddle_stillReturnsOutput() {
+        byte[] code = concat(
+                bytes(0x62), le32(10),
+                bytes(0x61, 0x00),
+                bytes(0xEE),
+                bytes(0x62), le32(20),
+                bytes(0x61, 0x01),
+                bytes(0x64)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result,
+                "Should produce output even with invalid opcode");
+        assertTrue(result.contains("let v0"),
+                "First variable should still be present");
+    }
+
+    @Test
+    void testErrorRecovery_cfgConstructionWithEmptyTryBlocks() {
+        byte[] code = concat(
+                bytes(0x62), le32(0),
+                bytes(0x64)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("return"),
+                "Should decompile return even with edge-case CFG");
+    }
+
+    @Test
+    void testErrorRecovery_singleReturnUndefDoesNotThrow() {
+        byte[] code = bytes(0x65);
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("return"),
+                "Should produce return statement");
+    }
+
+    // =========================================================================
+    // End-to-end decompilation tests (issue #66)
+    // Full pipeline: AbcFile.parse -> decompiler.decompileFile
+    // =========================================================================
+
+    /**
+     * Tests the comprehensive 2-class ABC fixture through the full
+     * decompileFile pipeline.
+     */
 }

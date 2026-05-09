@@ -218,9 +218,21 @@ class BlockInstructionProcessor {
                 }
             }
 
-            InstructionHandler.StatementResult result =
-                    instrHandler.processInstruction(
-                            insn, ctx, accValue, declaredVars, typeInf);
+            InstructionHandler.StatementResult result;
+            try {
+                result = instrHandler.processInstruction(
+                        insn, ctx, accValue, declaredVars, typeInf);
+            } catch (Exception e) {
+                String msg = "error at offset 0x"
+                        + Integer.toHexString(insn.getOffset())
+                        + ": " + e.getMessage();
+                ctx.warnings.add(msg);
+                stmts.add(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression(
+                                "/* " + msg + " */")));
+                accValue = null;
+                continue;
+            }
             if (result != null) {
                 if (result.statement != null) {
                     stmts.add(result.statement);
@@ -254,9 +266,14 @@ class BlockInstructionProcessor {
             if (ArkOpcodesCompat.isConditionalBranch(opcode)) {
                 continue;
             }
-            InstructionHandler.StatementResult result =
-                    instrHandler.processInstruction(
-                            insn, ctx, accValue, declaredVars, typeInf);
+            InstructionHandler.StatementResult result;
+            try {
+                result = instrHandler.processInstruction(
+                        insn, ctx, accValue, declaredVars, typeInf);
+            } catch (Exception e) {
+                accValue = null;
+                continue;
+            }
             if (result != null) {
                 accValue = result.newAccValue != null
                         ? result.newAccValue : accValue;
