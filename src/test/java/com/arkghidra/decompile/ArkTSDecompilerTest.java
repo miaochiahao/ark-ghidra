@@ -10104,8 +10104,8 @@ class ArkTSDecompilerTest {
         assertEquals("callruntime.ldsendableexternalmodulevar",
                 insns.get(0).getMnemonic());
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("sendable_ext_mod_1"),
-                "Should contain sendable external module var: " + result);
+        assertTrue(result.contains("ext_mod_1"),
+                "Should contain module variable via import table: " + result);
     }
 
     @Test
@@ -13549,5 +13549,262 @@ class ArkTSDecompilerTest {
         ctx.addCapturedRegister(10);
         assertEquals(2, ctx.getCapturedRegisters().size(),
                 "Should have two captured registers");
+    }
+
+    // --- Exception handling improvement tests ---
+
+    @Test
+    void testTryCatch_noBinding_renderedCorrectly() {
+        ArkTSStatement tryBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("risky()"))));
+        ArkTSStatement catchBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("recover()"))));
+        ArkTSControlFlow.TryCatchStatement stmt =
+                new ArkTSControlFlow.TryCatchStatement(tryBody, null,
+                        null, catchBody, null);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.contains("try {"),
+                "Should start with try, got: " + result);
+        assertTrue(result.contains(" catch {\n"),
+                "Should have catch with no binding, got: " + result);
+        assertFalse(result.contains("catch ("),
+                "Should not have catch with parens, got: " + result);
+        assertTrue(result.contains("recover()"),
+                "Should contain catch body, got: " + result);
+        assertFalse(result.contains("finally"),
+                "Should not contain finally, got: " + result);
+    }
+
+    @Test
+    void testTryCatch_noBindingWithFinally_renderedCorrectly() {
+        ArkTSStatement tryBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("doWork()"))));
+        ArkTSStatement catchBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("handleError()"))));
+        ArkTSStatement finallyBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("cleanup()"))));
+        ArkTSControlFlow.TryCatchStatement stmt =
+                new ArkTSControlFlow.TryCatchStatement(tryBody, null,
+                        null, catchBody, finallyBody);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.contains(" catch {\n"),
+                "Should have catch with no binding, got: " + result);
+        assertTrue(result.contains("finally {"),
+                "Should have finally, got: " + result);
+        assertTrue(result.contains("cleanup()"),
+                "Should contain finally body, got: " + result);
+    }
+
+    @Test
+    void testTryCatch_typedException_withCatchParam() {
+        ArkTSStatement tryBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("parse()"))));
+        ArkTSStatement catchBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.CallExpression(
+                                new ArkTSExpression.VariableExpression("console.error"),
+                                List.of(new ArkTSExpression.VariableExpression("e"))))));
+        ArkTSControlFlow.TryCatchStatement stmt =
+                new ArkTSControlFlow.TryCatchStatement(tryBody, "e",
+                        "TypeError", catchBody, null);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.contains("catch (e: TypeError) {"),
+                "Should have typed catch, got: " + result);
+        assertTrue(result.contains("console.error(e)"),
+                "Should reference catch param, got: " + result);
+    }
+
+    @Test
+    void testMultiCatchTryCatch_multipleTypedCatchBlocks() {
+        ArkTSStatement tryBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("riskyOperation()"))));
+        ArkTSStatement typeErrorBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.CallExpression(
+                                new ArkTSExpression.VariableExpression("handleTypeError"),
+                                List.of(new ArkTSExpression.VariableExpression("e"))))));
+        ArkTSStatement rangeErrorBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.CallExpression(
+                                new ArkTSExpression.VariableExpression("handleRangeError"),
+                                List.of(new ArkTSExpression.VariableExpression("e"))))));
+        List<ArkTSControlFlow.MultiCatchTryCatchStatement.CatchClause> clauses =
+                List.of(
+                        new ArkTSControlFlow.MultiCatchTryCatchStatement.CatchClause(
+                                "e", "TypeError", typeErrorBody),
+                        new ArkTSControlFlow.MultiCatchTryCatchStatement.CatchClause(
+                                "e", "RangeError", rangeErrorBody));
+        ArkTSControlFlow.MultiCatchTryCatchStatement stmt =
+                new ArkTSControlFlow.MultiCatchTryCatchStatement(tryBody, clauses, null);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.startsWith("try {"),
+                "Should start with try, got: " + result);
+        assertTrue(result.contains("catch (e: TypeError) {"),
+                "Should have TypeError catch, got: " + result);
+        assertTrue(result.contains("catch (e: RangeError) {"),
+                "Should have RangeError catch, got: " + result);
+        assertTrue(result.contains("handleTypeError(e)"),
+                "Should contain TypeError handler body, got: " + result);
+        assertTrue(result.contains("handleRangeError(e)"),
+                "Should contain RangeError handler body, got: " + result);
+        assertFalse(result.contains("finally"),
+                "Should not contain finally, got: " + result);
+    }
+
+    @Test
+    void testMultiCatchTryCatch_withFinally() {
+        ArkTSStatement tryBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("dangerous()"))));
+        ArkTSStatement typeErrorBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("handleType()"))));
+        ArkTSStatement syntaxErrorBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("handleSyntax()"))));
+        ArkTSStatement finallyBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("cleanup()"))));
+        List<ArkTSControlFlow.MultiCatchTryCatchStatement.CatchClause> clauses =
+                List.of(
+                        new ArkTSControlFlow.MultiCatchTryCatchStatement.CatchClause(
+                                "e", "TypeError", typeErrorBody),
+                        new ArkTSControlFlow.MultiCatchTryCatchStatement.CatchClause(
+                                "e", "SyntaxError", syntaxErrorBody));
+        ArkTSControlFlow.MultiCatchTryCatchStatement stmt =
+                new ArkTSControlFlow.MultiCatchTryCatchStatement(tryBody, clauses, finallyBody);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.contains("catch (e: TypeError) {"),
+                "Should have TypeError catch, got: " + result);
+        assertTrue(result.contains("catch (e: SyntaxError) {"),
+                "Should have SyntaxError catch, got: " + result);
+        assertTrue(result.contains("finally {"),
+                "Should have finally, got: " + result);
+        assertTrue(result.contains("cleanup()"),
+                "Should contain finally body, got: " + result);
+    }
+
+    @Test
+    void testMultiCatchTryCatch_withNoBindingClause() {
+        ArkTSStatement tryBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("risky()"))));
+        ArkTSStatement typeErrorBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("handleType()"))));
+        ArkTSStatement genericBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("handleGeneric()"))));
+        List<ArkTSControlFlow.MultiCatchTryCatchStatement.CatchClause> clauses =
+                List.of(
+                        new ArkTSControlFlow.MultiCatchTryCatchStatement.CatchClause(
+                                "e", "TypeError", typeErrorBody),
+                        new ArkTSControlFlow.MultiCatchTryCatchStatement.CatchClause(
+                                null, null, genericBody));
+        ArkTSControlFlow.MultiCatchTryCatchStatement stmt =
+                new ArkTSControlFlow.MultiCatchTryCatchStatement(tryBody, clauses, null);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.contains("catch (e: TypeError) {"),
+                "Should have typed catch, got: " + result);
+        assertTrue(result.contains(" catch {\n"),
+                "Should have no-binding catch, got: " + result);
+        assertTrue(result.contains("handleType()"),
+                "Should contain typed handler body, got: " + result);
+        assertTrue(result.contains("handleGeneric()"),
+                "Should contain generic handler body, got: " + result);
+    }
+
+    @Test
+    void testTryCatchFinally_controlFlowInCatchBlock() {
+        ArkTSStatement tryBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("doWork()"))));
+        ArkTSStatement catchBody = new ArkTSStatement.BlockStatement(
+                List.of(
+                        new ArkTSStatement.ExpressionStatement(
+                                new ArkTSExpression.CallExpression(
+                                        new ArkTSExpression.VariableExpression("console.error"),
+                                        List.of(new ArkTSExpression.VariableExpression("e")))),
+                        new ArkTSStatement.ReturnStatement(
+                                new ArkTSExpression.LiteralExpression("-1",
+                                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER))));
+        ArkTSStatement finallyBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("cleanup()"))));
+        ArkTSControlFlow.TryCatchStatement stmt =
+                new ArkTSControlFlow.TryCatchStatement(tryBody, "e",
+                        "Error", catchBody, finallyBody);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.contains("catch (e: Error) {"),
+                "Should have typed catch, got: " + result);
+        assertTrue(result.contains("console.error(e)"),
+                "Should contain error logging, got: " + result);
+        assertTrue(result.contains("return -1;"),
+                "Should contain return in catch, got: " + result);
+        assertTrue(result.contains("finally {"),
+                "Should have finally, got: " + result);
+        assertTrue(result.contains("cleanup()"),
+                "Should contain cleanup, got: " + result);
+    }
+
+    @Test
+    void testNestedTryCatch_innerTypedOuterGeneric_rendered() {
+        ArkTSStatement innerTryBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("innerRisky()"))));
+        ArkTSStatement innerCatchBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("handleInner()"))));
+        ArkTSControlFlow.TryCatchStatement innerTry =
+                new ArkTSControlFlow.TryCatchStatement(innerTryBody,
+                        "err", "TypeError", innerCatchBody, null);
+        ArkTSStatement outerTryBody = new ArkTSStatement.BlockStatement(
+                List.of(innerTry));
+        ArkTSStatement outerCatchBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("handleOuter()"))));
+        ArkTSControlFlow.TryCatchStatement outerTry =
+                new ArkTSControlFlow.TryCatchStatement(outerTryBody,
+                        "ex", null, outerCatchBody, null);
+        String result = outerTry.toArkTS(0);
+        assertTrue(result.contains("try {"),
+                "Should have outer try, got: " + result);
+        assertTrue(result.contains("catch (err: TypeError)"),
+                "Inner should have TypeError catch, got: " + result);
+        assertTrue(result.contains("catch (ex)"),
+                "Outer should have generic catch, got: " + result);
+        assertTrue(result.contains("handleInner()"),
+                "Should contain inner handler, got: " + result);
+        assertTrue(result.contains("handleOuter()"),
+                "Should contain outer handler, got: " + result);
+    }
+
+    @Test
+    void testFinallyOnly_noCatchClause() {
+        ArkTSStatement tryBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("acquireResource()"))));
+        ArkTSStatement finallyBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("releaseResource()"))));
+        ArkTSControlFlow.TryCatchStatement stmt =
+                new ArkTSControlFlow.TryCatchStatement(tryBody, null,
+                        null, null, finallyBody);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.contains("try {"),
+                "Should have try, got: " + result);
+        assertFalse(result.contains("catch"),
+                "Should not have catch, got: " + result);
+        assertTrue(result.contains("finally {"),
+                "Should have finally, got: " + result);
+        assertTrue(result.contains("releaseResource()"),
+                "Should contain finally body, got: " + result);
     }
 }
