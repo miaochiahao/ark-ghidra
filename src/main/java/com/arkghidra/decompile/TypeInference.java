@@ -426,6 +426,111 @@ public class TypeInference {
         return result;
     }
 
+    // --- Nullable type support ---
+
+    /**
+     * Builds a nullable type annotation from a base type and null/undefined flags.
+     *
+     * <p>Produces union types like {@code T | null}, {@code T | undefined},
+     * or {@code T | null | undefined}. Skips union wrapping when the base
+     * type is already "null" or "undefined".
+     *
+     * @param baseType the base type name (e.g. "string", "number")
+     * @param canBeNull true if the value can be null
+     * @param canBeUndefined true if the value can be undefined
+     * @return the nullable type string
+     */
+    public static String inferNullableType(String baseType,
+            boolean canBeNull, boolean canBeUndefined) {
+        if (baseType == null) {
+            if (canBeNull && canBeUndefined) {
+                return "null | undefined";
+            }
+            if (canBeNull) {
+                return "null";
+            }
+            if (canBeUndefined) {
+                return "undefined";
+            }
+            return null;
+        }
+        if ("null".equals(baseType) || "undefined".equals(baseType)) {
+            return baseType;
+        }
+        if (!canBeNull && !canBeUndefined) {
+            return baseType;
+        }
+        StringBuilder sb = new StringBuilder(baseType);
+        if (canBeNull) {
+            sb.append(" | null");
+        }
+        if (canBeUndefined) {
+            sb.append(" | undefined");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Formats a property declaration with optional syntax when appropriate.
+     *
+     * <p>When {@code isOptional} is true, renders as {@code name?: type}.
+     * Otherwise renders as {@code name: type}.
+     *
+     * @param name the property name
+     * @param type the type annotation (may be null)
+     * @param isOptional true if the property is optional
+     * @return the formatted property declaration string
+     */
+    public static String formatOptionalProperty(String name, String type,
+            boolean isOptional) {
+        String typeStr = type != null ? type : "unknown";
+        if (isOptional) {
+            return name + "?: " + typeStr;
+        }
+        return name + ": " + typeStr;
+    }
+
+    /**
+     * Widens the current type when a null or undefined value is assigned.
+     *
+     * <p>If the assigned value is a null literal, appends " | null" to the
+     * current type. If it is an undefined literal, appends " | undefined".
+     * Returns the current type unchanged for all other assignments.
+     *
+     * @param currentType the current inferred type (may be null)
+     * @param assignedValue the value being assigned (may be null)
+     * @return the widened type, or currentType if no widening needed
+     */
+    public static String inferTypeFromNullAssignment(String currentType,
+            ArkTSExpression assignedValue) {
+        if (!(assignedValue instanceof ArkTSExpression.LiteralExpression)) {
+            return currentType;
+        }
+        ArkTSExpression.LiteralExpression lit =
+                (ArkTSExpression.LiteralExpression) assignedValue;
+        if (lit.getKind()
+                == ArkTSExpression.LiteralExpression.LiteralKind.NULL) {
+            if (currentType == null) {
+                return "null";
+            }
+            if (currentType.contains("| null")) {
+                return currentType;
+            }
+            return currentType + " | null";
+        }
+        if (lit.getKind()
+                == ArkTSExpression.LiteralExpression.LiteralKind.UNDEFINED) {
+            if (currentType == null) {
+                return "undefined";
+            }
+            if (currentType.contains("| undefined")) {
+                return currentType;
+            }
+            return currentType + " | undefined";
+        }
+        return currentType;
+    }
+
     // --- Array type support ---
 
     /**

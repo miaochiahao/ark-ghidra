@@ -412,6 +412,9 @@ class InstructionHandler {
             }
             // Simplify boolean comparisons: x === true -> x
             result = OperatorHandler.simplifyBooleanComparison(result);
+            // Simplify redundant typeof/undefined/null patterns
+            result =
+                    OperatorHandler.simplifyRedundantTypeofNull(result);
             // Simplify identity operations: x + 0 -> x, x * 1 -> x
             if (result instanceof ArkTSExpression.BinaryExpression) {
                 ArkTSExpression.BinaryExpression bin =

@@ -635,6 +635,197 @@ class BranchProcessor {
         return stmts;
     }
 
+    // --- Logical compound assignment detection ---
+
+    /**
+     * Detects logical compound assignment patterns (&&=, ||=, ??=).
+     *
+     * <p>For {@code x &&= expr}: condBlock loads x, checks falsy
+     * (jeqz), jumps to merge. Fall-through computes expr and stores to x.
+     *
+     * <p>For {@code x ||= expr}: condBlock loads x, checks truthy
+     * (jnez), jumps to merge. Fall-through computes expr and stores to x.
+     *
+     * <p>For {@code x ??= expr}: condBlock loads x, checks
+     * null/undefined (jeqnull, jstricteqnull, jequndefined,
+     * jstrictequndefined), jumps to merge. Fall-through computes expr
+     * and stores to x.
+     *
+     * @param condBlock the condition block
+     * @param trueBranch the branch taken on true (jump target)
+     * @param falseBranch the fall-through branch
+     * @param cfg the control flow graph
+     * @param ctx the decompilation context
+     * @return a LOGICAL_ASSIGN pattern, or null if not detected
+     */
+    ControlFlowReconstructor.ControlFlowPattern detectLogicalAssignPattern(
+            BasicBlock condBlock, BasicBlock trueBranch,
+            BasicBlock falseBranch, ControlFlowGraph cfg,
+            DecompilationContext ctx) {
+
+        ArkInstruction lastInsn = condBlock.getLastInstruction();
+        if (lastInsn == null) {
+            return null;
+        }
+        int opcode = lastInsn.getOpcode();
+
+        String op = null;
+        // &&= : jeqz (jump if falsy) - skip branch is trueBranch
+        if (opcode == ArkOpcodesCompat.JEQZ_IMM8
+                || opcode == ArkOpcodesCompat.JEQZ_IMM16
+                || opcode == ArkOpcodesCompat.JSTRICTEQZ_IMM8
+                || opcode == ArkOpcodesCompat.JSTRICTEQZ_IMM16) {
+            op = "&&=";
+        }
+        // ||= : jnez (jump if truthy) - skip branch is trueBranch
+        if (opcode == ArkOpcodesCompat.JNEZ_IMM8
+                || opcode == ArkOpcodesCompat.JNEZ_IMM16
+                || opcode == ArkOpcodesCompat.JNSTRICTEQZ_IMM8
+                || opcode == ArkOpcodesCompat.JNSTRICTEQZ_IMM16) {
+            op = "||=";
+        }
+        // ??= : jeqnull/jstricteqnull/jequndefined - skip is trueBranch
+        if (opcode == ArkOpcodesCompat.JEQNULL_IMM8
+                || opcode == ArkOpcodesCompat.JEQNULL_IMM16
+                || opcode == ArkOpcodesCompat.JSTRICTEQNULL_IMM8
+                || opcode == ArkOpcodesCompat.JSTRICTEQNULL_IMM16
+                || opcode == ArkOpcodesCompat.JEQUNDEFINED_IMM8
+                || opcode == ArkOpcodesCompat.JEQUNDEFINED_IMM16
+                || opcode == ArkOpcodesCompat.JSTRICTEQUNDEFINED_IMM16) {
+            op = "??=";
+        }
+        if (op == null) {
+            return null;
+        }
+
+        if (!isTrivialSkipBlock(trueBranch)) {
+            return null;
+        }
+
+        String targetVar =
+                findSingleAssignmentTarget(falseBranch, ctx);
+        if (targetVar == null) {
+            return null;
+        }
+
+        String condVar =
+                extractConditionVariable(condBlock, ctx);
+        if (condVar == null || !condVar.equals(targetVar)) {
+            return null;
+        }
+
+        ArkTSExpression valueExpr =
+                reconstructor.extractBlockValue(falseBranch, ctx);
+
+        ControlFlowReconstructor.ControlFlowPattern p =
+                new ControlFlowReconstructor.ControlFlowPattern(
+                        ControlFlowReconstructor.PatternType.LOGICAL_ASSIGN);
+        p.conditionBlock = condBlock;
+        p.trueBlock = trueBranch;
+        p.falseBlock = falseBranch;
+        p.logicalAssignOp = op;
+        p.logicalAssignTargetVar = targetVar;
+        p.logicalAssignValueExpr = valueExpr;
+        return p;
+    }
+
+    private boolean isTrivialSkipBlock(BasicBlock block) {
+        List<ArkInstruction> insns = block.getInstructions();
+        if (insns.isEmpty()) {
+            return true;
+        }
+        // Single unconditional jump - trivial
+        if (insns.size() == 1) {
+            ArkInstruction last = block.getLastInstruction();
+            return ArkOpcodesCompat.isUnconditionalJump(last.getOpcode());
+        }
+        // lda vN; sta vN (identity store) + optional jump - trivial
+        if (insns.size() <= 3) {
+            int jmpCount = 0;
+            int otherCount = 0;
+            for (ArkInstruction insn : insns) {
+                int o = insn.getOpcode();
+                if (o == ArkOpcodesCompat.STA || o == ArkOpcodesCompat.LDA) {
+                    continue;
+                } else if (ArkOpcodesCompat.isUnconditionalJump(o)) {
+                    jmpCount++;
+                } else {
+                    otherCount++;
+                }
+            }
+            return otherCount == 0 && jmpCount <= 1;
+        }
+        return false;
+    }
+
+    private String findSingleAssignmentTarget(BasicBlock block,
+            DecompilationContext ctx) {
+        String target = null;
+        for (ArkInstruction insn : block.getInstructions()) {
+            if (insn.getOpcode() == ArkOpcodesCompat.STA) {
+                String varName = ctx.resolveRegisterName(
+                        (int) insn.getOperands().get(0).getValue());
+                if (target == null) {
+                    target = varName;
+                } else if (!target.equals(varName)) {
+                    return null;
+                }
+            }
+        }
+        return target;
+    }
+
+    private String extractConditionVariable(BasicBlock condBlock,
+            DecompilationContext ctx) {
+        for (ArkInstruction insn : condBlock.getInstructions()) {
+            if (insn == condBlock.getLastInstruction()) {
+                break;
+            }
+            if (insn.getOpcode() == ArkOpcodesCompat.LDA) {
+                return ctx.resolveRegisterName(
+                        (int) insn.getOperands().get(0).getValue());
+            }
+        }
+        return null;
+    }
+
+    List<ArkTSStatement> processLogicalAssign(BasicBlock condBlock,
+            ControlFlowReconstructor.ControlFlowPattern pattern,
+            DecompilationContext ctx, ControlFlowGraph cfg,
+            Set<BasicBlock> visited) {
+
+        List<ArkTSStatement> stmts = new ArrayList<>();
+
+        List<ArkTSStatement> preStmts =
+                reconstructor.processBlockInstructionsExcluding(
+                        condBlock, ctx, condBlock.getLastInstruction());
+        stmts.addAll(preStmts);
+
+        String op = pattern.logicalAssignOp;
+        String targetVar = pattern.logicalAssignTargetVar;
+        ArkTSExpression valueExpr = pattern.logicalAssignValueExpr;
+
+        if (op != null && targetVar != null) {
+            ArkTSExpression logicalAssign =
+                    new ArkTSExpression.LogicalAssignExpression(
+                            new ArkTSExpression.VariableExpression(targetVar),
+                            op,
+                            valueExpr != null ? valueExpr
+                                    : new ArkTSExpression.VariableExpression(
+                                            targetVar));
+            stmts.add(new ArkTSStatement.ExpressionStatement(
+                    logicalAssign));
+        }
+
+        visited.add(pattern.trueBlock);
+        visited.add(pattern.falseBlock);
+        if (pattern.mergeBlock != null) {
+            visited.add(pattern.mergeBlock);
+        }
+
+        return stmts;
+    }
+
     // --- Optional chaining detection ---
 
     /**

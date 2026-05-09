@@ -825,4 +825,221 @@ class ArkTSOutputQualityTest {
             assertEquals("x ?? \"fallback\"", result.toArkTS());
         }
     }
+
+    @Nested
+    @DisplayName("Typeof+null simplification")
+    class TypeofNullSimplificationTests {
+        @Test
+        void testTypeofUndefinedAndNullCheck_simplifiesToNotEqualsNull() {
+            ArkTSExpression x =
+                    new ArkTSExpression.VariableExpression("x");
+            ArkTSExpression typeofX = new ArkTSExpression.UnaryExpression(
+                    "typeof", x, true);
+            ArkTSExpression undefStr =
+                    new ArkTSExpression.LiteralExpression("undefined",
+                            ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+            ArkTSExpression typeofCheck =
+                    new ArkTSExpression.BinaryExpression(
+                            typeofX, "!==", undefStr);
+            ArkTSExpression nullLit =
+                    new ArkTSExpression.LiteralExpression("null",
+                            ArkTSExpression.LiteralExpression.LiteralKind.NULL);
+            ArkTSExpression nullCheck =
+                    new ArkTSExpression.BinaryExpression(x, "!==", nullLit);
+            ArkTSExpression combined =
+                    new ArkTSExpression.BinaryExpression(
+                            typeofCheck, "&&", nullCheck);
+            ArkTSExpression result =
+                    OperatorHandler.simplifyRedundantTypeofNull(combined);
+            assertEquals("x != null", result.toArkTS());
+        }
+
+        @Test
+        void testStandaloneTypeofNotUndefined_simplifiesToNotEqualsUndefined() {
+            ArkTSExpression x =
+                    new ArkTSExpression.VariableExpression("x");
+            ArkTSExpression typeofX = new ArkTSExpression.UnaryExpression(
+                    "typeof", x, true);
+            ArkTSExpression undefStr =
+                    new ArkTSExpression.LiteralExpression("undefined",
+                            ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+            ArkTSExpression expr =
+                    new ArkTSExpression.BinaryExpression(
+                            typeofX, "!==", undefStr);
+            ArkTSExpression result =
+                    OperatorHandler.simplifyRedundantTypeofNull(expr);
+            assertEquals("x !== undefined", result.toArkTS());
+        }
+
+        @Test
+        void testStandaloneTypeofEqualsUndefined_simplifiesToEqualsUndefined() {
+            ArkTSExpression x =
+                    new ArkTSExpression.VariableExpression("x");
+            ArkTSExpression typeofX = new ArkTSExpression.UnaryExpression(
+                    "typeof", x, true);
+            ArkTSExpression undefStr =
+                    new ArkTSExpression.LiteralExpression("undefined",
+                            ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+            ArkTSExpression expr =
+                    new ArkTSExpression.BinaryExpression(
+                            typeofX, "===", undefStr);
+            ArkTSExpression result =
+                    OperatorHandler.simplifyRedundantTypeofNull(expr);
+            assertEquals("x === undefined", result.toArkTS());
+        }
+
+        @Test
+        void testNonUndefinedTypeofCheck_notSimplified() {
+            ArkTSExpression x =
+                    new ArkTSExpression.VariableExpression("x");
+            ArkTSExpression typeofX = new ArkTSExpression.UnaryExpression(
+                    "typeof", x, true);
+            ArkTSExpression strLit =
+                    new ArkTSExpression.LiteralExpression("string",
+                            ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+            ArkTSExpression expr =
+                    new ArkTSExpression.BinaryExpression(
+                            typeofX, "===", strLit);
+            ArkTSExpression result =
+                    OperatorHandler.simplifyRedundantTypeofNull(expr);
+            assertEquals(expr.toArkTS(), result.toArkTS());
+        }
+    }
+
+    @Nested
+    @DisplayName("Logical compound assignment expressions")
+    class LogicalAssignExpressionTests {
+        @Test
+        void testAndEquals_rendering() {
+            ArkTSExpression target =
+                    new ArkTSExpression.VariableExpression("x");
+            ArkTSExpression value =
+                    new ArkTSExpression.LiteralExpression("42",
+                            ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+            ArkTSExpression expr =
+                    new ArkTSExpression.LogicalAssignExpression(
+                            target, "&&=", value);
+            assertEquals("x &&= 42", expr.toArkTS());
+        }
+
+        @Test
+        void testOrEquals_rendering() {
+            ArkTSExpression target =
+                    new ArkTSExpression.VariableExpression("name");
+            ArkTSExpression value =
+                    new ArkTSExpression.LiteralExpression("default",
+                            ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+            ArkTSExpression expr =
+                    new ArkTSExpression.LogicalAssignExpression(
+                            target, "||=", value);
+            assertEquals("name ||= \"default\"", expr.toArkTS());
+        }
+
+        @Test
+        void testNullishEquals_rendering() {
+            ArkTSExpression target =
+                    new ArkTSExpression.VariableExpression("config");
+            ArkTSExpression value =
+                    new ArkTSExpression.VariableExpression("defaults");
+            ArkTSExpression expr =
+                    new ArkTSExpression.LogicalAssignExpression(
+                            target, "??=", value);
+            assertEquals("config ??= defaults", expr.toArkTS());
+        }
+    }
+
+    @Nested
+    @DisplayName("Nullable type inference")
+    class NullableTypeInferenceTests {
+        @Test
+        void testInferNullableType_canBeNull() {
+            String result =
+                    TypeInference.inferNullableType("string", true, false);
+            assertEquals("string | null", result);
+        }
+
+        @Test
+        void testInferNullableType_canBeUndefined() {
+            String result =
+                    TypeInference.inferNullableType("number", false, true);
+            assertEquals("number | undefined", result);
+        }
+
+        @Test
+        void testInferNullableType_both() {
+            String result =
+                    TypeInference.inferNullableType("boolean", true, true);
+            assertEquals("boolean | null | undefined", result);
+        }
+
+        @Test
+        void testInferNullableType_neither() {
+            String result =
+                    TypeInference.inferNullableType("string", false, false);
+            assertEquals("string", result);
+        }
+
+        @Test
+        void testInferNullableType_baseNull() {
+            String result =
+                    TypeInference.inferNullableType("null", true, false);
+            assertEquals("null", result);
+        }
+
+        @Test
+        void testFormatOptionalProperty_optional() {
+            String result =
+                    TypeInference.formatOptionalProperty("name", "string",
+                            true);
+            assertEquals("name?: string", result);
+        }
+
+        @Test
+        void testFormatOptionalProperty_required() {
+            String result =
+                    TypeInference.formatOptionalProperty("name", "string",
+                            false);
+            assertEquals("name: string", result);
+        }
+
+        @Test
+        void testInferTypeFromNullAssignment_nullLiteral() {
+            String result = TypeInference.inferTypeFromNullAssignment(
+                    "string",
+                    new ArkTSExpression.LiteralExpression("null",
+                            ArkTSExpression.LiteralExpression
+                                    .LiteralKind.NULL));
+            assertEquals("string | null", result);
+        }
+
+        @Test
+        void testInferTypeFromNullAssignment_undefinedLiteral() {
+            String result = TypeInference.inferTypeFromNullAssignment(
+                    "number",
+                    new ArkTSExpression.LiteralExpression("undefined",
+                            ArkTSExpression.LiteralExpression
+                                    .LiteralKind.UNDEFINED));
+            assertEquals("number | undefined", result);
+        }
+
+        @Test
+        void testInferTypeFromNullAssignment_numberLiteral() {
+            String result = TypeInference.inferTypeFromNullAssignment(
+                    "string",
+                    new ArkTSExpression.LiteralExpression("42",
+                            ArkTSExpression.LiteralExpression
+                                    .LiteralKind.NUMBER));
+            assertEquals("string", result);
+        }
+
+        @Test
+        void testInferTypeFromNullAssignment_alreadyNullable() {
+            String result = TypeInference.inferTypeFromNullAssignment(
+                    "string | null",
+                    new ArkTSExpression.LiteralExpression("null",
+                            ArkTSExpression.LiteralExpression
+                                    .LiteralKind.NULL));
+            assertEquals("string | null", result);
+        }
+    }
 }

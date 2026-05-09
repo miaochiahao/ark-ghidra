@@ -512,6 +512,50 @@ public abstract class ArkTSExpression {
         }
     }
 
+    // --- Logical Compound Assignment ---
+
+    /**
+     * A logical compound assignment expression: {@code x &&= y},
+     * {@code x ||= y}, {@code x ??= y}.
+     */
+    public static class LogicalAssignExpression extends ArkTSExpression {
+        private final ArkTSExpression target;
+        private final String operator;
+        private final ArkTSExpression value;
+
+        /**
+         * Constructs a logical compound assignment expression.
+         *
+         * @param target the assignment target (variable)
+         * @param operator one of "&&=", "||=", "??="
+         * @param value the value expression
+         */
+        public LogicalAssignExpression(ArkTSExpression target,
+                String operator, ArkTSExpression value) {
+            this.target = target;
+            this.operator = operator;
+            this.value = value;
+        }
+
+        public ArkTSExpression getTarget() {
+            return target;
+        }
+
+        public String getOperator() {
+            return operator;
+        }
+
+        public ArkTSExpression getValue() {
+            return value;
+        }
+
+        @Override
+        public String toArkTS() {
+            return target.toArkTS() + " " + operator + " "
+                    + value.toArkTS();
+        }
+    }
+
     // --- Increment/Decrement ---
 
     /**

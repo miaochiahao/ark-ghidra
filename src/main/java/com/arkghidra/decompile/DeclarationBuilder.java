@@ -2,8 +2,10 @@ package com.arkghidra.decompile;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import com.arkghidra.format.AbcAccessFlags;
@@ -75,9 +77,14 @@ class DeclarationBuilder {
         Set<String> superMethodNames =
                 collectSuperClassMethodNames(abcClass, abcFile);
 
+        // Scan constructor for null/undefined field assignments
+        Map<String, FieldNullability> fieldNullability =
+                analyzeFieldNullability(abcClass, abcFile);
+
         for (AbcField field : abcClass.getFields()) {
+            FieldNullability fn = fieldNullability.get(field.getName());
             ArkTSStatement fieldDecl = buildFieldDeclaration(
-                    field, abcFile);
+                    field, abcFile, fn);
             members.add(fieldDecl);
         }
 
@@ -134,6 +141,26 @@ class DeclarationBuilder {
      */
     ArkTSDeclarations.ClassFieldDeclaration buildFieldDeclaration(
             AbcField field, AbcFile abcFile) {
+        return buildFieldDeclaration(field, abcFile, null);
+    }
+
+    /**
+     * Builds a field declaration with nullable type inference.
+     *
+     * <p>When the field has been assigned null or undefined in the
+     * constructor body, the type annotation is widened to a union type
+     * (e.g. {@code string | null}). When the field has no initializer
+     * and could be undefined, optional syntax is used
+     * ({@code prop?: type}).
+     *
+     * @param field the ABC field
+     * @param abcFile the parent ABC file for annotation lookup
+     * @param nullability nullable tracking info (may be null)
+     * @return the field declaration statement
+     */
+    ArkTSDeclarations.ClassFieldDeclaration buildFieldDeclaration(
+            AbcField field, AbcFile abcFile,
+            FieldNullability nullability) {
         String fieldName = field.getName();
         String typeName = inferFieldType(field);
         boolean isStatic = (field.getAccessFlags()
@@ -158,6 +185,13 @@ class DeclarationBuilder {
             if (heuristic != null) {
                 fieldDecorators.add(heuristic);
             }
+        }
+
+        // Apply nullable type widening when null/undefined assignments
+        // are detected in the constructor body
+        if (nullability != null && typeName != null) {
+            typeName = TypeInference.inferNullableType(typeName,
+                    nullability.canBeNull, nullability.canBeUndefined);
         }
 
         return new ArkTSDeclarations.ClassFieldDeclaration(
@@ -1038,6 +1072,194 @@ class DeclarationBuilder {
             }
         }
         return filtered;
+    }
+
+    // --- Nullable field tracking ---
+
+    /**
+     * Tracks whether a field can be assigned null or undefined.
+     */
+    static class FieldNullability {
+        final boolean canBeNull;
+        final boolean canBeUndefined;
+
+        FieldNullability(boolean canBeNull, boolean canBeUndefined) {
+            this.canBeNull = canBeNull;
+            this.canBeUndefined = canBeUndefined;
+        }
+    }
+
+    /**
+     * Scans constructor bodies for null/undefined assignments to fields.
+     *
+     * <p>Looks for patterns like {@code this.fieldName = null} and
+     * {@code this.fieldName = undefined} in constructor decompiled
+     * output. Returns a map from field name to nullability info.
+     *
+     * @param abcClass the class to analyze
+     * @param abcFile the parent ABC file
+     * @return map of field name to nullability info
+     */
+    private Map<String, FieldNullability> analyzeFieldNullability(
+            AbcClass abcClass, AbcFile abcFile) {
+        Map<String, FieldNullability> result = new HashMap<>();
+        if (abcFile == null) {
+            return result;
+        }
+
+        String className = sanitizeClassName(abcClass.getName());
+        Map<String, Boolean> canBeNull = new HashMap<>();
+        Map<String, Boolean> canBeUndefined = new HashMap<>();
+
+        for (AbcMethod method : abcClass.getMethods()) {
+            if (!isConstructorMethod(method, className)) {
+                continue;
+            }
+            AbcCode code = abcFile.getCodeForMethod(method);
+            if (code == null || code.getCodeSize() == 0) {
+                continue;
+            }
+            try {
+                List<ArkTSStatement> stmts =
+                        decompiler.decompileMethodBody(method, code, abcFile);
+                scanStatementsForNullFieldAssignments(stmts,
+                        canBeNull, canBeUndefined);
+            } catch (Exception e) {
+                // Skip analysis on decompilation failure
+            }
+        }
+
+        for (AbcField field : abcClass.getFields()) {
+            String name = field.getName();
+            boolean isNull = canBeNull.getOrDefault(name, false);
+            boolean isUndef = canBeUndefined.getOrDefault(name, false);
+            if (isNull || isUndef) {
+                result.put(name, new FieldNullability(isNull, isUndef));
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Recursively scans statements for {@code this.field = null/undefined}
+     * assignment patterns.
+     */
+    private void scanStatementsForNullFieldAssignments(
+            List<ArkTSStatement> stmts,
+            Map<String, Boolean> canBeNull,
+            Map<String, Boolean> canBeUndefined) {
+        if (stmts == null) {
+            return;
+        }
+        for (ArkTSStatement stmt : stmts) {
+            if (stmt instanceof ArkTSStatement.ExpressionStatement) {
+                ArkTSExpression expr =
+                        ((ArkTSStatement.ExpressionStatement) stmt)
+                                .getExpression();
+                scanExpressionForNullFieldAssignment(expr,
+                        canBeNull, canBeUndefined);
+            } else if (stmt instanceof ArkTSStatement.BlockStatement) {
+                scanStatementsForNullFieldAssignments(
+                        ((ArkTSStatement.BlockStatement) stmt).getBody(),
+                        canBeNull, canBeUndefined);
+            } else if (stmt instanceof ArkTSControlFlow.IfStatement) {
+                ArkTSControlFlow.IfStatement ifStmt =
+                        (ArkTSControlFlow.IfStatement) stmt;
+                if (ifStmt.getThenBlock() != null) {
+                    scanStatementsForNullFieldAssignments(
+                            extractBodyList(ifStmt.getThenBlock()),
+                            canBeNull, canBeUndefined);
+                }
+                if (ifStmt.getElseBlock() != null) {
+                    scanStatementsForNullFieldAssignments(
+                            extractBodyList(ifStmt.getElseBlock()),
+                            canBeNull, canBeUndefined);
+                }
+            }
+        }
+    }
+
+    /**
+     * Extracts statements from a statement that may be a block or single.
+     */
+    private List<ArkTSStatement> extractBodyList(ArkTSStatement stmt) {
+        if (stmt instanceof ArkTSStatement.BlockStatement) {
+            return ((ArkTSStatement.BlockStatement) stmt).getBody();
+        }
+        return Collections.singletonList(stmt);
+    }
+
+    /**
+     * Checks a single expression for {@code this.field = null/undefined}.
+     * Handles both AssignExpression and BinaryExpression("=") patterns.
+     */
+    private void scanExpressionForNullFieldAssignment(
+            ArkTSExpression expr,
+            Map<String, Boolean> canBeNull,
+            Map<String, Boolean> canBeUndefined) {
+        ArkTSExpression target = null;
+        ArkTSExpression value = null;
+
+        if (expr instanceof ArkTSExpression.AssignExpression) {
+            ArkTSExpression.AssignExpression assign =
+                    (ArkTSExpression.AssignExpression) expr;
+            target = assign.getTarget();
+            value = assign.getValue();
+        } else if (expr instanceof ArkTSExpression.BinaryExpression) {
+            ArkTSExpression.BinaryExpression bin =
+                    (ArkTSExpression.BinaryExpression) expr;
+            if ("=".equals(bin.getOperator())) {
+                target = bin.getLeft();
+                value = bin.getRight();
+            }
+        }
+
+        if (target == null || value == null) {
+            return;
+        }
+        if (!(target instanceof ArkTSExpression.MemberExpression)) {
+            return;
+        }
+        ArkTSExpression.MemberExpression member =
+                (ArkTSExpression.MemberExpression) target;
+
+        // Check that object is "this" (ThisExpression or VariableExpression)
+        ArkTSExpression objExpr = member.getObject();
+        boolean isThis = objExpr instanceof ArkTSExpression.ThisExpression
+                || (objExpr instanceof ArkTSExpression.VariableExpression
+                        && "this".equals(
+                                ((ArkTSExpression.VariableExpression) objExpr)
+                                        .getName()));
+        if (!isThis) {
+            return;
+        }
+
+        // Extract field name from the property expression
+        String fieldName = null;
+        if (member.getProperty()
+                instanceof ArkTSExpression.VariableExpression) {
+            fieldName = ((ArkTSExpression.VariableExpression)
+                    member.getProperty()).getName();
+        } else if (member.getProperty()
+                instanceof ArkTSExpression.LiteralExpression) {
+            fieldName = ((ArkTSExpression.LiteralExpression)
+                    member.getProperty()).getValue();
+        }
+        if (fieldName == null) {
+            return;
+        }
+
+        if (value instanceof ArkTSExpression.LiteralExpression) {
+            ArkTSExpression.LiteralExpression lit =
+                    (ArkTSExpression.LiteralExpression) value;
+            if (lit.getKind()
+                    == ArkTSExpression.LiteralExpression.LiteralKind.NULL) {
+                canBeNull.put(fieldName, true);
+            } else if (lit.getKind()
+                    == ArkTSExpression.LiteralExpression.LiteralKind.UNDEFINED) {
+                canBeUndefined.put(fieldName, true);
+            }
+        }
     }
 
     // --- Getter/setter simplification ---

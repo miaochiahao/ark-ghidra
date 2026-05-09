@@ -54,7 +54,7 @@ class ControlFlowReconstructor {
         LINEAR, IF_ONLY, IF_ELSE, WHILE_LOOP, FOR_LOOP,
         FOR_OF_LOOP, FOR_IN_LOOP, FOR_AWAIT_OF_LOOP, DO_WHILE, BREAK,
         CONTINUE, TERNARY, SHORT_CIRCUIT_AND,
-        SHORT_CIRCUIT_OR, SWITCH, UNKNOWN
+        SHORT_CIRCUIT_OR, SWITCH, LOGICAL_ASSIGN, UNKNOWN
     }
 
     static class ControlFlowPattern {
@@ -83,6 +83,10 @@ class ControlFlowReconstructor {
         BasicBlock switchDefaultBlock;
         BasicBlock switchEndBlock;
         String forLoopCounterVar;
+
+        String logicalAssignOp;
+        String logicalAssignTargetVar;
+        ArkTSExpression logicalAssignValueExpr;
 
         ControlFlowPattern(PatternType type) {
             this.type = type;
@@ -297,6 +301,11 @@ class ControlFlowReconstructor {
                     stmts.addAll(switchProcessor.processSwitch(block,
                             pattern, ctx, cfg, visited));
                     break;
+                case LOGICAL_ASSIGN:
+                    visited.add(block);
+                    stmts.addAll(branchProcessor.processLogicalAssign(
+                            block, pattern, ctx, cfg, visited));
+                    break;
                 default:
                     visited.add(block);
                     stmts.addAll(processBlockInstructions(block, ctx));
@@ -441,6 +450,14 @@ class ControlFlowReconstructor {
             }
 
             if (trueBranch != falseBranch) {
+                // Check for logical compound assignment (&&=, ||=, ??=)
+                ControlFlowPattern logicalAssignP =
+                        branchProcessor.detectLogicalAssignPattern(
+                                block, trueBranch, falseBranch, cfg, ctx);
+                if (logicalAssignP != null) {
+                    return logicalAssignP;
+                }
+
                 ControlFlowPattern p =
                         new ControlFlowPattern(PatternType.IF_ONLY);
                 p.conditionBlock = block;

@@ -450,6 +450,211 @@ class OperatorHandler {
         return Boolean.parseBoolean(lit.getValue());
     }
 
+    // --- Redundant typeof null simplification ---
+
+    /**
+     * Simplifies redundant typeof/undefined/null guard patterns.
+     *
+     * <p>Patterns recognized:
+     * <ul>
+     *   <li>{@code typeof x !== "undefined" && x !== null} ->
+     *       {@code x != null}</li>
+     *   <li>{@code typeof x !== "undefined" && x != null} ->
+     *       {@code x != null}</li>
+     *   <li>{@code typeof x !== "undefined"} -> {@code x !== undefined}</li>
+     *   <li>{@code typeof x === "undefined"} -> {@code x === undefined}</li>
+     * </ul>
+     *
+     * @param expr the expression to simplify
+     * @return the simplified expression, or the original if no simplification
+     *         applies
+     */
+    static ArkTSExpression simplifyRedundantTypeofNull(
+            ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.BinaryExpression)) {
+            return expr;
+        }
+        ArkTSExpression.BinaryExpression bin =
+                (ArkTSExpression.BinaryExpression) expr;
+        if (!"&&".equals(bin.getOperator())) {
+            return simplifyStandaloneTypeof(expr);
+        }
+        ArkTSExpression left = bin.getLeft();
+        ArkTSExpression right = bin.getRight();
+        String leftTypeofVar = extractTypeofVariable(left);
+        String rightTypeofVar = extractTypeofVariable(right);
+        boolean leftUndef = isUndefinedTypeofCheck(left, true);
+        boolean rightUndef = isUndefinedTypeofCheck(right, true);
+        if (leftUndef) {
+            String nullCheckVar = extractNullCheckVariable(right);
+            if (nullCheckVar != null
+                    && nullCheckVar.equals(leftTypeofVar)
+                    && isNullOrUndefinedCheck(right, nullCheckVar)) {
+                return new ArkTSExpression.BinaryExpression(
+                        new ArkTSExpression.VariableExpression(nullCheckVar),
+                        "!=", new ArkTSExpression.LiteralExpression(
+                                "null",
+                                ArkTSExpression.LiteralExpression
+                                        .LiteralKind.NULL));
+            }
+        }
+        if (rightUndef) {
+            String nullCheckVar = extractNullCheckVariable(left);
+            if (nullCheckVar != null
+                    && nullCheckVar.equals(rightTypeofVar)
+                    && isNullOrUndefinedCheck(left, nullCheckVar)) {
+                return new ArkTSExpression.BinaryExpression(
+                        new ArkTSExpression.VariableExpression(nullCheckVar),
+                        "!=", new ArkTSExpression.LiteralExpression(
+                                "null",
+                                ArkTSExpression.LiteralExpression
+                                        .LiteralKind.NULL));
+            }
+        }
+        return expr;
+    }
+
+    private static ArkTSExpression simplifyStandaloneTypeof(
+            ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.BinaryExpression)) {
+            return expr;
+        }
+        ArkTSExpression.BinaryExpression bin =
+                (ArkTSExpression.BinaryExpression) expr;
+        String op = bin.getOperator();
+        boolean negated = "!==".equals(op);
+        if (!negated && !"===".equals(op)) {
+            return expr;
+        }
+        if (!isUndefinedTypeofCheck(expr, negated)) {
+            return expr;
+        }
+        String varName = extractTypeofVariable(expr);
+        if (varName == null) {
+            return expr;
+        }
+        return new ArkTSExpression.BinaryExpression(
+                new ArkTSExpression.VariableExpression(varName),
+                negated ? "!==" : "===",
+                new ArkTSExpression.LiteralExpression("undefined",
+                        ArkTSExpression.LiteralExpression.LiteralKind.UNDEFINED));
+    }
+
+    private static boolean isNullOrUndefinedCheck(
+            ArkTSExpression expr, String expectedVar) {
+        if (expectedVar == null) {
+            return false;
+        }
+        if (!(expr instanceof ArkTSExpression.BinaryExpression)) {
+            return false;
+        }
+        ArkTSExpression.BinaryExpression bin =
+                (ArkTSExpression.BinaryExpression) expr;
+        if (!"!==".equals(bin.getOperator()) && !"!=".equals(
+                bin.getOperator())) {
+            return false;
+        }
+        String varName = extractVariableName(bin.getLeft());
+        if (expectedVar.equals(varName) && isNullLiteral(bin.getRight())) {
+            return true;
+        }
+        return expectedVar.equals(extractVariableName(bin.getRight()))
+                && isNullLiteral(bin.getLeft());
+    }
+
+    private static boolean isNullLiteral(ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.LiteralExpression)) {
+            return false;
+        }
+        return ((ArkTSExpression.LiteralExpression) expr).getKind()
+                == ArkTSExpression.LiteralExpression.LiteralKind.NULL;
+    }
+
+    private static String extractNullCheckVariable(ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.BinaryExpression)) {
+            return null;
+        }
+        ArkTSExpression.BinaryExpression bin =
+                (ArkTSExpression.BinaryExpression) expr;
+        if (!"!==".equals(bin.getOperator()) && !"!=".equals(
+                bin.getOperator())) {
+            return null;
+        }
+        String leftVar = extractVariableName(bin.getLeft());
+        if (leftVar != null && isNullLiteral(bin.getRight())) {
+            return leftVar;
+        }
+        String rightVar = extractVariableName(bin.getRight());
+        if (rightVar != null && isNullLiteral(bin.getLeft())) {
+            return rightVar;
+        }
+        return null;
+    }
+
+    private static String extractVariableName(ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.VariableExpression)) {
+            return null;
+        }
+        return ((ArkTSExpression.VariableExpression) expr).getName();
+    }
+
+    private static boolean isUndefinedTypeofCheck(ArkTSExpression expr,
+            boolean negated) {
+        if (!(expr instanceof ArkTSExpression.BinaryExpression)) {
+            return false;
+        }
+        ArkTSExpression.BinaryExpression bin =
+                (ArkTSExpression.BinaryExpression) expr;
+        String expectedOp = negated ? "!==" : "===";
+        if (!expectedOp.equals(bin.getOperator())) {
+            return false;
+        }
+        return isTypeofOfVariable(bin.getLeft())
+                && isStringLiteral(bin.getRight(), "undefined");
+    }
+
+    private static boolean isTypeofOfVariable(ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.UnaryExpression)) {
+            return false;
+        }
+        ArkTSExpression.UnaryExpression unary =
+                (ArkTSExpression.UnaryExpression) expr;
+        return "typeof".equals(unary.getOperator()) && unary.isPrefix()
+                && unary.getOperand()
+                        instanceof ArkTSExpression.VariableExpression;
+    }
+
+    private static String extractTypeofVariable(ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.BinaryExpression)) {
+            return null;
+        }
+        ArkTSExpression.BinaryExpression bin =
+                (ArkTSExpression.BinaryExpression) expr;
+        if (bin.getLeft() instanceof ArkTSExpression.UnaryExpression) {
+            ArkTSExpression.UnaryExpression unary =
+                    (ArkTSExpression.UnaryExpression) bin.getLeft();
+            if ("typeof".equals(unary.getOperator())
+                    && unary.getOperand()
+                            instanceof ArkTSExpression.VariableExpression) {
+                return ((ArkTSExpression.VariableExpression) unary
+                        .getOperand()).getName();
+            }
+        }
+        return null;
+    }
+
+    private static boolean isStringLiteral(ArkTSExpression expr,
+            String expected) {
+        if (!(expr instanceof ArkTSExpression.LiteralExpression)) {
+            return false;
+        }
+        ArkTSExpression.LiteralExpression lit =
+                (ArkTSExpression.LiteralExpression) expr;
+        return lit.getKind()
+                == ArkTSExpression.LiteralExpression.LiteralKind.STRING
+                && expected.equals(lit.getValue());
+    }
+
     // --- Type inference helper ---
 
     static String getAccType(ArkTSExpression expr, TypeInference typeInf) {
