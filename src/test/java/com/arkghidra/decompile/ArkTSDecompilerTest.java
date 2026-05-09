@@ -964,6 +964,10 @@ class ArkTSDecompilerTest {
                 MethodSignatureBuilder.getReturnType(
                         new AbcProto(List.of(AbcProto.ShortyType.VOID),
                                 Collections.emptyList())));
+        assertEquals("boolean",
+                MethodSignatureBuilder.getReturnType(
+                        new AbcProto(List.of(AbcProto.ShortyType.U1),
+                                Collections.emptyList())));
         assertEquals("number",
                 MethodSignatureBuilder.getReturnType(
                         new AbcProto(List.of(AbcProto.ShortyType.I32),
@@ -972,6 +976,79 @@ class ArkTSDecompilerTest {
                 MethodSignatureBuilder.getReturnType(
                         new AbcProto(List.of(AbcProto.ShortyType.REF),
                                 Collections.emptyList())));
+    }
+
+    @Test
+    void testMethodSignatureBuilder_booleanParam() {
+        AbcMethod method = new AbcMethod(0, 0, "isTrue",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        AbcProto proto = new AbcProto(
+                List.of(AbcProto.ShortyType.VOID,
+                        AbcProto.ShortyType.U1),
+                Collections.emptyList());
+        String sig = MethodSignatureBuilder.buildSignature(method, proto, 1);
+        assertEquals("function isTrue(param_0: boolean)", sig);
+    }
+
+    @Test
+    void testMethodSignatureBuilder_booleanReturnAndParam() {
+        AbcMethod method = new AbcMethod(0, 0, "isEqual",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        AbcProto proto = new AbcProto(
+                List.of(AbcProto.ShortyType.U1,
+                        AbcProto.ShortyType.U1,
+                        AbcProto.ShortyType.U1),
+                Collections.emptyList());
+        String sig = MethodSignatureBuilder.buildSignature(method, proto, 2);
+        assertEquals("function isEqual(param_0: boolean, param_1: boolean): boolean", sig);
+    }
+
+    @Test
+    void testResolveTypeFromShorty_withProto() {
+        AbcProto proto = new AbcProto(
+                List.of(AbcProto.ShortyType.I32,
+                        AbcProto.ShortyType.F64,
+                        AbcProto.ShortyType.U1),
+                Collections.emptyList());
+        assertEquals("number",
+                MethodSignatureBuilder.resolveTypeFromShorty(proto, 0));
+        assertEquals("boolean",
+                MethodSignatureBuilder.resolveTypeFromShorty(proto, 1));
+    }
+
+    @Test
+    void testResolveTypeFromShorty_nullProto() {
+        assertNull(MethodSignatureBuilder.resolveTypeFromShorty(null, 0));
+    }
+
+    @Test
+    void testResolveTypeFromShorty_outOfRange() {
+        AbcProto proto = new AbcProto(
+                List.of(AbcProto.ShortyType.VOID),
+                Collections.emptyList());
+        assertNull(MethodSignatureBuilder.resolveTypeFromShorty(proto, 0));
+    }
+
+    @Test
+    void testMethodSignatureBuilder_noProto_noTypeAnnotation() {
+        AbcMethod method = new AbcMethod(0, 0, "foo",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        String sig = MethodSignatureBuilder.buildSignature(method, null, 2);
+        assertEquals("function foo(param_0, param_1)", sig);
+    }
+
+    @Test
+    void testMethodSignatureBuilder_mixedShortyTypes() {
+        AbcMethod method = new AbcMethod(0, 0, "mixed",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        AbcProto proto = new AbcProto(
+                List.of(AbcProto.ShortyType.F64,
+                        AbcProto.ShortyType.I32,
+                        AbcProto.ShortyType.U1,
+                        AbcProto.ShortyType.REF),
+                Collections.emptyList());
+        String sig = MethodSignatureBuilder.buildSignature(method, proto, 3);
+        assertEquals("function mixed(param_0: number, param_1: boolean, param_2: Object): number", sig);
     }
 
     // --- Complex expression test ---

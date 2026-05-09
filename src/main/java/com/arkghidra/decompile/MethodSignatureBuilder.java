@@ -239,7 +239,38 @@ public class MethodSignatureBuilder {
     }
 
     /**
+     * Resolves the ArkTS type for a parameter at the given index
+     * using the proto's shorty type descriptor.
+     *
+     * <p>The shorty list is structured as: shorty[0] = return type,
+     * shorty[1..] = parameter types. This method returns the ArkTS
+     * type name for the parameter at {@code paramIndex}, or null
+     * if the proto is null or the index is out of range.
+     *
+     * @param proto the method prototype (may be null)
+     * @param paramIndex the 0-based parameter index
+     * @return the ArkTS type name, or null if unavailable
+     */
+    public static String resolveTypeFromShorty(AbcProto proto,
+            int paramIndex) {
+        if (proto == null) {
+            return null;
+        }
+        List<AbcProto.ShortyType> shorty = proto.getShorty();
+        int typeIndex = paramIndex + 1;
+        if (typeIndex >= shorty.size()) {
+            return null;
+        }
+        return shortyToArkType(shorty.get(typeIndex));
+    }
+
+    /**
      * Maps a shorty type to an ArkTS type string.
+     *
+     * <p>U1 (boolean) maps to {@code "boolean"}. Integer and floating-point
+     * types map to {@code "number"} since ArkTS uses a unified numeric type.
+     * REF maps to {@code "Object"} (class name resolution pending). ANY
+     * also maps to {@code "Object"}.
      *
      * @param type the shorty type
      * @return the ArkTS type name
@@ -252,16 +283,18 @@ public class MethodSignatureBuilder {
             case VOID:
                 return "void";
             case U1:
+                return "boolean";
             case I8:
             case U8:
             case I16:
             case U16:
             case I32:
             case U32:
-            case F32:
-            case F64:
             case I64:
             case U64:
+                return "number";
+            case F32:
+            case F64:
                 return "number";
             case REF:
                 return "Object";
