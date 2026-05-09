@@ -171,8 +171,9 @@ public class ArkTSDecompiler {
                         startTimeNs);
             }
 
-            bodyStmts = ExpressionVisitor.inlineSingleUseVariables(
-                    applyConstOptimization(bodyStmts));
+            bodyStmts = mergeNestedIfConditions(
+                    ExpressionVisitor.inlineSingleUseVariables(
+                            applyConstOptimization(bodyStmts)));
         } catch (Exception e) {
             List<ArkTSStatement> fallbackStmts = new ArrayList<>();
             fallbackStmts.add(new ArkTSStatement.ExpressionStatement(
@@ -223,6 +224,7 @@ public class ArkTSDecompiler {
             stmts = generateStatements(ctx);
             stmts = applyConstOptimization(stmts);
             stmts = ExpressionVisitor.inlineSingleUseVariables(stmts);
+            stmts = mergeNestedIfConditions(stmts);
         } catch (Exception e) {
             return buildFallbackInstructionListing(instructions,
                     "statement generation failed: " + e);
@@ -462,8 +464,9 @@ public class ArkTSDecompiler {
                 return buildTimeoutBody(startTimeNs);
             }
 
-            return ExpressionVisitor.inlineSingleUseVariables(
-                    applyConstOptimization(stmts));
+            return mergeNestedIfConditions(
+                    ExpressionVisitor.inlineSingleUseVariables(
+                            applyConstOptimization(stmts)));
         } catch (Exception e) {
             ctx.warnings.add("Statement generation failed: "
                     + e.getMessage());
@@ -517,6 +520,107 @@ public class ArkTSDecompiler {
 
 
     // --- Const vs let optimization ---
+
+    // --- Nested if-condition merging ---
+
+    /**
+     * Merges nested if-only statements into a single if with &amp;&amp;
+     * conditions.
+     *
+     * <p>Transforms:
+     * <pre>
+     * if (a) {
+     *   if (b) {
+     *     stmt
+     *   }
+     * }
+     * </pre>
+     * Into:
+     * <pre>
+     * if (a && b) {
+     *   stmt
+     * }
+     * </pre>
+     *
+     * @param stmts the statement list to transform
+     * @return the transformed list
+     */
+    static List<ArkTSStatement> mergeNestedIfConditions(
+            List<ArkTSStatement> stmts) {
+        if (stmts == null || stmts.isEmpty()) {
+            return stmts;
+        }
+        List<ArkTSStatement> result = new ArrayList<>(stmts.size());
+        for (ArkTSStatement stmt : stmts) {
+            result.add(mergeIfChain(stmt));
+        }
+        return result;
+    }
+
+    private static ArkTSStatement mergeIfChain(ArkTSStatement stmt) {
+        if (!(stmt instanceof ArkTSControlFlow.IfStatement)) {
+            return stmt;
+        }
+        ArkTSControlFlow.IfStatement ifStmt =
+                (ArkTSControlFlow.IfStatement) stmt;
+
+        // Only merge when there's no else block
+        if (ifStmt.getElseBlock() != null) {
+            return stmt;
+        }
+
+        // Check if then-block contains a single if-only statement
+        ArkTSStatement thenBlock = ifStmt.getThenBlock();
+        ArkTSControlFlow.IfStatement innerIf =
+                extractSingleIfOnly(thenBlock);
+        if (innerIf == null) {
+            return stmt;
+        }
+
+        // Recursively merge deeper nesting in the inner if
+        ArkTSStatement innerMerged = mergeIfChain(innerIf);
+        ArkTSExpression innerCond =
+                innerMerged instanceof ArkTSControlFlow.IfStatement
+                        ? ((ArkTSControlFlow.IfStatement) innerMerged)
+                                .getCondition()
+                        : innerIf.getCondition();
+        ArkTSStatement innerBody =
+                innerMerged instanceof ArkTSControlFlow.IfStatement
+                        ? ((ArkTSControlFlow.IfStatement) innerMerged)
+                                .getThenBlock()
+                        : innerIf.getThenBlock();
+
+        // Build merged condition: outer && inner
+        ArkTSExpression mergedCondition =
+                new ArkTSExpression.BinaryExpression(
+                        ifStmt.getCondition(), "&&", innerCond);
+
+        return new ArkTSControlFlow.IfStatement(
+                mergedCondition, innerBody, null);
+    }
+
+    /**
+     * Extracts a single if-only statement from a block, or null if
+     * the block contains anything other than exactly one if statement
+     * with no else block.
+     */
+    private static ArkTSControlFlow.IfStatement extractSingleIfOnly(
+            ArkTSStatement block) {
+        List<ArkTSStatement> bodyList = extractBodyList(block);
+        if (bodyList == null || bodyList.size() != 1) {
+            return null;
+        }
+        ArkTSStatement inner = bodyList.get(0);
+        if (!(inner instanceof ArkTSControlFlow.IfStatement)) {
+            return null;
+        }
+        ArkTSControlFlow.IfStatement innerIf =
+                (ArkTSControlFlow.IfStatement) inner;
+        if (innerIf.getElseBlock() != null) {
+            return null;
+        }
+        return innerIf;
+    }
 
     private static List<ArkTSStatement> applyConstOptimization(
             List<ArkTSStatement> stmts) {
