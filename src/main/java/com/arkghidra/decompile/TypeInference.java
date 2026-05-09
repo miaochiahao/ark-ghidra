@@ -25,8 +25,16 @@ public class TypeInference {
      * Constructs a new type inference engine with empty state.
      */
     public TypeInference() {
-        this.registerTypes = new HashMap<>();
-        this.methodReturnTypes = new HashMap<>();
+        this.registerTypes = new HashMap<>(16);
+        this.methodReturnTypes = new HashMap<>(8);
+    }
+
+    /**
+     * Clears all type state for reuse across blocks.
+     */
+    public void reset() {
+        registerTypes.clear();
+        methodReturnTypes.clear();
     }
 
     /**

@@ -21,6 +21,7 @@ import com.arkghidra.disasm.ArkInstruction;
 class BlockInstructionProcessor {
 
     private final InstructionHandler instrHandler;
+    private final TypeInference typeInf = new TypeInference();
 
     BlockInstructionProcessor(InstructionHandler instrHandler) {
         this.instrHandler = instrHandler;
@@ -42,7 +43,7 @@ class BlockInstructionProcessor {
         }
 
         ArkTSExpression accValue = null;
-        TypeInference typeInf = new TypeInference();
+        typeInf.reset();
         List<ArkInstruction> instructions = block.getInstructions();
 
         for (int idx = 0; idx < instructions.size(); idx++) {
@@ -166,7 +167,7 @@ class BlockInstructionProcessor {
             declaredVars.add(ctx.resolveRegisterName(i));
         }
         ArkTSExpression accValue = null;
-        TypeInference typeInf = new TypeInference();
+        typeInf.reset();
         List<ArkInstruction> instructions = block.getInstructions();
         for (int idx = 0; idx < instructions.size(); idx++) {
             ArkInstruction insn = instructions.get(idx);
@@ -288,7 +289,7 @@ class BlockInstructionProcessor {
     ArkTSExpression extractBlockValue(BasicBlock block,
             DecompilationContext ctx) {
         ArkTSExpression accValue = null;
-        TypeInference typeInf = new TypeInference();
+        typeInf.reset();
         Set<String> declaredVars = new HashSet<>();
         for (int i = 0; i < ctx.numArgs; i++) {
             declaredVars.add(ctx.resolveRegisterName(i));
