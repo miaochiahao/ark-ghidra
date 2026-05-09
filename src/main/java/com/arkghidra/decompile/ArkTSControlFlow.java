@@ -67,7 +67,7 @@ public class ArkTSControlFlow {
                     .append(condition.toArkTS()).append(") {\n");
             ArkTSStatement.appendBlockBody(sb, thenBlock, indent + 1);
             sb.append(indent(indent)).append("}");
-            if (elseBlock != null) {
+            if (elseBlock != null && !isEmptyBlock(elseBlock)) {
                 sb.append(" else ");
                 if (elseBlock instanceof IfStatement) {
                     // else if
@@ -90,6 +90,14 @@ public class ArkTSControlFlow {
             }
             if (stmt instanceof ArkTSStatement.ContinueStatement) {
                 return true;
+            }
+            return false;
+        }
+
+        private static boolean isEmptyBlock(ArkTSStatement stmt) {
+            if (stmt instanceof ArkTSStatement.BlockStatement) {
+                return ((ArkTSStatement.BlockStatement) stmt).getBody()
+                        .isEmpty();
             }
             return false;
         }

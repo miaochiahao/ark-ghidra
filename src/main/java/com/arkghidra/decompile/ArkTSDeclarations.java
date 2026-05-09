@@ -278,6 +278,7 @@ public class ArkTSDeclarations {
         private final String name;
         private final String rawName;
         private final String superClass;
+        private final List<String> interfaces;
         private final List<ArkTSStatement> members;
         private final List<String> decorators;
         private final boolean isSendable;
@@ -370,7 +371,7 @@ public class ArkTSDeclarations {
          */
         public ClassDeclaration(String name, String superClass,
                 List<ArkTSStatement> members, String rawName) {
-            this(name, superClass, members, rawName,
+            this(name, superClass, Collections.emptyList(), members, rawName,
                     Collections.emptyList(), false);
         }
 
@@ -387,9 +388,33 @@ public class ArkTSDeclarations {
         public ClassDeclaration(String name, String superClass,
                 List<ArkTSStatement> members, String rawName,
                 List<String> decorators, boolean isSendable) {
+            this(name, superClass, Collections.emptyList(), members, rawName,
+                    decorators, isSendable);
+        }
+
+        /**
+         * Constructs a class declaration with interfaces, decorators and
+         * sendable flag.
+         *
+         * @param name the sanitized class name
+         * @param superClass the super class name (may be null)
+         * @param interfaces the implemented interface names (may be empty)
+         * @param members the class members
+         * @param rawName the original ABC class name
+         * @param decorators the decorator names (may be empty)
+         * @param isSendable true if this is a sendable class
+         */
+        public ClassDeclaration(String name, String superClass,
+                List<String> interfaces, List<ArkTSStatement> members,
+                String rawName, List<String> decorators,
+                boolean isSendable) {
             this.name = name;
             this.rawName = rawName;
             this.superClass = superClass;
+            this.interfaces = interfaces != null
+                    ? Collections.unmodifiableList(
+                            new ArrayList<>(interfaces))
+                    : Collections.emptyList();
             this.members = Collections.unmodifiableList(
                     new ArrayList<>(members));
             this.decorators = decorators != null
@@ -409,6 +434,15 @@ public class ArkTSDeclarations {
 
         public String getSuperClass() {
             return superClass;
+        }
+
+        /**
+         * Returns the implemented interface names.
+         *
+         * @return the list of interface names (empty if none)
+         */
+        public List<String> getInterfaces() {
+            return interfaces;
         }
 
         public List<ArkTSStatement> getMembers() {
@@ -437,6 +471,13 @@ public class ArkTSDeclarations {
             sb.append("class ").append(name);
             if (superClass != null) {
                 sb.append(" extends ").append(superClass);
+            }
+            if (!interfaces.isEmpty()) {
+                StringJoiner ifaceJoiner = new StringJoiner(", ");
+                for (String iface : interfaces) {
+                    ifaceJoiner.add(iface);
+                }
+                sb.append(" implements ").append(ifaceJoiner);
             }
             sb.append(" {\n");
             for (int i = 0; i < members.size(); i++) {

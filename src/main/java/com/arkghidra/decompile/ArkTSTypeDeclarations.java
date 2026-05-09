@@ -410,6 +410,7 @@ public class ArkTSTypeDeclarations {
         private final String name;
         private final List<TypeParameter> typeParams;
         private final String superClass;
+        private final List<String> interfaces;
         private final List<ArkTSStatement> members;
 
         /**
@@ -423,10 +424,30 @@ public class ArkTSTypeDeclarations {
         public GenericClassDeclaration(String name,
                 List<TypeParameter> typeParams, String superClass,
                 List<ArkTSStatement> members) {
+            this(name, typeParams, superClass, Collections.emptyList(),
+                    members);
+        }
+
+        /**
+         * Constructs a generic class declaration with interfaces.
+         *
+         * @param name the class name
+         * @param typeParams the type parameters (may be empty)
+         * @param superClass the super class name (may be null)
+         * @param interfaces the implemented interface names (may be empty)
+         * @param members the class members
+         */
+        public GenericClassDeclaration(String name,
+                List<TypeParameter> typeParams, String superClass,
+                List<String> interfaces, List<ArkTSStatement> members) {
             this.name = name;
             this.typeParams = Collections.unmodifiableList(
                     new ArrayList<>(typeParams));
             this.superClass = superClass;
+            this.interfaces = interfaces != null
+                    ? Collections.unmodifiableList(
+                            new ArrayList<>(interfaces))
+                    : Collections.emptyList();
             this.members = Collections.unmodifiableList(
                     new ArrayList<>(members));
         }
@@ -441,6 +462,15 @@ public class ArkTSTypeDeclarations {
 
         public String getSuperClass() {
             return superClass;
+        }
+
+        /**
+         * Returns the implemented interface names.
+         *
+         * @return the list of interface names (empty if none)
+         */
+        public List<String> getInterfaces() {
+            return interfaces;
         }
 
         public List<ArkTSStatement> getMembers() {
@@ -460,6 +490,13 @@ public class ArkTSTypeDeclarations {
             }
             if (superClass != null) {
                 sb.append(" extends ").append(superClass);
+            }
+            if (!interfaces.isEmpty()) {
+                StringJoiner ifaceJoiner = new StringJoiner(", ");
+                for (String iface : interfaces) {
+                    ifaceJoiner.add(iface);
+                }
+                sb.append(" implements ").append(ifaceJoiner);
             }
             sb.append(" {\n");
             for (int i = 0; i < members.size(); i++) {

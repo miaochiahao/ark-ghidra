@@ -257,6 +257,127 @@ class OperatorHandler {
         return val;
     }
 
+    // --- Identity operation simplification ---
+
+    /**
+     * Simplifies identity operations where one operand is a no-op literal.
+     *
+     * <p>Patterns recognized:
+     * <ul>
+     *   <li>{@code x + 0} -> {@code x}, {@code 0 + x} -> {@code x}</li>
+     *   <li>{@code x - 0} -> {@code x}</li>
+     *   <li>{@code x * 1} -> {@code x}, {@code 1 * x} -> {@code x}</li>
+     *   <li>{@code x / 1} -> {@code x}</li>
+     *   <li>{@code x || false} -> {@code x}, {@code false || x} -> {@code x}</li>
+     *   <li>{@code x && true} -> {@code x}, {@code true && x} -> {@code x}</li>
+     * </ul>
+     *
+     * @param left the left operand
+     * @param op the operator string
+     * @param right the right operand
+     * @return the simplified expression, or a BinaryExpression if no
+     *         simplification applies
+     */
+    static ArkTSExpression trySimplifyIdentity(ArkTSExpression left,
+            String op, ArkTSExpression right) {
+        switch (op) {
+            case "+":
+                if (isNumericZero(right)) {
+                    return left;
+                }
+                if (isNumericZero(left)) {
+                    return right;
+                }
+                break;
+            case "-":
+                if (isNumericZero(right)) {
+                    return left;
+                }
+                break;
+            case "*":
+                if (isNumericOne(right)) {
+                    return left;
+                }
+                if (isNumericOne(left)) {
+                    return right;
+                }
+                break;
+            case "/":
+                if (isNumericOne(right)) {
+                    return left;
+                }
+                break;
+            case "||":
+                if (isBooleanFalse(right)) {
+                    return left;
+                }
+                if (isBooleanFalse(left)) {
+                    return right;
+                }
+                break;
+            case "&&":
+                if (isBooleanTrue(right)) {
+                    return left;
+                }
+                if (isBooleanTrue(left)) {
+                    return right;
+                }
+                break;
+            default:
+                break;
+        }
+        return new ArkTSExpression.BinaryExpression(left, op, right);
+    }
+
+    private static boolean isNumericZero(ArkTSExpression expr) {
+        return isNumericLiteral(expr, 0.0);
+    }
+
+    private static boolean isNumericOne(ArkTSExpression expr) {
+        return isNumericLiteral(expr, 1.0);
+    }
+
+    private static boolean isNumericLiteral(ArkTSExpression expr,
+            double expected) {
+        if (!(expr instanceof ArkTSExpression.LiteralExpression)) {
+            return false;
+        }
+        ArkTSExpression.LiteralExpression lit =
+                (ArkTSExpression.LiteralExpression) expr;
+        if (lit.getKind()
+                != ArkTSExpression.LiteralExpression.LiteralKind.NUMBER) {
+            return false;
+        }
+        try {
+            double val = Double.parseDouble(lit.getValue());
+            return val == expected;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+    private static boolean isBooleanFalse(ArkTSExpression expr) {
+        return isBooleanLiteral(expr, false);
+    }
+
+    private static boolean isBooleanTrue(ArkTSExpression expr) {
+        return isBooleanLiteral(expr, true);
+    }
+
+    private static boolean isBooleanLiteral(ArkTSExpression expr,
+            boolean expected) {
+        if (!(expr instanceof ArkTSExpression.LiteralExpression)) {
+            return false;
+        }
+        ArkTSExpression.LiteralExpression lit =
+                (ArkTSExpression.LiteralExpression) expr;
+        if (lit.getKind()
+                != ArkTSExpression.LiteralExpression.LiteralKind.BOOLEAN) {
+            return false;
+        }
+        return Boolean.parseBoolean(lit.getValue()) == expected;
+    }
+
     // --- Boolean comparison simplification ---
 
     /**

@@ -54,6 +54,17 @@ class DeclarationBuilder {
             seenImports.add(module);
         }
 
+        List<String> interfaceNames = resolveInterfaceNames(
+                abcClass.getInterfaceOffsets(), abcFile);
+
+        for (String ifaceName : interfaceNames) {
+            if (ifaceName.contains(".")) {
+                String module = ifaceName.substring(0,
+                        ifaceName.lastIndexOf('.'));
+                seenImports.add(module);
+            }
+        }
+
         List<ArkTSStatement> members = new ArrayList<>();
 
         boolean isAbstractClass =
@@ -104,11 +115,12 @@ class DeclarationBuilder {
         boolean isSendable = decorators.contains("Sendable");
         if (!typeParams.isEmpty()) {
             return new ArkTSTypeDeclarations.GenericClassDeclaration(
-                    className, typeParams, superClassName, members);
+                    className, typeParams, superClassName, interfaceNames,
+                    members);
         }
         return new ArkTSDeclarations.ClassDeclaration(
-                className, superClassName, members, abcClass.getName(),
-                decorators, isSendable);
+                className, superClassName, interfaceNames, members,
+                abcClass.getName(), decorators, isSendable);
     }
 
     /**

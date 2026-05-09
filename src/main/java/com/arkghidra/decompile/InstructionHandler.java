@@ -405,6 +405,13 @@ class InstructionHandler {
             }
             // Simplify boolean comparisons: x === true -> x
             result = OperatorHandler.simplifyBooleanComparison(result);
+            // Simplify identity operations: x + 0 -> x, x * 1 -> x
+            if (result instanceof ArkTSExpression.BinaryExpression) {
+                ArkTSExpression.BinaryExpression bin =
+                        (ArkTSExpression.BinaryExpression) result;
+                result = OperatorHandler.trySimplifyIdentity(
+                        bin.getLeft(), bin.getOperator(), bin.getRight());
+            }
             // Attempt string concatenation -> template literal for +
             if ("+".equals(op) && accValue != null) {
                 ArkTSExpression tmpl =

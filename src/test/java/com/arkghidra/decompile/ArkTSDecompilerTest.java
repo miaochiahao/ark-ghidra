@@ -13272,4 +13272,282 @@ class ArkTSDecompilerTest {
                 new ArkTSPropertyExpressions.ConstAssertionExpression(member);
         assertEquals("data.items as const", expr.toArkTS());
     }
+
+    // --- String escaping tests (public escapeString) ---
+
+    @Test
+    void testEscapeString_newline() {
+        String result = ArkTSExpression.LiteralExpression.escapeString(
+                "line1\nline2");
+        assertEquals("line1\\nline2", result);
+    }
+
+    @Test
+    void testEscapeString_tab() {
+        String result = ArkTSExpression.LiteralExpression.escapeString(
+                "col1\tcol2");
+        assertEquals("col1\\tcol2", result);
+    }
+
+    @Test
+    void testEscapeString_quote() {
+        String result = ArkTSExpression.LiteralExpression.escapeString(
+                "say \"hello\"");
+        assertEquals("say \\\"hello\\\"", result);
+    }
+
+    @Test
+    void testEscapeString_backslash() {
+        String result = ArkTSExpression.LiteralExpression.escapeString(
+                "path\\to\\file");
+        assertEquals("path\\\\to\\\\file", result);
+    }
+
+    @Test
+    void testEscapeString_mixedEscapes() {
+        String result = ArkTSExpression.LiteralExpression.escapeString(
+                "a\tb\nc\\d\"e");
+        assertEquals("a\\tb\\nc\\\\d\\\"e", result);
+    }
+
+    // --- Tagged template literal tests ---
+
+    @Test
+    void testTaggedTemplateExpression_basic() {
+        ArkTSExpression nameExpr =
+                new ArkTSExpression.VariableExpression("name");
+        ArkTSAccessExpressions.TaggedTemplateExpression expr =
+                new ArkTSAccessExpressions.TaggedTemplateExpression(
+                        "tag", List.of("Hello, ", "!"),
+                        List.of(nameExpr));
+        assertEquals("tag`Hello, ${name}!`", expr.toArkTS());
+    }
+
+    @Test
+    void testTaggedTemplateExpression_noInterpolation() {
+        ArkTSAccessExpressions.TaggedTemplateExpression expr =
+                new ArkTSAccessExpressions.TaggedTemplateExpression(
+                        "html", List.of("<div></div>"),
+                        Collections.emptyList());
+        assertEquals("html`<div></div>`", expr.toArkTS());
+    }
+
+    @Test
+    void testTaggedTemplateExpression_multipleInterpolations() {
+        ArkTSExpression first =
+                new ArkTSExpression.VariableExpression("first");
+        ArkTSExpression last =
+                new ArkTSExpression.VariableExpression("last");
+        ArkTSExpression age =
+                new ArkTSExpression.LiteralExpression("30",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSAccessExpressions.TaggedTemplateExpression expr =
+                new ArkTSAccessExpressions.TaggedTemplateExpression(
+                        "gql", List.of("{ name: ", ", last: ", ", age: ", " }"),
+                        List.of(first, last, age));
+        assertEquals("gql`{ name: ${first}, last: ${last}, age: ${30} }`",
+                expr.toArkTS());
+    }
+
+    @Test
+    void testTaggedTemplateExpression_escapesBacktick() {
+        ArkTSAccessExpressions.TaggedTemplateExpression expr =
+                new ArkTSAccessExpressions.TaggedTemplateExpression(
+                        "tag", List.of("before`after"),
+                        Collections.emptyList());
+        assertEquals("tag`before\\`after`", expr.toArkTS());
+    }
+
+    @Test
+    void testTaggedTemplateExpression_escapesDollar() {
+        ArkTSAccessExpressions.TaggedTemplateExpression expr =
+                new ArkTSAccessExpressions.TaggedTemplateExpression(
+                        "tag", List.of("price: $5"),
+                        Collections.emptyList());
+        assertEquals("tag`price: \\$5`", expr.toArkTS());
+    }
+
+    // --- Closure and lambda decompilation tests ---
+
+    @Test
+    void testArrowFunctionExpression_simpleRendering() {
+        // Arrow function with expression body: () => 42
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                Collections.emptyList();
+        ArkTSExpression bodyExpr = new ArkTSExpression.LiteralExpression("42",
+                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSExpression arrow =
+                new ArkTSAccessExpressions.ArrowFunctionExpression(
+                        params,
+                        new ArkTSStatement.ExpressionStatement(bodyExpr),
+                        false);
+        String result = arrow.toArkTS();
+        assertTrue(result.contains("() =>"),
+                "Should contain arrow syntax: " + result);
+        assertTrue(result.contains("42"),
+                "Should contain body expression: " + result);
+    }
+
+    @Test
+    void testArrowFunctionWithBlockBody_rendering() {
+        // Arrow function with block body: (x) => { return x + 1; }
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                List.of(new ArkTSDeclarations.FunctionDeclaration
+                        .FunctionParam("x", null));
+        List<ArkTSStatement> bodyStmts = List.of(
+                new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.BinaryExpression(
+                                new ArkTSExpression.VariableExpression("x"),
+                                "+",
+                                new ArkTSExpression.LiteralExpression("1",
+                                        ArkTSExpression.LiteralExpression
+                                                .LiteralKind.NUMBER))));
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(bodyStmts);
+        ArkTSAccessExpressions.ArrowFunctionExpression arrow =
+                new ArkTSAccessExpressions.ArrowFunctionExpression(
+                        params, body, false);
+        String result = arrow.toArkTS();
+        assertTrue(result.contains("(x) =>"),
+                "Should contain params and arrow: " + result);
+        assertTrue(result.contains("return x + 1;"),
+                "Should contain return statement: " + result);
+        assertTrue(result.contains("{"),
+                "Should contain block body: " + result);
+    }
+
+    @Test
+    void testAnonymousFunctionExpression_closureRendering() {
+        // Anonymous function: function(x) { let y = x; return y; }
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                List.of(new ArkTSDeclarations.FunctionDeclaration
+                        .FunctionParam("x", null));
+        List<ArkTSStatement> bodyStmts = List.of(
+                new ArkTSStatement.VariableDeclaration("let", "y", null,
+                        new ArkTSExpression.VariableExpression("x")),
+                new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.VariableExpression("y")));
+        ArkTSAccessExpressions.AnonymousFunctionExpression func =
+                new ArkTSAccessExpressions.AnonymousFunctionExpression(
+                        params,
+                        new ArkTSStatement.BlockStatement(bodyStmts),
+                        false, false);
+        String result = func.toArkTS();
+        assertTrue(result.startsWith("function("),
+                "Should start with 'function(': " + result);
+        assertTrue(result.contains("x"),
+                "Should contain param name: " + result);
+        assertTrue(result.contains("let y = x;"),
+                "Should contain variable declaration: " + result);
+        assertTrue(result.contains("return y;"),
+                "Should contain return statement: " + result);
+    }
+
+    @Test
+    void testCallbackInliningInCallArguments() {
+        // Test that an arrow function is rendered correctly as a call argument:
+        // foo(() => 42)
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> innerParams =
+                Collections.emptyList();
+        ArkTSExpression arrow =
+                new ArkTSAccessExpressions.ArrowFunctionExpression(
+                        innerParams,
+                        new ArkTSStatement.ExpressionStatement(
+                                new ArkTSExpression.LiteralExpression("42",
+                                        ArkTSExpression.LiteralExpression
+                                                .LiteralKind.NUMBER)),
+                        false);
+        ArkTSExpression callee =
+                new ArkTSExpression.VariableExpression("foo");
+        ArkTSExpression call =
+                new ArkTSExpression.CallExpression(callee, List.of(arrow));
+        String result = call.toArkTS();
+        assertTrue(result.startsWith("foo("),
+                "Should start with 'foo(': " + result);
+        assertTrue(result.contains("() =>"),
+                "Should contain arrow function in args: " + result);
+        assertTrue(result.endsWith(")"),
+                "Should end with ')': " + result);
+    }
+
+    @Test
+    void testIifeExpression_rendering() {
+        // IIFE: (() => 42)()
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                Collections.emptyList();
+        ArkTSExpression arrow =
+                new ArkTSAccessExpressions.ArrowFunctionExpression(
+                        params,
+                        new ArkTSStatement.ExpressionStatement(
+                                new ArkTSExpression.LiteralExpression("42",
+                                        ArkTSExpression.LiteralExpression
+                                                .LiteralKind.NUMBER)),
+                        false);
+        ArkTSExpression iife =
+                new ArkTSAccessExpressions.IifeExpression(arrow,
+                        Collections.emptyList());
+        String result = iife.toArkTS();
+        assertTrue(result.startsWith("(() =>"),
+                "IIFE should start with wrapped function: " + result);
+        assertTrue(result.endsWith(")()"),
+                "IIFE should end with immediate invocation: " + result);
+    }
+
+    @Test
+    void testIifeExpression_withArguments() {
+        // IIFE with arguments: ((x) => x + 1)(5)
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                List.of(new ArkTSDeclarations.FunctionDeclaration
+                        .FunctionParam("x", null));
+        ArkTSExpression arrow =
+                new ArkTSAccessExpressions.ArrowFunctionExpression(
+                        params,
+                        new ArkTSStatement.ExpressionStatement(
+                                new ArkTSExpression.BinaryExpression(
+                                        new ArkTSExpression.VariableExpression(
+                                                "x"),
+                                        "+",
+                                        new ArkTSExpression.LiteralExpression(
+                                                "1",
+                                                ArkTSExpression
+                                                        .LiteralExpression
+                                                        .LiteralKind.NUMBER))),
+                        false);
+        ArkTSExpression arg =
+                new ArkTSExpression.LiteralExpression("5",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSExpression iife =
+                new ArkTSAccessExpressions.IifeExpression(arrow, List.of(arg));
+        String result = iife.toArkTS();
+        assertTrue(result.contains("(x) =>"),
+                "Should contain params: " + result);
+        assertTrue(result.contains(")(5)"),
+                "Should call with argument 5: " + result);
+    }
+
+    @Test
+    void testCapturedRegistersTracking() {
+        // Test that DecompilationContext tracks captured registers
+        AbcCode code = new AbcCode(0, 0, 0, new byte[0],
+                Collections.emptyList(), 0);
+        AbcMethod method = new AbcMethod(0, 0, "f", 0, 0, 0);
+        DecompilationContext ctx = new DecompilationContext(
+                method, code, null, null, null,
+                Collections.emptyList());
+        assertFalse(ctx.isRegisterCaptured(0),
+                "Register 0 should not be captured initially");
+        assertFalse(ctx.isRegisterCaptured(5),
+                "Register 5 should not be captured initially");
+        ctx.addCapturedRegister(5);
+        assertTrue(ctx.isRegisterCaptured(5),
+                "Register 5 should be captured after adding");
+        assertFalse(ctx.isRegisterCaptured(0),
+                "Register 0 should still not be captured");
+        assertEquals(1, ctx.getCapturedRegisters().size(),
+                "Should have exactly one captured register");
+        assertTrue(ctx.getCapturedRegisters().contains(5),
+                "Captured registers should contain 5");
+        ctx.addCapturedRegister(10);
+        assertEquals(2, ctx.getCapturedRegisters().size(),
+                "Should have two captured registers");
+    }
 }
