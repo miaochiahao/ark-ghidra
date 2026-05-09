@@ -69,9 +69,9 @@ public class ArkTSControlFlow {
             sb.append(indent(indent)).append("}");
             if (elseBlock != null && !isEmptyBlock(elseBlock)) {
                 sb.append(" else ");
-                if (elseBlock instanceof IfStatement) {
-                    // else if
-                    sb.append(elseBlock.toArkTS(indent));
+                ArkTSStatement unwrappedElse = unwrapSingleIf(elseBlock);
+                if (unwrappedElse != null) {
+                    sb.append(unwrappedElse.toArkTS(indent));
                 } else {
                     sb.append("{\n");
                     ArkTSStatement.appendBlockBody(sb, elseBlock, indent + 1);
@@ -100,6 +100,21 @@ public class ArkTSControlFlow {
                         .isEmpty();
             }
             return false;
+        }
+
+        private static IfStatement unwrapSingleIf(ArkTSStatement stmt) {
+            if (stmt instanceof IfStatement) {
+                return (IfStatement) stmt;
+            }
+            if (stmt instanceof ArkTSStatement.BlockStatement) {
+                List<ArkTSStatement> body =
+                        ((ArkTSStatement.BlockStatement) stmt).getBody();
+                if (body.size() == 1
+                        && body.get(0) instanceof IfStatement) {
+                    return (IfStatement) body.get(0);
+                }
+            }
+            return null;
         }
     }
 

@@ -434,9 +434,41 @@ public abstract class ArkTSExpression {
         @Override
         public String toArkTS() {
             if (computed) {
+                String ident = tryExtractIdentifier(property);
+                if (ident != null) {
+                    return object.toArkTS() + "." + ident;
+                }
                 return object.toArkTS() + "[" + property.toArkTS() + "]";
             }
             return object.toArkTS() + "." + property.toArkTS();
+        }
+
+        private static String tryExtractIdentifier(ArkTSExpression expr) {
+            if (!(expr instanceof LiteralExpression)) {
+                return null;
+            }
+            LiteralExpression lit = (LiteralExpression) expr;
+            if (lit.getKind()
+                    != ArkTSExpression.LiteralExpression.LiteralKind.STRING) {
+                return null;
+            }
+            String value = lit.getValue();
+            if (value.isEmpty() || !isValidIdentifier(value)) {
+                return null;
+            }
+            return value;
+        }
+
+        private static boolean isValidIdentifier(String s) {
+            if (!Character.isJavaIdentifierStart(s.charAt(0))) {
+                return false;
+            }
+            for (int i = 1; i < s.length(); i++) {
+                if (!Character.isJavaIdentifierPart(s.charAt(i))) {
+                    return false;
+                }
+            }
+            return true;
         }
     }
 
