@@ -142,7 +142,8 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 55. feat: test with real HarmonyOS .abc files from Ark compiler #25
 56. ~~Performance: shared file-level string cache (#144)~~ DONE
 57. ~~Literal array resolution for createarraywithbuffer/createobjectwithbuffer (#145)~~ DONE
-58. ~~Source line number comments from debug info (#128)~~ DONE
+58. ~~Module variable name resolution from import/export records (#146)~~ DONE
+59. ~~Source line number comments from debug info (#128)~~ DONE
 58. ~~Variable name inference from usage context (#133)~~ DONE
 59. ~~Comprehensive opcode decompilation tests (#134)~~ DONE
 60. ~~decompileFile() integration tests (#135)~~ DONE
