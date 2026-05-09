@@ -1354,4 +1354,342 @@ class ArkTSOutputQualityTest {
             assertEquals("arrayLen", ctx.resolveRegisterName(0));
         }
     }
+
+    @Nested
+    @DisplayName("Module and global variable opcodes")
+    class ModuleAndGlobalOpcodeTests {
+        private final ArkDisassembler disasm = new ArkDisassembler();
+        private final ArkTSDecompiler decompiler = new ArkTSDecompiler();
+
+        private List<ArkInstruction> dis(byte[] code) {
+            return disasm.disassemble(code, 0, code.length);
+        }
+
+        private static byte[] bytes(int... values) {
+            byte[] result = new byte[values.length];
+            for (int i = 0; i < values.length; i++) {
+                result[i] = (byte) values[i];
+            }
+            return result;
+        }
+
+        private static byte[] concat(byte[]... arrays) {
+            int total = 0;
+            for (byte[] a : arrays) {
+                total += a.length;
+            }
+            byte[] result = new byte[total];
+            int pos = 0;
+            for (byte[] a : arrays) {
+                System.arraycopy(a, 0, result, pos, a.length);
+                pos += a.length;
+            }
+            return result;
+        }
+
+        @Test
+        @DisplayName("LDEXTERNALMODULEVAR loads external module variable")
+        void testLdExternalModuleVar() {
+            // LDEXTERNALMODULEVAR 0x7E with IMM8 format: opcode + varIdx
+            // Load external module var index 3 into acc, then return
+            byte[] code = concat(
+                    bytes(0x7E, 0x03),         // ldexternalmodulevar 3
+                    bytes(0x61, 0x00),          // sta v0
+                    bytes(0x60, 0x00),          // lda v0
+                    bytes(0x64));               // return
+            List<ArkInstruction> insns = dis(code);
+            String result = decompiler.decompileInstructions(insns);
+            assertFalse(result.isEmpty(),
+                    "Should produce output without crash: " + result);
+            assertTrue(result.contains("ext_mod_3"),
+                    "Should reference ext_mod_3: " + result);
+        }
+
+        @Test
+        @DisplayName("STGLOBALVAR stores acc to global scope")
+        void testStGlobalVar() {
+            // STGLOBALVAR 0x7F with IMM8_IMM16 format:
+            // opcode + imm8 + stringIdx(16-bit LE)
+            // Store 42 to global variable with string index 5
+            byte[] code = concat(
+                    bytes(0x62, 0x2A, 0x00, 0x00, 0x00), // ldai 42
+                    bytes(0x7F, 0x00, 0x05, 0x00),       // stglobalvar 0, strIdx=5
+                    bytes(0x65));                          // returnundefined
+            List<ArkInstruction> insns = dis(code);
+            String result = decompiler.decompileInstructions(insns);
+            assertFalse(result.isEmpty(),
+                    "Should produce output without crash: " + result);
+            // stglobalvar stores acc to a global named by string table index 5
+            // Without AbcFile, falls back to "str_5"
+            assertTrue(result.contains("str_5"),
+                    "Should contain str_5 global name: " + result);
+        }
+
+        @Test
+        @DisplayName("GETMODULENAMESPACE loads module namespace object")
+        void testGetModuleNamespace() {
+            // GETMODULENAMESPACE 0x7B with IMM8 format: opcode + varIdx
+            byte[] code = concat(
+                    bytes(0x7B, 0x01),         // getmodulenamespace 1
+                    bytes(0x61, 0x00),          // sta v0
+                    bytes(0x60, 0x00),          // lda v0
+                    bytes(0x64));               // return
+            List<ArkInstruction> insns = dis(code);
+            String result = decompiler.decompileInstructions(insns);
+            assertFalse(result.isEmpty(),
+                    "Should produce output without crash: " + result);
+            assertTrue(result.contains("module_ns_1"),
+                    "Should contain module_ns_1: " + result);
+        }
+
+        @Test
+        @DisplayName("STMODULEVAR stores acc to module variable")
+        void testStModuleVar() {
+            // STMODULEVAR 0x7C with IMM8 format: opcode + varIdx
+            // Store 99 to module variable index 2
+            byte[] code = concat(
+                    bytes(0x62, 0x63, 0x00, 0x00, 0x00), // ldai 99
+                    bytes(0x7C, 0x02),                    // stmodulevar 2
+                    bytes(0x65));                          // returnundefined
+            List<ArkInstruction> insns = dis(code);
+            String result = decompiler.decompileInstructions(insns);
+            assertFalse(result.isEmpty(),
+                    "Should produce output without crash: " + result);
+            assertTrue(result.contains("mod_2"),
+                    "Should contain mod_2: " + result);
+        }
+
+        @Test
+        @DisplayName("LDOBJBYNAME loads property by name from acc object")
+        void testLdObjByName() {
+            // LDOBJBYNAME 0x42 with IMM8_IMM16 format:
+            // opcode + imm8 + stringIdx(16-bit LE)
+            // Load v1 into acc, then load property by name (string idx 0)
+            byte[] code = concat(
+                    bytes(0x60, 0x01),         // lda v1
+                    bytes(0x42, 0x00, 0x00, 0x00), // ldobjbyname 0, strIdx=0
+                    bytes(0x61, 0x02),         // sta v2
+                    bytes(0x60, 0x02),         // lda v2
+                    bytes(0x64));              // return
+            List<ArkInstruction> insns = dis(code);
+            String result = decompiler.decompileInstructions(insns);
+            assertFalse(result.isEmpty(),
+                    "Should produce output without crash: " + result);
+            // Without AbcFile, string index 0 resolves to "str_0"
+            // Should produce v1.str_0 property access
+            assertTrue(result.contains("v1") && result.contains("str_0"),
+                    "Should contain v1.str_0 property access: " + result);
+        }
+
+        @Test
+        @DisplayName("STOBJBYNAME stores value to object property by name")
+        void testStObjByName() {
+            // STOBJBYNAME 0x43 with IMM8_IMM16_V8 format:
+            // opcode + imm8 + stringIdx(16-bit LE) + vreg(obj)
+            // Load value into acc, store acc to v0.property (string idx 1)
+            byte[] code = concat(
+                    bytes(0x62, 0x0A, 0x00, 0x00, 0x00), // ldai 10
+                    bytes(0x61, 0x01),                    // sta v1 (value)
+                    bytes(0x60, 0x01),                    // lda v1
+                    bytes(0x43, 0x00, 0x01, 0x00, 0x00), // stobjbyname 0, strIdx=1, v0
+                    bytes(0x65));                         // returnundefined
+            List<ArkInstruction> insns = dis(code);
+            String result = decompiler.decompileInstructions(insns);
+            assertFalse(result.isEmpty(),
+                    "Should produce output without crash: " + result);
+            // Should contain v0.str_1 assignment
+            assertTrue(result.contains("v0") && result.contains("str_1"),
+                    "Should contain v0.str_1 property store: " + result);
+        }
+
+        @Test
+        @DisplayName("STCONSTTOGLOBALRECORD declares const global")
+        void testStConstToGlobalRecord() {
+            // STCONSTTOGLOBALRECORD 0x47 with IMM8_IMM16 format
+            // operand 0 (imm8) = string index for variable name
+            byte[] code = concat(
+                    bytes(0x62, 0x2A, 0x00, 0x00, 0x00), // ldai 42
+                    bytes(0x47, 0x03, 0x00, 0x00),       // stconsttoglobalrecord strIdx=3
+                    bytes(0x65));                          // returnundefined
+            List<ArkInstruction> insns = dis(code);
+            String result = decompiler.decompileInstructions(insns);
+            assertFalse(result.isEmpty(),
+                    "Should produce output without crash: " + result);
+            // Should declare const with name from string index 3
+            assertTrue(result.contains("const") && result.contains("str_3"),
+                    "Should contain const str_3: " + result);
+        }
+
+        @Test
+        @DisplayName("STTOGLOBALRECORD declares let global (may be const-optimized)")
+        void testStToGlobalRecord() {
+            // STTOGLOBALRECORD 0x48 with IMM8_IMM16 format
+            // operand 0 (imm8) = string index for variable name
+            byte[] code = concat(
+                    bytes(0x62, 0x64, 0x00, 0x00, 0x00), // ldai 100
+                    bytes(0x48, 0x07, 0x00, 0x00),       // sttoglobalrecord strIdx=7
+                    bytes(0x65));                          // returnundefined
+            List<ArkInstruction> insns = dis(code);
+            String result = decompiler.decompileInstructions(insns);
+            assertFalse(result.isEmpty(),
+                    "Should produce output without crash: " + result);
+            // Should declare variable with name from string index 7.
+            // Single-assignment let may be const-optimized to const.
+            assertTrue(result.contains("str_7") && result.contains("100"),
+                    "Should contain str_7 and 100: " + result);
+            assertTrue(result.contains("const") || result.contains("let"),
+                    "Should contain const or let: " + result);
+        }
+
+        @Test
+        @DisplayName("LDEXTERNALMODULEVAR followed by STMODULEVAR round-trip")
+        void testModuleVarRoundTrip() {
+            // Load external module var 0, store to module var 1
+            byte[] code = concat(
+                    bytes(0x7E, 0x00),         // ldexternalmodulevar 0
+                    bytes(0x7C, 0x01),         // stmodulevar 1
+                    bytes(0x65));               // returnundefined
+            List<ArkInstruction> insns = dis(code);
+            String result = decompiler.decompileInstructions(insns);
+            assertFalse(result.isEmpty(),
+                    "Should produce output without crash: " + result);
+            assertTrue(result.contains("ext_mod_0"),
+                    "Should contain ext_mod_0: " + result);
+            assertTrue(result.contains("mod_1"),
+                    "Should contain mod_1: " + result);
+        }
+
+        @Test
+        @DisplayName("GETMODULENAMESPACE with property access")
+        void testModuleNamespaceWithPropertyAccess() {
+            // Get module namespace 0, then load property by name
+            byte[] code = concat(
+                    bytes(0x7B, 0x00),                 // getmodulenamespace 0
+                    bytes(0x42, 0x00, 0x02, 0x00),     // ldobjbyname 0, strIdx=2
+                    bytes(0x61, 0x00),                  // sta v0
+                    bytes(0x60, 0x00),                  // lda v0
+                    bytes(0x64));                       // return
+            List<ArkInstruction> insns = dis(code);
+            String result = decompiler.decompileInstructions(insns);
+            assertFalse(result.isEmpty(),
+                    "Should produce output without crash: " + result);
+            assertTrue(result.contains("module_ns_0"),
+                    "Should contain module_ns_0: " + result);
+            assertTrue(result.contains("str_2"),
+                    "Should contain str_2 property: " + result);
+        }
+    }
+
+    @Nested
+    @DisplayName("Property access opcodes — this/super by name")
+    class PropertyAccessOpcodeTests {
+
+        private final ArkTSDecompiler decompiler = new ArkTSDecompiler();
+        private final ArkDisassembler disasm = new ArkDisassembler();
+
+        private List<ArkInstruction> dis(byte[] code) {
+            return disasm.disassemble(code, 0, code.length);
+        }
+
+        private static byte[] bytes(int... values) {
+            byte[] result = new byte[values.length];
+            for (int i = 0; i < values.length; i++) {
+                result[i] = (byte) values[i];
+            }
+            return result;
+        }
+
+        private static byte[] concat(byte[]... arrays) {
+            int total = 0;
+            for (byte[] a : arrays) {
+                total += a.length;
+            }
+            byte[] result = new byte[total];
+            int pos = 0;
+            for (byte[] a : arrays) {
+                System.arraycopy(a, 0, result, pos, a.length);
+                pos += a.length;
+            }
+            return result;
+        }
+
+        private static byte[] le32(int value) {
+            return new byte[] {
+                (byte) (value & 0xFF),
+                (byte) ((value >> 8) & 0xFF),
+                (byte) ((value >> 16) & 0xFF),
+                (byte) ((value >> 24) & 0xFF)
+            };
+        }
+
+        @Test
+        @DisplayName("LDTHISBYNAME produces this.str_N property read")
+        void testLdThisByName() {
+            // LDTHISBYNAME (0x49, IMM8_IMM16) loads this.property onto acc
+            // stringIdx=0, then store to v2 and return
+            byte[] code = concat(
+                    bytes(0x49, 0x00, 0x00, 0x00),   // ldthisbyname imm8=0, strIdx=0
+                    bytes(0x61, 0x02),                 // sta v2
+                    bytes(0x60, 0x02),                 // lda v2
+                    bytes(0x64));                      // return
+            List<ArkInstruction> insns = dis(code);
+            String result = decompiler.decompileInstructions(insns);
+            assertTrue(result.contains("this.str_0"),
+                    "Should contain this.str_0 property load: " + result);
+            assertTrue(result.contains("return"),
+                    "Should contain return statement: " + result);
+        }
+
+        @Test
+        @DisplayName("STTHISBYNAME produces this.str_N property store")
+        void testStThisByName() {
+            // LDAI 42 → STTHISBYNAME (0x4A, IMM8_IMM16_V8) stores acc to this.prop
+            // stringIdx=0, vreg=0 (object register ignored — always uses this)
+            byte[] code = concat(
+                    bytes(0x62), le32(42),             // ldai 42
+                    bytes(0x4A, 0x00, 0x00, 0x00, 0x00), // stthisbyname imm8=0, strIdx=0, v0
+                    bytes(0x65));                      // returnundefined
+            List<ArkInstruction> insns = dis(code);
+            String result = decompiler.decompileInstructions(insns);
+            assertTrue(result.contains("this.str_0"),
+                    "Should contain this.str_0 property store: " + result);
+            assertTrue(result.contains("42"),
+                    "Should contain the stored value 42: " + result);
+        }
+
+        @Test
+        @DisplayName("LDSUPERBYNAME produces super.str_N property read")
+        void testLdSuperByName() {
+            // LDSUPERBYNAME (0x46, IMM8_IMM16) loads super.property onto acc
+            // stringIdx=0, then store to v2 and return
+            byte[] code = concat(
+                    bytes(0x46, 0x00, 0x00, 0x00),   // ldsuperbyname imm8=0, strIdx=0
+                    bytes(0x61, 0x02),                 // sta v2
+                    bytes(0x60, 0x02),                 // lda v2
+                    bytes(0x64));                      // return
+            List<ArkInstruction> insns = dis(code);
+            String result = decompiler.decompileInstructions(insns);
+            assertTrue(result.contains("super.str_0"),
+                    "Should contain super.str_0 property load: " + result);
+            assertTrue(result.contains("return"),
+                    "Should contain return statement: " + result);
+        }
+
+        @Test
+        @DisplayName("STSUPERBYNAME produces super.str_N property store")
+        void testStSuperByName() {
+            // LDAI 42 → STSUPERBYNAME (0xD0, IMM8_IMM16_V8) stores acc to super.prop
+            // stringIdx=0, vreg=0 (object register ignored — always uses super)
+            byte[] code = concat(
+                    bytes(0x62), le32(42),             // ldai 42
+                    bytes(0xD0, 0x00, 0x00, 0x00, 0x00), // stsuperbyname imm8=0, strIdx=0, v0
+                    bytes(0x65));                      // returnundefined
+            List<ArkInstruction> insns = dis(code);
+            String result = decompiler.decompileInstructions(insns);
+            assertTrue(result.contains("super.str_0"),
+                    "Should contain super.str_0 property store: " + result);
+            assertTrue(result.contains("42"),
+                    "Should contain the stored value 42: " + result);
+        }
+    }
 }
