@@ -1073,4 +1073,99 @@ class ArkTSOutputQualityTest {
             assertEquals("name ||= fallback", expr.toArkTS());
         }
     }
+
+    @Nested
+    @DisplayName("Cascading single-use inlining")
+    class CascadingInliningTests {
+        private final ArkDisassembler disasm = new ArkDisassembler();
+        private final ArkTSDecompiler decompiler = new ArkTSDecompiler();
+
+        private List<ArkInstruction> dis(byte[] code) {
+            return disasm.disassemble(code, 0, code.length);
+        }
+
+        private static byte[] bytes(int... values) {
+            byte[] result = new byte[values.length];
+            for (int i = 0; i < values.length; i++) {
+                result[i] = (byte) values[i];
+            }
+            return result;
+        }
+
+        private static byte[] concat(byte[]... arrays) {
+            int total = 0;
+            for (byte[] a : arrays) {
+                total += a.length;
+            }
+            byte[] result = new byte[total];
+            int pos = 0;
+            for (byte[] a : arrays) {
+                System.arraycopy(a, 0, result, pos, a.length);
+                pos += a.length;
+            }
+            return result;
+        }
+
+        private static byte[] le32(int value) {
+            return new byte[] {
+                (byte) (value & 0xFF),
+                (byte) ((value >> 8) & 0xFF),
+                (byte) ((value >> 16) & 0xFF),
+                (byte) ((value >> 24) & 0xFF)
+            };
+        }
+
+        @Test
+        void testCascadingInline_twoLevels() {
+            // ldai 42; sta v0; lda v0; ldai 1; add2imm 0, 1; sta v2;
+            // return v2
+            // v2 inlined into return, then v0 is unused so stays or goes
+            byte[] code = concat(bytes(0x62), le32(42),
+                    bytes(0x61, 0x00),
+                    bytes(0x60, 0x00),
+                    bytes(0x62), le32(1),
+                    bytes(0x61, 0x01),
+                    bytes(0x60, 0x00),
+                    bytes(0x0A, 0x00, 0x01),
+                    bytes(0x61, 0x02),
+                    bytes(0x60, 0x02),
+                    bytes(0x64));
+            List<ArkInstruction> insns = dis(code);
+            String result = decompiler.decompileInstructions(insns);
+            assertTrue(result.contains("return"),
+                    "Should have return, got: " + result);
+        }
+
+        @Test
+        void testInlineIntoThrow() {
+            // ldai 42; sta v0; lda v0; throw
+            byte[] code = concat(bytes(0x62), le32(42),
+                    bytes(0x61, 0x00),
+                    bytes(0x60, 0x00),
+                    bytes(0xFE));
+            List<ArkInstruction> insns = dis(code);
+            String result = decompiler.decompileInstructions(insns);
+            assertTrue(result.contains("throw 42"),
+                    "Should inline into throw: " + result);
+            assertFalse(result.contains("v0"),
+                    "v0 should be inlined away: " + result);
+        }
+
+        @Test
+        void testNoInline_multiUse() {
+            // ldai 42; sta v0; lda v0; sta v1; lda v0; sta v2; return v2
+            byte[] code = concat(bytes(0x62), le32(42),
+                    bytes(0x61, 0x00),
+                    bytes(0x60, 0x00),
+                    bytes(0x61, 0x01),
+                    bytes(0x60, 0x00),
+                    bytes(0x61, 0x02),
+                    bytes(0x60, 0x02),
+                    bytes(0x64));
+            List<ArkInstruction> insns = dis(code);
+            String result = decompiler.decompileInstructions(insns);
+            assertTrue(result.contains("const v0 = 42"),
+                    "v0 should be kept (multi-use): " + result);
+        }
+    }
 }
