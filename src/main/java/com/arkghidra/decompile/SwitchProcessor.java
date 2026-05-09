@@ -100,9 +100,9 @@ class SwitchProcessor {
                 }
 
                 BasicBlock caseTarget = getSuccessorByType(succs,
-                        EdgeType.CONDITIONAL_TRUE);
+                        EdgeType.CONDITIONAL_TRUE, cfg);
                 BasicBlock nextFallThrough = getSuccessorByType(succs,
-                        EdgeType.CONDITIONAL_FALSE);
+                        EdgeType.CONDITIONAL_FALSE, cfg);
                 if (caseTarget == null) {
                     caseTarget = cfg.getBlockAt(
                             succs.get(0).getToOffset());
@@ -227,7 +227,7 @@ class SwitchProcessor {
         BasicBlock fallThrough = null;
         if (succs.size() >= 2) {
             fallThrough = getSuccessorByType(succs,
-                    EdgeType.CONDITIONAL_FALSE);
+                    EdgeType.CONDITIONAL_FALSE, cfg);
             if (fallThrough == null) {
                 fallThrough = cfg.getBlockAt(
                         succs.get(1).getToOffset());
@@ -247,7 +247,7 @@ class SwitchProcessor {
                 List<CFGEdge> curSuccs = walkCurrent.getSuccessors();
                 if (curSuccs.size() >= 2) {
                     BasicBlock ft = getSuccessorByType(curSuccs,
-                            EdgeType.CONDITIONAL_FALSE);
+                            EdgeType.CONDITIONAL_FALSE, cfg);
                     if (ft != null) {
                         walkCurrent = ft;
                     } else {
@@ -272,21 +272,44 @@ class SwitchProcessor {
                 new ArrayList<>();
 
         Set<BasicBlock> processedCaseBodies = new HashSet<>();
-        for (ControlFlowReconstructor.SwitchCaseInfo sci :
-                pattern.switchCases) {
-            if (sci.targetBlock != null
-                    && !processedCaseBodies.contains(sci.targetBlock)
-                    && !visited.contains(sci.targetBlock)) {
-                visited.add(sci.targetBlock);
-                processedCaseBodies.add(sci.targetBlock);
-
-                List<ArkTSStatement> caseBodyStmts =
-                        processSwitchCaseBody(sci.targetBlock,
-                                ctx, switchEndOffset, cfg, visited);
+        int caseIdx = 0;
+        while (caseIdx < pattern.switchCases.size()) {
+            ControlFlowReconstructor.SwitchCaseInfo sci =
+                    pattern.switchCases.get(caseIdx);
+            if (sci.targetBlock == null
+                    || processedCaseBodies.contains(sci.targetBlock)
+                    || visited.contains(sci.targetBlock)) {
+                caseIdx++;
+                continue;
+            }
+            List<ArkTSExpression> groupedTests = new ArrayList<>();
+            groupedTests.add(sci.testValue);
+            int scanIdx = caseIdx + 1;
+            while (scanIdx < pattern.switchCases.size()) {
+                ControlFlowReconstructor.SwitchCaseInfo nextSci =
+                        pattern.switchCases.get(scanIdx);
+                if (nextSci.targetBlock == sci.targetBlock) {
+                    groupedTests.add(nextSci.testValue);
+                    scanIdx++;
+                } else {
+                    break;
+                }
+            }
+            visited.add(sci.targetBlock);
+            processedCaseBodies.add(sci.targetBlock);
+            List<ArkTSStatement> caseBodyStmts =
+                    processSwitchCaseBody(sci.targetBlock,
+                            ctx, switchEndOffset, cfg, visited);
+            if (groupedTests.size() == 1) {
                 switchCases.add(
                         new ArkTSControlFlow.SwitchStatement.SwitchCase(
                                 sci.testValue, caseBodyStmts));
+            } else {
+                switchCases.add(
+                        new ArkTSControlFlow.SwitchStatement.SwitchCase(
+                                groupedTests, caseBodyStmts));
             }
+            caseIdx = scanIdx;
         }
 
         ArkTSStatement defaultBlock = null;
@@ -403,10 +426,10 @@ class SwitchProcessor {
     // --- Helpers ---
 
     private BasicBlock getSuccessorByType(List<CFGEdge> edges,
-            EdgeType type) {
+            EdgeType type, ControlFlowGraph cfg) {
         for (CFGEdge edge : edges) {
             if (edge.getType() == type) {
-                return null;
+                return cfg.getBlockAt(edge.getToOffset());
             }
         }
         return null;

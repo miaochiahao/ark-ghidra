@@ -59,11 +59,11 @@ class BlockInstructionProcessor {
 
             if (ArkOpcodesCompat.isUnconditionalJump(opcode)) {
                 if (isBreakJump(insn, ctx)) {
-                    stmts.add(new ArkTSStatement.BreakStatement());
+                    stmts.add(createBreakStatement(insn, ctx));
                     continue;
                 }
                 if (isContinueJump(insn, ctx)) {
-                    stmts.add(new ArkTSStatement.ContinueStatement());
+                    stmts.add(createContinueStatement(insn, ctx));
                     continue;
                 }
                 continue;
@@ -190,11 +190,11 @@ class BlockInstructionProcessor {
             }
             if (ArkOpcodesCompat.isUnconditionalJump(opcode)) {
                 if (isBreakJump(insn, ctx)) {
-                    stmts.add(new ArkTSStatement.BreakStatement());
+                    stmts.add(createBreakStatement(insn, ctx));
                     continue;
                 }
                 if (isContinueJump(insn, ctx)) {
-                    stmts.add(new ArkTSStatement.ContinueStatement());
+                    stmts.add(createContinueStatement(insn, ctx));
                     continue;
                 }
                 continue;
@@ -373,7 +373,10 @@ class BlockInstructionProcessor {
         }
         int loopEnd = loopCtx[1];
         int target = ControlFlowGraph.getJumpTargetPublic(insn);
-        return target >= loopEnd;
+        if (target >= loopEnd) {
+            return true;
+        }
+        return ctx.findBreakLabel(target) != null;
     }
 
     private boolean isContinueJump(ArkInstruction insn,
@@ -385,7 +388,24 @@ class BlockInstructionProcessor {
         int loopHeader = loopCtx[0];
         int loopEnd = loopCtx[1];
         int target = ControlFlowGraph.getJumpTargetPublic(insn);
-        return target == loopHeader && target < loopEnd;
+        if (target == loopHeader && target < loopEnd) {
+            return true;
+        }
+        return ctx.findContinueLabel(target) != null;
+    }
+
+    private ArkTSStatement.BreakStatement createBreakStatement(
+            ArkInstruction insn, DecompilationContext ctx) {
+        int target = ControlFlowGraph.getJumpTargetPublic(insn);
+        String label = ctx.findBreakLabel(target);
+        return new ArkTSStatement.BreakStatement(label);
+    }
+
+    private ArkTSStatement.ContinueStatement createContinueStatement(
+            ArkInstruction insn, DecompilationContext ctx) {
+        int target = ControlFlowGraph.getJumpTargetPublic(insn);
+        String label = ctx.findContinueLabel(target);
+        return new ArkTSStatement.ContinueStatement(label);
     }
 
     /**

@@ -192,8 +192,12 @@ class ControlFlowReconstructor {
                         .getJumpTargetPublic(lastInsn);
                 if (target == block.getStartOffset()) {
                     visited.add(block);
+                    String infLabel = null;
+                    if (!ctx.loopContextStack.isEmpty()) {
+                        infLabel = ctx.generateLoopLabel();
+                    }
                     ctx.pushLoopContext(block.getStartOffset(),
-                            block.getEndOffset());
+                            block.getEndOffset(), infLabel);
                     List<ArkTSStatement> bodyStmts =
                             processBlockInstructionsExcluding(
                                     block, ctx, lastInsn);
@@ -204,8 +208,15 @@ class ControlFlowReconstructor {
                             new ArkTSExpression.LiteralExpression("true",
                                     ArkTSExpression.LiteralExpression
                                             .LiteralKind.BOOLEAN);
-                    stmts.add(new ArkTSControlFlow.WhileStatement(
-                            trueCond, body));
+                    ArkTSControlFlow.WhileStatement whileStmt =
+                            new ArkTSControlFlow.WhileStatement(
+                                    trueCond, body);
+                    if (infLabel != null) {
+                        stmts.add(new ArkTSStatement.LabeledStatement(
+                                infLabel, whileStmt));
+                    } else {
+                        stmts.add(whileStmt);
+                    }
                     continue;
                 }
             }

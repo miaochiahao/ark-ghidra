@@ -710,24 +710,30 @@ public class ArkTSControlFlow {
          * A single case clause in a switch statement.
          */
         public static class SwitchCase {
-            private final ArkTSExpression test;
+            private final List<ArkTSExpression> tests;
             private final List<ArkTSStatement> body;
 
-            /**
-             * Constructs a switch case.
-             *
-             * @param test the test expression (null for default)
-             * @param body the case body statements
-             */
             public SwitchCase(ArkTSExpression test,
                     List<ArkTSStatement> body) {
-                this.test = test;
+                this.tests = Collections.singletonList(test);
+                this.body = Collections.unmodifiableList(
+                        new ArrayList<>(body));
+            }
+
+            public SwitchCase(List<ArkTSExpression> tests,
+                    List<ArkTSStatement> body) {
+                this.tests = Collections.unmodifiableList(
+                        new ArrayList<>(tests));
                 this.body = Collections.unmodifiableList(
                         new ArrayList<>(body));
             }
 
             public ArkTSExpression getTest() {
-                return test;
+                return tests.isEmpty() ? null : tests.get(0);
+            }
+
+            public List<ArkTSExpression> getTests() {
+                return tests;
             }
 
             public List<ArkTSStatement> getBody() {
@@ -768,8 +774,10 @@ public class ArkTSControlFlow {
             sb.append(indent(indent)).append("switch (")
                     .append(discriminant.toArkTS()).append(") {\n");
             for (SwitchCase c : cases) {
-                sb.append(indent(indent + 1)).append("case ")
-                        .append(c.test.toArkTS()).append(":\n");
+                for (ArkTSExpression test : c.tests) {
+                    sb.append(indent(indent + 1)).append("case ")
+                            .append(test.toArkTS()).append(":\n");
+                }
                 for (ArkTSStatement stmt : c.body) {
                     sb.append(stmt.toArkTS(indent + 2)).append("\n");
                 }

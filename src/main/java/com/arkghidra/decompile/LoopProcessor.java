@@ -664,7 +664,8 @@ class LoopProcessor {
         int loopEndOffset = estimateLoopEndOffset(
                 condBlock, pattern, cfg);
 
-        ctx.pushLoopContext(loopHeaderOffset, loopEndOffset);
+        String whileLabel = pushLabeledLoopContext(ctx,
+                loopHeaderOffset, loopEndOffset);
 
         visited.add(pattern.trueBlock);
         List<ArkTSStatement> bodyStmts =
@@ -678,7 +679,7 @@ class LoopProcessor {
         ArkTSControlFlow.WhileStatement whileStmt =
                 new ArkTSControlFlow.WhileStatement(effectiveCondition,
                         bodyBlock);
-        stmts.add(whileStmt);
+        stmts.add(wrapLabel(whileStmt, whileLabel));
 
         return stmts;
     }
@@ -761,7 +762,8 @@ class LoopProcessor {
         int loopEndOffset = estimateLoopEndOffset(
                 condBlock, pattern, cfg);
 
-        ctx.pushLoopContext(loopHeaderOffset, loopEndOffset);
+        String forLabel = pushLabeledLoopContext(ctx,
+                loopHeaderOffset, loopEndOffset);
 
         // Collect body statements: loop body minus update block
         visited.add(pattern.trueBlock);
@@ -787,7 +789,7 @@ class LoopProcessor {
         ArkTSControlFlow.ForStatement forStmt =
                 new ArkTSControlFlow.ForStatement(
                         initStmt, effectiveCondition, updateExpr, bodyBlock);
-        stmts.add(forStmt);
+        stmts.add(wrapLabel(forStmt, forLabel));
 
         return stmts;
     }
@@ -844,7 +846,8 @@ class LoopProcessor {
             }
         }
 
-        ctx.pushLoopContext(loopHeaderOffset, loopEndOffset);
+        String doWhileLabel = pushLabeledLoopContext(ctx,
+                loopHeaderOffset, loopEndOffset);
 
         List<ArkTSStatement> bodyStmts =
                 reconstructor.processBlockInstructions(block, ctx);
@@ -875,7 +878,7 @@ class LoopProcessor {
                 new ArkTSStatement.BlockStatement(bodyStmts);
         ArkTSControlFlow.DoWhileStatement doWhile =
                 new ArkTSControlFlow.DoWhileStatement(bodyBlock, condition);
-        stmts.add(doWhile);
+        stmts.add(wrapLabel(doWhile, doWhileLabel));
 
         return stmts;
     }
@@ -892,7 +895,8 @@ class LoopProcessor {
         int loopHeaderOffset = condBlock.getStartOffset();
         int loopEndOffset = estimateLoopEndOffset(
                 condBlock, pattern, cfg);
-        ctx.pushLoopContext(loopHeaderOffset, loopEndOffset);
+        String forOfLabel = pushLabeledLoopContext(ctx,
+                loopHeaderOffset, loopEndOffset);
         visited.add(pattern.trueBlock);
         List<ArkTSStatement> bodyStmts =
                 reconstructor.processBlockInstructions(
@@ -904,7 +908,7 @@ class LoopProcessor {
                 new ArkTSControlFlow.ForOfStatement(
                         "const", pattern.iteratorVarName,
                         pattern.iterableExpr, bodyBlock);
-        stmts.add(forOfStmt);
+        stmts.add(wrapLabel(forOfStmt, forOfLabel));
         return stmts;
     }
 
@@ -920,7 +924,8 @@ class LoopProcessor {
         int loopHeaderOffset = condBlock.getStartOffset();
         int loopEndOffset = estimateLoopEndOffset(
                 condBlock, pattern, cfg);
-        ctx.pushLoopContext(loopHeaderOffset, loopEndOffset);
+        String forInLabel = pushLabeledLoopContext(ctx,
+                loopHeaderOffset, loopEndOffset);
         visited.add(pattern.trueBlock);
         List<ArkTSStatement> bodyStmts =
                 reconstructor.processBlockInstructions(
@@ -932,7 +937,7 @@ class LoopProcessor {
                 new ArkTSControlFlow.ForInStatement(
                         "const", pattern.iteratorVarName,
                         pattern.iterableExpr, bodyBlock);
-        stmts.add(forInStmt);
+        stmts.add(wrapLabel(forInStmt, forInLabel));
         return stmts;
     }
 
@@ -1104,7 +1109,8 @@ class LoopProcessor {
         int loopHeaderOffset = condBlock.getStartOffset();
         int loopEndOffset = estimateLoopEndOffset(
                 condBlock, pattern, cfg);
-        ctx.pushLoopContext(loopHeaderOffset, loopEndOffset);
+        String forAwaitOfLabel = pushLabeledLoopContext(ctx,
+                loopHeaderOffset, loopEndOffset);
         visited.add(pattern.trueBlock);
         List<ArkTSStatement> bodyStmts =
                 reconstructor.processBlockInstructions(
@@ -1116,7 +1122,7 @@ class LoopProcessor {
                 new ArkTSControlFlow.ForAwaitOfStatement(
                         "const", pattern.iteratorVarName,
                         pattern.iterableExpr, bodyBlock);
-        stmts.add(forAwaitOfStmt);
+        stmts.add(wrapLabel(forAwaitOfStmt, forAwaitOfLabel));
         return stmts;
     }
 
@@ -1155,5 +1161,25 @@ class LoopProcessor {
             }
         }
         return maxOffset;
+    }
+
+    // --- Labeled loop helpers ---
+
+    private String pushLabeledLoopContext(DecompilationContext ctx,
+            int headerOffset, int endOffset) {
+        String label = null;
+        if (!ctx.loopContextStack.isEmpty()) {
+            label = ctx.generateLoopLabel();
+        }
+        ctx.pushLoopContext(headerOffset, endOffset, label);
+        return label;
+    }
+
+    private static ArkTSStatement wrapLabel(
+            ArkTSStatement stmt, String label) {
+        if (label != null) {
+            return new ArkTSStatement.LabeledStatement(label, stmt);
+        }
+        return stmt;
     }
 }
