@@ -173,6 +173,71 @@ class OperatorHandler {
         };
     }
 
+    // --- void 0 → undefined simplification ---
+
+    /**
+     * Simplifies {@code void 0} to {@code undefined}.
+     *
+     * @param expr the expression to potentially simplify
+     * @return undefined literal if pattern matches, otherwise the original
+     */
+    static ArkTSExpression simplifyVoidZero(ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.UnaryExpression)) {
+            return expr;
+        }
+        ArkTSExpression.UnaryExpression unary =
+                (ArkTSExpression.UnaryExpression) expr;
+        if (!"void".equals(unary.getOperator())) {
+            return expr;
+        }
+        ArkTSExpression operand = unary.getOperand();
+        if (operand instanceof ArkTSExpression.LiteralExpression) {
+            ArkTSExpression.LiteralExpression lit =
+                    (ArkTSExpression.LiteralExpression) operand;
+            if (lit.getKind()
+                    == ArkTSExpression.LiteralExpression.LiteralKind.NUMBER
+                    && "0".equals(lit.getValue())) {
+                return new ArkTSExpression.LiteralExpression("undefined",
+                        ArkTSExpression.LiteralExpression.LiteralKind
+                                .UNDEFINED);
+            }
+        }
+        return expr;
+    }
+
+    // --- Logical OR from ternary (x ? x : value → x || value) ---
+
+    /**
+     * Simplifies ternary where condition and consequent are the same variable
+     * to a logical OR expression.
+     *
+     * <p>{@code x ? x : value} -> {@code x || value}
+     *
+     * @param expr the expression to potentially simplify
+     * @return the simplified expression, or the original if no simplification
+     */
+    static ArkTSExpression simplifyTernaryToOr(ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSAccessExpressions.ConditionalExpression)) {
+            return expr;
+        }
+        ArkTSAccessExpressions.ConditionalExpression cond =
+                (ArkTSAccessExpressions.ConditionalExpression) expr;
+        String condVar = tryGetVarName(cond.getTest());
+        String thenVar = tryGetVarName(cond.getConsequent());
+        if (condVar != null && condVar.equals(thenVar)) {
+            return new ArkTSExpression.BinaryExpression(
+                    cond.getTest(), "||", cond.getAlternate());
+        }
+        return expr;
+    }
+
+    private static String tryGetVarName(ArkTSExpression expr) {
+        if (expr instanceof ArkTSExpression.VariableExpression) {
+            return ((ArkTSExpression.VariableExpression) expr).getName();
+        }
+        return null;
+    }
+
     // --- Constant folding ---
 
     /**

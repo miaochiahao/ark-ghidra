@@ -445,6 +445,7 @@ class InstructionHandler {
                     new ArkTSExpression.UnaryExpression(op, operand, true);
             result = OperatorHandler.simplifyDoubleNegation(result);
             result = OperatorHandler.simplifyUnaryNegation(result);
+            result = OperatorHandler.simplifyVoidZero(result);
             return new StatementResult(null, result);
         }
 
