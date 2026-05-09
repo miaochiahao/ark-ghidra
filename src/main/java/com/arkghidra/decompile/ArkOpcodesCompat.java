@@ -99,6 +99,21 @@ final class ArkOpcodesCompat {
     static final int JNSTRICTEQZ_IMM8 = ArkOpcodes.JNSTRICTEQZ_IMM8;
     static final int JNSTRICTEQZ_IMM16 = ArkOpcodes.JNSTRICTEQZ_IMM16;
 
+    static final int JSTRICTEQNULL_IMM8 = ArkOpcodes.JSTRICTEQNULL_IMM8;
+    static final int JSTRICTEQNULL_IMM16 = ArkOpcodes.JSTRICTEQNULL_IMM16;
+    static final int JNSTRICTEQNULL_IMM8 = ArkOpcodes.JNSTRICTEQNULL_IMM8;
+    static final int JNSTRICTEQNULL_IMM16 = ArkOpcodes.JNSTRICTEQNULL_IMM16;
+
+    static final int JSTRICTEQUNDEFINED_IMM16 =
+            ArkOpcodes.JSTRICTEQUNDEFINED_IMM16;
+    static final int JNSTRICTEQUNDEFINED_IMM16 =
+            ArkOpcodes.JNSTRICTEQUNDEFINED_IMM16;
+
+    static final int JSTRICTEQ_IMM8 = ArkOpcodes.JSTRICTEQ_IMM8;
+    static final int JSTRICTEQ_IMM16 = ArkOpcodes.JSTRICTEQ_IMM16;
+    static final int JNSTRICTEQ_IMM8 = ArkOpcodes.JNSTRICTEQ_IMM8;
+    static final int JNSTRICTEQ_IMM16 = ArkOpcodes.JNSTRICTEQ_IMM16;
+
     static final int LDOBJBYNAME = ArkOpcodes.LDOBJBYNAME;
     static final int STOBJBYNAME = ArkOpcodes.STOBJBYNAME;
     static final int LDOBJBYVALUE = ArkOpcodes.LDOBJBYVALUE;
@@ -380,7 +395,16 @@ final class ArkOpcodesCompat {
                 || opcode == JEQUNDEFINED_IMM8 || opcode == JEQUNDEFINED_IMM16
                 || opcode == JNEUNDEFINED_IMM8 || opcode == JNEUNDEFINED_IMM16
                 || opcode == JSTRICTEQZ_IMM8 || opcode == JSTRICTEQZ_IMM16
-                || opcode == JNSTRICTEQZ_IMM8 || opcode == JNSTRICTEQZ_IMM16;
+                || opcode == JNSTRICTEQZ_IMM8 || opcode == JNSTRICTEQZ_IMM16
+                || opcode == JSTRICTEQNULL_IMM8
+                || opcode == JSTRICTEQNULL_IMM16
+                || opcode == JNSTRICTEQNULL_IMM8
+                || opcode == JNSTRICTEQNULL_IMM16
+                || opcode == JSTRICTEQUNDEFINED_IMM16
+                || opcode == JNSTRICTEQUNDEFINED_IMM16
+                || opcode == JSTRICTEQ_IMM8 || opcode == JSTRICTEQ_IMM16
+                || opcode == JNSTRICTEQ_IMM8
+                || opcode == JNSTRICTEQ_IMM16;
     }
 
     /**

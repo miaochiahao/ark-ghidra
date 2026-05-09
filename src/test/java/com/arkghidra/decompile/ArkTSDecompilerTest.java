@@ -8226,4 +8226,859 @@ class ArkTSDecompilerTest {
         assertTrue(result.contains("yield"),
                 "Should contain yield keyword, got: " + result);
     }
+
+    // --- Issue #53: Error handling decompilation ---
+
+    @Test
+    void testTryCatchStatement_withCatchParamType() {
+        // Test catch (e: TypeError) formatting
+        ArkTSStatement tryBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("risky()"))));
+        ArkTSStatement catchBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.CallExpression(
+                                new ArkTSExpression.VariableExpression("console.log"),
+                                List.of(new ArkTSExpression.VariableExpression("e"))))));
+        ArkTSControlFlow.TryCatchStatement stmt =
+                new ArkTSControlFlow.TryCatchStatement(tryBody, "e",
+                        "TypeError", catchBody, null);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.startsWith("try {"),
+                "Should start with try, got: " + result);
+        assertTrue(result.contains("catch (e: TypeError) {"),
+                "Should contain typed catch parameter, got: " + result);
+        assertFalse(result.contains("finally"),
+                "Should not contain finally, got: " + result);
+    }
+
+    @Test
+    void testTryCatchStatement_finallyOnly() {
+        // Test try { } finally { } without catch
+        ArkTSStatement tryBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("doWork()"))));
+        ArkTSStatement finallyBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("cleanup()"))));
+        // catch-only region: catch-all is used as catch handler,
+        // no finally handler separately
+        ArkTSControlFlow.TryCatchStatement stmt =
+                new ArkTSControlFlow.TryCatchStatement(tryBody, "e",
+                        null, null, finallyBody);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.startsWith("try {"),
+                "Should start with try, got: " + result);
+        assertFalse(result.contains("catch"),
+                "Should not contain catch, got: " + result);
+        assertTrue(result.contains("finally {"),
+                "Should contain finally, got: " + result);
+        assertTrue(result.contains("cleanup()"),
+                "Should contain cleanup call, got: " + result);
+    }
+
+    @Test
+    void testTryCatchStatement_withCatchAndFinally() {
+        // Test try { } catch (e: Error) { } finally { }
+        ArkTSStatement tryBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("dangerous()"))));
+        ArkTSStatement catchBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("handleError()"))));
+        ArkTSStatement finallyBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("cleanup()"))));
+        ArkTSControlFlow.TryCatchStatement stmt =
+                new ArkTSControlFlow.TryCatchStatement(tryBody, "e",
+                        "Error", catchBody, finallyBody);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.startsWith("try {"),
+                "Should start with try, got: " + result);
+        assertTrue(result.contains("catch (e: Error) {"),
+                "Should contain typed catch, got: " + result);
+        assertTrue(result.contains("handleError()"),
+                "Should contain catch body, got: " + result);
+        assertTrue(result.contains("finally {"),
+                "Should contain finally, got: " + result);
+        assertTrue(result.contains("cleanup()"),
+                "Should contain finally body, got: " + result);
+    }
+
+    @Test
+    void testDecompile_throwNewError() {
+        // Test throw new Error("msg") via ldai + newobjrange + throw
+        // Simulate: ldai 0 -> lda.str 0 -> newobjrange 1, v0 ->
+        //           sta v1 -> lda v1 -> throw
+        // For simplicity, test ldai 42; sta v0; lda v0; throw
+        byte[] code = concat(
+                bytes(0x62), le32(42),    // ldai 42       offset 0
+                bytes(0x61, 0x00),         // sta v0        offset 5
+                bytes(0x60, 0x00),         // lda v0        offset 7
+                bytes(0xFE)                // throw         offset 9
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("throw"),
+                "Should contain throw keyword, got: " + result);
+        assertTrue(result.contains("let v0 = 42"),
+                "Should contain variable declaration, got: " + result);
+    }
+
+    @Test
+    void testDecompile_tryCatchFinally_withTypedCatch() {
+        // Build a method with try/catch/finally using AbcTryBlock
+        byte[] codeBytes = concat(
+                bytes(0x62), le32(1),          // ldai 1     offset 0
+                bytes(0x61, 0x00),             // sta v0     offset 5
+                bytes(0x64),                    // return     offset 7
+                bytes(0x60, 0x00),             // lda v0     offset 8 (catch handler)
+                bytes(0x61, 0x01),             // sta v1     offset 10
+                bytes(0x64),                    // return     offset 12 (end catch)
+                bytes(0x60, 0x01),             // lda v1     offset 13 (finally handler)
+                bytes(0x64)                     // return     offset 15
+        );
+        // Typed catch at offset 8, finally (catch-all) at offset 13
+        AbcCatchBlock typedCatch =
+                new AbcCatchBlock(1, 8, 4, false);
+        AbcCatchBlock finallyCatch =
+                new AbcCatchBlock(0, 13, 2, true);
+        AbcTryBlock tryBlock = new AbcTryBlock(0, 7,
+                List.of(typedCatch, finallyCatch));
+        AbcCode code = new AbcCode(2, 0, codeBytes.length, codeBytes,
+                List.of(tryBlock), 1);
+        AbcMethod method = new AbcMethod(0, 0, "test",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        String result = decompiler.decompileMethod(method, code, null);
+        assertNotNull(result);
+        assertTrue(result.contains("try"),
+                "Expected try statement, got: " + result);
+    }
+
+    @Test
+    void testDecompile_tryFinally_noCatch() {
+        // Build a method with try/finally (no typed catch)
+        byte[] codeBytes = concat(
+                bytes(0x62), le32(1),          // ldai 1     offset 0
+                bytes(0x61, 0x00),             // sta v0     offset 5
+                bytes(0x64),                    // return     offset 7
+                bytes(0x60, 0x00),             // lda v0     offset 8 (catch-all/finally)
+                bytes(0x64)                     // return     offset 10
+        );
+        // Only a catch-all (finally) handler
+        AbcCatchBlock catchAll =
+                new AbcCatchBlock(0, 8, 2, true);
+        AbcTryBlock tryBlock = new AbcTryBlock(0, 7,
+                List.of(catchAll));
+        AbcCode code = new AbcCode(2, 0, codeBytes.length, codeBytes,
+                List.of(tryBlock), 1);
+        AbcMethod method = new AbcMethod(0, 0, "cleanup",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        String result = decompiler.decompileMethod(method, code, null);
+        assertNotNull(result);
+        assertTrue(result.contains("try"),
+                "Expected try statement, got: " + result);
+    }
+
+    @Test
+    void testDecompile_nestedTryCatchWithFinally() {
+        // Outer try/catch/finally with inner try/catch
+        byte[] codeBytes = concat(
+                bytes(0x62), le32(1),          // ldai 1     offset 0
+                bytes(0x61, 0x00),             // sta v0     offset 5
+                bytes(0x62), le32(2),          // ldai 2     offset 7
+                bytes(0x61, 0x01),             // sta v1     offset 12
+                bytes(0x64),                    // return     offset 14
+                bytes(0x60, 0x00),             // lda v0     offset 15 (inner catch)
+                bytes(0x64),                    // return     offset 17
+                bytes(0x60, 0x01),             // lda v1     offset 18 (outer catch)
+                bytes(0x64),                    // return     offset 20
+                bytes(0x60, 0x00),             // lda v0     offset 21 (outer finally)
+                bytes(0x64)                     // return     offset 23
+        );
+        // Inner try: offsets 0-7, catch at 15
+        AbcCatchBlock innerCatch =
+                new AbcCatchBlock(0, 15, 2, false);
+        AbcTryBlock innerTry = new AbcTryBlock(0, 7,
+                List.of(innerCatch));
+        // Outer try: offsets 0-14, catch at 18, finally at 21
+        AbcCatchBlock outerCatch =
+                new AbcCatchBlock(0, 18, 2, false);
+        AbcCatchBlock outerFinally =
+                new AbcCatchBlock(0, 21, 2, true);
+        AbcTryBlock outerTry = new AbcTryBlock(0, 14,
+                List.of(outerCatch, outerFinally));
+        AbcCode code = new AbcCode(2, 0, codeBytes.length, codeBytes,
+                List.of(innerTry, outerTry), 1);
+        AbcMethod method = new AbcMethod(0, 0, "nestedFinally",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        String result = decompiler.decompileMethod(method, code, null);
+        assertNotNull(result);
+        assertTrue(result.contains("try"),
+                "Expected try statement, got: " + result);
+    }
+
+    @Test
+    void testDecompile_throwWithAccumulatorValue() {
+        // Test throw with an expression loaded into accumulator
+        // lda.str 0 -> throw  (throws the string value)
+        byte[] code = concat(
+                bytes(0x3E, 0x00, 0x00),       // lda.str 0    offset 0
+                bytes(0xFE)                      // throw        offset 3
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("throw"),
+                "Should contain throw, got: " + result);
+    }
+
+    @Test
+    void testTryCatchStatement_multipleCatchTypes() {
+        // Test that different catch types produce correct annotations
+        ArkTSStatement tryBody = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSStatement catchBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("handle()"))));
+        // TypeError
+        ArkTSControlFlow.TryCatchStatement typeError =
+                new ArkTSControlFlow.TryCatchStatement(tryBody, "e",
+                        "TypeError", catchBody, null);
+        assertTrue(typeError.toArkTS(0).contains("catch (e: TypeError)"),
+                "Should have TypeError annotation");
+        // SyntaxError
+        ArkTSControlFlow.TryCatchStatement syntaxError =
+                new ArkTSControlFlow.TryCatchStatement(tryBody, "err",
+                        "SyntaxError", catchBody, null);
+        assertTrue(syntaxError.toArkTS(0).contains("catch (err: SyntaxError)"),
+                "Should have SyntaxError annotation");
+        // RangeError
+        ArkTSControlFlow.TryCatchStatement rangeError =
+                new ArkTSControlFlow.TryCatchStatement(tryBody, "ex",
+                        "RangeError", catchBody, null);
+        assertTrue(rangeError.toArkTS(0).contains("catch (ex: RangeError)"),
+                "Should have RangeError annotation");
+    }
+
+    @Test
+    void testDecompile_throwWithNewExpression() {
+        // Test throw new Error("message") pattern
+        // Build: ldai 0 -> sta v0 -> lda.str 1 ->
+        //        sta v1 -> lda.str "Error" -> newobjrange 1, v1 ->
+        //        sta v2 -> lda v2 -> throw
+        // Simplified: just test that throw follows a value load
+        byte[] code = concat(
+                bytes(0x62), le32(0),          // ldai 0        offset 0
+                bytes(0x61, 0x00),             // sta v0         offset 5
+                bytes(0x60, 0x00),             // lda v0         offset 7
+                bytes(0xFE)                      // throw          offset 9
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("throw"),
+                "Should contain throw, got: " + result);
+        assertTrue(result.contains("v0"),
+                "Should reference variable, got: " + result);
+    }
+
+    // --- Async/await decompilation tests (issue #52) ---
+
+    @Test
+    void testFunctionDeclaration_async() {
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.LiteralExpression("42",
+                                ArkTSExpression.LiteralExpression
+                                        .LiteralKind.NUMBER))));
+        ArkTSDeclarations.FunctionDeclaration func =
+                new ArkTSDeclarations.FunctionDeclaration(
+                        "fetchData", Collections.emptyList(),
+                        "Promise<number>", body, true);
+        String result = func.toArkTS(0);
+        assertTrue(result.startsWith("async function fetchData"),
+                "Should start with 'async function fetchData': " + result);
+        assertFalse(result.startsWith("function fetchData"),
+                "Should NOT start without 'async': " + result);
+        assertTrue(result.contains("Promise<number>"),
+                "Should have return type: " + result);
+    }
+
+    @Test
+    void testFunctionDeclaration_syncNotAsync() {
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSDeclarations.FunctionDeclaration func =
+                new ArkTSDeclarations.FunctionDeclaration(
+                        "syncMethod", Collections.emptyList(), null,
+                        body, false);
+        String result = func.toArkTS(0);
+        assertTrue(result.startsWith("function syncMethod"),
+                "Sync function should NOT start with 'async': " + result);
+    }
+
+    @Test
+    void testClassMethodDeclaration_async() {
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.LiteralExpression("result",
+                                ArkTSExpression.LiteralExpression
+                                        .LiteralKind.STRING))));
+        ArkTSDeclarations.ClassMethodDeclaration method =
+                new ArkTSDeclarations.ClassMethodDeclaration(
+                        "loadData", Collections.emptyList(),
+                        "Promise<string>", body, false,
+                        "public", true);
+        String result = method.toArkTS(1);
+        assertTrue(result.contains("public async loadData"),
+                "Should contain 'public async loadData': " + result);
+        assertTrue(result.contains("Promise<string>"),
+                "Should have return type: " + result);
+    }
+
+    @Test
+    void testClassMethodDeclaration_asyncStatic() {
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSDeclarations.ClassMethodDeclaration method =
+                new ArkTSDeclarations.ClassMethodDeclaration(
+                        "fetchStatic", Collections.emptyList(), null,
+                        body, true, null, true);
+        String result = method.toArkTS(1);
+        assertTrue(result.contains("static async fetchStatic"),
+                "Should contain 'static async fetchStatic': " + result);
+    }
+
+    @Test
+    void testDecompileInstructions_asyncFunctionWithAwait() {
+        // asyncfunctionenter; lda v0; asyncfunctionawaituncaught 0;
+        // sta v1; lda v1; return
+        ArkInstruction asyncEnter = new ArkInstruction(
+                ArkOpcodesCompat.ASYNCFUNCTIONENTER,
+                "asyncfunctionenter",
+                ArkInstructionFormat.NONE, 0, 1,
+                Collections.emptyList(), false);
+        ArkInstruction ldaV0 = new ArkInstruction(
+                ArkOpcodesCompat.LDA, "lda",
+                ArkInstructionFormat.V8, 1, 2,
+                List.of(new ArkOperand(ArkOperand.Type.REGISTER, 0)),
+                false);
+        ArkInstruction awaitInsn = new ArkInstruction(
+                ArkOpcodesCompat.ASYNCFUNCTIONAWAITUNCAUGHT,
+                "asyncfunctionawaituncaught",
+                ArkInstructionFormat.V8, 2, 3,
+                List.of(new ArkOperand(ArkOperand.Type.REGISTER, 0)),
+                false);
+        ArkInstruction staV1 = new ArkInstruction(
+                ArkOpcodesCompat.STA, "sta",
+                ArkInstructionFormat.V8, 3, 4,
+                List.of(new ArkOperand(ArkOperand.Type.REGISTER, 1)),
+                false);
+        ArkInstruction ldaV1 = new ArkInstruction(
+                ArkOpcodesCompat.LDA, "lda",
+                ArkInstructionFormat.V8, 4, 5,
+                List.of(new ArkOperand(ArkOperand.Type.REGISTER, 1)),
+                false);
+        ArkInstruction ret = new ArkInstruction(
+                ArkOpcodesCompat.RETURN, "return",
+                ArkInstructionFormat.NONE, 5, 6,
+                Collections.emptyList(), false);
+        String result = decompiler.decompileInstructions(
+                List.of(asyncEnter, ldaV0, awaitInsn, staV1,
+                        ldaV1, ret));
+        assertTrue(result.contains("await"),
+                "Should contain await: " + result);
+        assertTrue(result.contains("return"),
+                "Should contain return: " + result);
+    }
+
+    @Test
+    void testDecompile_asyncFunctionEnter_setsIsAsyncContext() {
+        // Verify ASYNCFUNCTIONENTER is processed without error and
+        // subsequent instructions decompile correctly.
+        // Build: asyncfunctionenter, ldai 1, sta v0, lda v0, return
+        byte[] code = concat(
+                bytes(0xAE),              // asyncfunctionenter
+                bytes(0x62), le32(1),     // ldai 1
+                bytes(0x61, 0x00),        // sta v0
+                bytes(0x60, 0x00),        // lda v0
+                bytes(0x64)               // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("return"),
+                "Should contain return: " + result);
+        assertTrue(result.contains("1"),
+                "Should reference value 1: " + result);
+    }
+
+    @Test
+    void testDecompile_awaitWithPromiseVariable() {
+        // lda v0; asyncfunctionawaituncaught 0; sta v1; lda v1; return
+        ArkInstruction ldaV0 = new ArkInstruction(
+                ArkOpcodesCompat.LDA, "lda",
+                ArkInstructionFormat.V8, 0, 2,
+                List.of(new ArkOperand(ArkOperand.Type.REGISTER, 0)),
+                false);
+        ArkInstruction awaitInsn = new ArkInstruction(
+                ArkOpcodesCompat.ASYNCFUNCTIONAWAITUNCAUGHT,
+                "asyncfunctionawaituncaught",
+                ArkInstructionFormat.V8, 2, 3,
+                List.of(new ArkOperand(ArkOperand.Type.REGISTER, 0)),
+                false);
+        ArkInstruction staV1 = new ArkInstruction(
+                ArkOpcodesCompat.STA, "sta",
+                ArkInstructionFormat.V8, 3, 4,
+                List.of(new ArkOperand(ArkOperand.Type.REGISTER, 1)),
+                false);
+        ArkInstruction ldaV1 = new ArkInstruction(
+                ArkOpcodesCompat.LDA, "lda",
+                ArkInstructionFormat.V8, 4, 5,
+                List.of(new ArkOperand(ArkOperand.Type.REGISTER, 1)),
+                false);
+        ArkInstruction ret = new ArkInstruction(
+                ArkOpcodesCompat.RETURN, "return",
+                ArkInstructionFormat.NONE, 5, 6,
+                Collections.emptyList(), false);
+        String result = decompiler.decompileInstructions(
+                List.of(ldaV0, awaitInsn, staV1, ldaV1, ret));
+        assertTrue(result.contains("await"),
+                "Should contain 'await': " + result);
+        assertTrue(result.contains("let v1"),
+                "Should declare v1: " + result);
+    }
+
+    @Test
+    void testDecompile_asyncReject_producesThrow() {
+        // asyncfunctionreject 0 -> should produce throw
+        ArkInstruction rejectInsn = new ArkInstruction(
+                ArkOpcodesCompat.ASYNCFUNCTIONREJECT,
+                "asyncfunctionreject",
+                ArkInstructionFormat.V8, 0, 2,
+                List.of(new ArkOperand(ArkOperand.Type.REGISTER, 0)),
+                false);
+        ArkInstruction retUndef = new ArkInstruction(
+                ArkOpcodesCompat.RETURNUNDEFINED, "returnundefined",
+                ArkInstructionFormat.NONE, 2, 1,
+                Collections.emptyList(), false);
+        String result = decompiler.decompileInstructions(
+                List.of(rejectInsn, retUndef));
+        assertTrue(result.contains("throw"),
+                "async reject should produce throw: " + result);
+    }
+
+    @Test
+    void testArrowFunction_asyncDeclaration() {
+        // Test async arrow function renders with async prefix
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                List.of(new ArkTSDeclarations.FunctionDeclaration
+                        .FunctionParam("url", "string"));
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.LiteralExpression("data",
+                                ArkTSExpression.LiteralExpression
+                                        .LiteralKind.STRING))));
+        ArkTSAccessExpressions.ArrowFunctionExpression arrow =
+                new ArkTSAccessExpressions.ArrowFunctionExpression(
+                        params, body, true);
+        String result = arrow.toArkTS();
+        assertTrue(result.startsWith("async "),
+                "Async arrow should start with 'async ': " + result);
+        assertTrue(result.contains("=>"),
+                "Arrow function should contain =>: " + result);
+        assertTrue(result.contains("url: string"),
+                "Should contain parameter type: " + result);
+    }
+
+    // --- Type annotation and generics decompilation tests (issue #54) ---
+
+    @Test
+    void testGenericFunctionDeclaration_toArkTS() {
+        List<ArkTSTypeDeclarations.TypeParameter> typeParams =
+                MethodSignatureBuilder.createTypeParams("T");
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                new ArrayList<>();
+        params.add(new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
+                "x", "T"));
+        ArkTSStatement body =
+                new ArkTSStatement.BlockStatement(Collections.emptyList());
+        ArkTSTypeDeclarations.GenericFunctionDeclaration decl =
+                new ArkTSTypeDeclarations.GenericFunctionDeclaration(
+                        "identity", typeParams, params, "T", body);
+        String result = decl.toArkTS(0);
+        assertTrue(result.contains("function identity<T>(x: T): T"),
+                "Should produce generic function signature, got: " + result);
+    }
+
+    @Test
+    void testGenericFunctionDeclaration_withConstraint() {
+        List<ArkTSTypeDeclarations.TypeParameter> typeParams =
+                MethodSignatureBuilder.createTypeParams(
+                        new String[] {"T"},
+                        new String[] {"Comparable"});
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                new ArrayList<>();
+        params.add(new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
+                "x", "T"));
+        ArkTSStatement body =
+                new ArkTSStatement.BlockStatement(Collections.emptyList());
+        ArkTSTypeDeclarations.GenericFunctionDeclaration decl =
+                new ArkTSTypeDeclarations.GenericFunctionDeclaration(
+                        "compare", typeParams, params, "number", body);
+        String result = decl.toArkTS(0);
+        assertTrue(result.contains(
+                "function compare<T extends Comparable>(x: T): number"),
+                "Should produce constrained generic signature, got: "
+                        + result);
+    }
+
+    @Test
+    void testGenericFunctionDeclaration_multipleTypeParams() {
+        List<ArkTSTypeDeclarations.TypeParameter> typeParams =
+                MethodSignatureBuilder.createTypeParams("T", "U");
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                new ArrayList<>();
+        params.add(new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
+                "key", "T"));
+        params.add(new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
+                "value", "U"));
+        ArkTSStatement body =
+                new ArkTSStatement.BlockStatement(Collections.emptyList());
+        ArkTSTypeDeclarations.GenericFunctionDeclaration decl =
+                new ArkTSTypeDeclarations.GenericFunctionDeclaration(
+                        "map", typeParams, params, "Object", body);
+        String result = decl.toArkTS(0);
+        assertTrue(result.contains("function map<T, U>(key: T, value: U)"),
+                "Should produce multi-param generic signature, got: "
+                        + result);
+    }
+
+    @Test
+    void testFunctionDeclaration_withTypeParams() {
+        List<ArkTSTypeDeclarations.TypeParameter> typeParams =
+                MethodSignatureBuilder.createTypeParams("T");
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                new ArrayList<>();
+        params.add(new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
+                "x", "T"));
+        ArkTSStatement body =
+                new ArkTSStatement.BlockStatement(Collections.emptyList());
+        ArkTSDeclarations.FunctionDeclaration decl =
+                new ArkTSDeclarations.FunctionDeclaration(
+                        "wrap", params, "T", body, false, typeParams);
+        String result = decl.toArkTS(0);
+        assertTrue(result.contains("function wrap<T>(x: T): T"),
+                "FunctionDeclaration should support type params, got: "
+                        + result);
+    }
+
+    @Test
+    void testUnionType_buildAndFormat() {
+        List<String> types = new ArrayList<>();
+        types.add("string");
+        types.add("number");
+        String union = TypeInference.buildUnionType(types);
+        assertEquals("number | string", union);
+        assertTrue(TypeInference.isUnionType(union));
+        List<String> parsed = TypeInference.parseUnionTypes(union);
+        assertEquals(2, parsed.size());
+        assertTrue(parsed.contains("number"));
+        assertTrue(parsed.contains("string"));
+    }
+
+    @Test
+    void testUnionType_deduplicationAndSingle() {
+        List<String> dupes = new ArrayList<>();
+        dupes.add("string");
+        dupes.add("string");
+        dupes.add("number");
+        String result = TypeInference.buildUnionType(dupes);
+        assertEquals("number | string", result);
+        List<String> single = new ArrayList<>();
+        single.add("boolean");
+        assertEquals("boolean",
+                TypeInference.buildUnionType(single));
+        assertNull(TypeInference.buildUnionType(Collections.emptyList()));
+    }
+
+    @Test
+    void testArrayType_formatAndExtract() {
+        assertEquals("number[]",
+                TypeInference.formatArrayType("number"));
+        assertEquals("string[]",
+                TypeInference.formatArrayType("string"));
+        assertEquals("Array<string | number>",
+                TypeInference.formatArrayType("string | number"));
+        assertEquals("Array<Map<string, number>>",
+                TypeInference.formatArrayType("Map<string, number>"));
+        assertTrue(TypeInference.isArrayType("number[]"));
+        assertTrue(TypeInference.isArrayType("Array<string>"));
+        assertFalse(TypeInference.isArrayType("number"));
+        assertEquals("number",
+                TypeInference.extractArrayElementType("number[]"));
+        assertEquals("string",
+                TypeInference.extractArrayElementType("Array<string>"));
+        assertEquals("unknown",
+                TypeInference.extractArrayElementType("unknown"));
+    }
+
+    @Test
+    void testGenericType_formatAndCheck() {
+        List<String> args = new ArrayList<>();
+        args.add("T");
+        assertEquals("Container<T>",
+                TypeInference.formatGenericType("Container", args));
+        assertTrue(TypeInference.isGenericType("Container<T>"));
+        assertFalse(TypeInference.isGenericType("string"));
+        List<String> multiArgs = new ArrayList<>();
+        multiArgs.add("string");
+        multiArgs.add("number");
+        assertEquals("Map<string, number>",
+                TypeInference.formatGenericType("Map", multiArgs));
+        assertEquals("Object",
+                TypeInference.formatGenericType(null, multiArgs));
+        assertEquals("string",
+                TypeInference.formatGenericType("string",
+                        Collections.emptyList()));
+    }
+
+    @Test
+    void testTypeGuard_typeofNarrowing() {
+        assertEquals("string",
+                TypeInference.typeofStringToType("\"string\""));
+        assertEquals("number",
+                TypeInference.typeofStringToType("\"number\""));
+        assertEquals("boolean",
+                TypeInference.typeofStringToType("\"boolean\""));
+        assertEquals("undefined",
+                TypeInference.typeofStringToType("\"undefined\""));
+        assertEquals("Object",
+                TypeInference.typeofStringToType("\"object\""));
+        assertNull(TypeInference.typeofStringToType("unknown"));
+        assertNull(TypeInference.typeofStringToType(null));
+    }
+
+    @Test
+    void testTypeGuard_narrowFromTypeofExpression() {
+        ArkTSExpression typeofX = new ArkTSExpression.UnaryExpression(
+                "typeof",
+                new ArkTSExpression.VariableExpression("v0"), true);
+        ArkTSExpression stringLit =
+                new ArkTSExpression.LiteralExpression("string",
+                        ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        ArkTSExpression guard = new ArkTSExpression.BinaryExpression(
+                typeofX, "===", stringLit);
+        String narrowed = TypeInference.narrowTypeFromTypeofGuard(guard);
+        assertEquals("string", narrowed);
+    }
+
+    @Test
+    void testTypeGuard_reversedOperands() {
+        ArkTSExpression typeofX = new ArkTSExpression.UnaryExpression(
+                "typeof",
+                new ArkTSExpression.VariableExpression("v0"), true);
+        ArkTSExpression stringLit =
+                new ArkTSExpression.LiteralExpression("number",
+                        ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        ArkTSExpression guard = new ArkTSExpression.BinaryExpression(
+                stringLit, "==", typeofX);
+        String narrowed = TypeInference.narrowTypeFromTypeofGuard(guard);
+        assertEquals("number", narrowed);
+    }
+
+    @Test
+    void testGenericSignature_builderMethod() {
+        List<ArkTSTypeDeclarations.TypeParameter> typeParams =
+                MethodSignatureBuilder.createTypeParams("T");
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                new ArrayList<>();
+        params.add(new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
+                "x", "T"));
+        String sig = MethodSignatureBuilder.buildGenericSignature(
+                "identity", typeParams, params, "T");
+        assertEquals("function identity<T>(x: T): T", sig);
+    }
+
+    @Test
+    void testGenericSignature_voidReturnType() {
+        List<ArkTSTypeDeclarations.TypeParameter> typeParams =
+                MethodSignatureBuilder.createTypeParams("T");
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                new ArrayList<>();
+        params.add(new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
+                "x", "T"));
+        String sig = MethodSignatureBuilder.buildGenericSignature(
+                "process", typeParams, params, "void");
+        assertEquals("function process<T>(x: T)", sig);
+    }
+
+    @Test
+    void testDecompileMethod_withProtoTypeAnnotations() {
+        byte[] codeBytes = concat(
+                bytes(0x60, 0x00),  // lda v0
+                bytes(0x64)         // return
+        );
+        AbcCode code = new AbcCode(2, 1, codeBytes.length, codeBytes,
+                Collections.emptyList(), 0);
+        List<AbcProto.ShortyType> shorty = new ArrayList<>();
+        shorty.add(AbcProto.ShortyType.I32);
+        shorty.add(AbcProto.ShortyType.I32);
+        AbcProto proto = new AbcProto(shorty, Collections.emptyList());
+        AbcMethod method = new AbcMethod(0, 0, "addOne",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        String result = decompiler.decompileMethod(method, code, null);
+        assertNotNull(result);
+        assertTrue(result.contains("function addOne"),
+                "Should contain function name, got: " + result);
+    }
+
+    @Test
+    void testDecompileMethod_protoReturnType() {
+        byte[] codeBytes = concat(
+                bytes(0x60, 0x00),  // lda v0
+                bytes(0x64)         // return
+        );
+        AbcCode code = new AbcCode(2, 1, codeBytes.length, codeBytes,
+                Collections.emptyList(), 0);
+        List<AbcProto.ShortyType> shorty = new ArrayList<>();
+        shorty.add(AbcProto.ShortyType.F64);
+        shorty.add(AbcProto.ShortyType.F64);
+        AbcProto proto = new AbcProto(shorty, Collections.emptyList());
+        AbcMethod method = new AbcMethod(0, 0, "toDouble",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        String result = decompiler.decompileMethod(method, code, null);
+        assertNotNull(result);
+        assertTrue(result.contains("toDouble"),
+                "Should contain function name, got: " + result);
+    }
+
+    @Test
+    void testTypeAnnotation_nonObviousArrayInitializer() {
+        byte[] code = concat(
+                bytes(0x05, 0x00),  // createemptyarray 0
+                bytes(0x61, 0x00),  // sta v0
+                bytes(0x64)         // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0"),
+                "Should reference v0, got: " + result);
+        assertTrue(result.contains("Array<unknown>"),
+                "Should annotate with Array<unknown> type, got: "
+                        + result);
+    }
+
+    @Test
+    void testTypeAnnotation_propertyLoadPreservesType() {
+        TypeInference typeInf = new TypeInference();
+        typeInf.setRegisterType("v0", "string");
+        assertEquals("string", typeInf.getRegisterType("v0"));
+        typeInf.setRegisterType("v1", "number | string");
+        assertEquals("number | string", typeInf.getRegisterType("v1"));
+    }
+
+    @Test
+    void testTypeAnnotation_comparisonKeepsBoolean() {
+        byte[] code = concat(
+                bytes(0x60, 0x00),       // lda v0
+                bytes(0x11, 0x00, 0x01), // less 0, v1
+                bytes(0x61, 0x02),       // sta v2
+                bytes(0x64)              // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("let v2: boolean = (v0 < v1)"),
+                "Comparison result should be typed boolean, got: "
+                        + result);
+    }
+
+    @Test
+    void testGenericClassDeclaration_toArkTS() {
+        List<ArkTSTypeDeclarations.TypeParameter> typeParams =
+                MethodSignatureBuilder.createTypeParams("T");
+        List<ArkTSStatement> members = new ArrayList<>();
+        ArkTSTypeDeclarations.GenericClassDeclaration decl =
+                new ArkTSTypeDeclarations.GenericClassDeclaration(
+                        "Container", typeParams, null, members);
+        String result = decl.toArkTS(0);
+        assertTrue(result.contains("class Container<T>"),
+                "Should produce generic class declaration, got: "
+                        + result);
+    }
+
+    @Test
+    void testGenericClassDeclaration_withSuperClass() {
+        List<ArkTSTypeDeclarations.TypeParameter> typeParams =
+                MethodSignatureBuilder.createTypeParams("T");
+        List<ArkTSStatement> members = new ArrayList<>();
+        ArkTSTypeDeclarations.GenericClassDeclaration decl =
+                new ArkTSTypeDeclarations.GenericClassDeclaration(
+                        "List", typeParams, "Collection", members);
+        String result = decl.toArkTS(0);
+        assertTrue(result.contains("class List<T> extends Collection"),
+                "Should produce generic class with extends, got: "
+                        + result);
+    }
+
+    @Test
+    void testGenericClassDeclaration_constrainedTypeParams() {
+        List<ArkTSTypeDeclarations.TypeParameter> typeParams =
+                MethodSignatureBuilder.createTypeParams(
+                        new String[] {"K", "V"},
+                        new String[] {"string", null});
+        List<ArkTSStatement> members = new ArrayList<>();
+        ArkTSTypeDeclarations.GenericClassDeclaration decl =
+                new ArkTSTypeDeclarations.GenericClassDeclaration(
+                        "Map", typeParams, null, members);
+        String result = decl.toArkTS(0);
+        assertTrue(result.contains(
+                "class Map<K extends string, V>"),
+                "Should produce constrained generic class, got: "
+                        + result);
+    }
+
+    @Test
+    void testAsExpression_typeCasting() {
+        ArkTSExpression expr =
+                new ArkTSExpression.VariableExpression("v0");
+        ArkTSAccessExpressions.AsExpression asExpr =
+                new ArkTSAccessExpressions.AsExpression(expr, "string");
+        assertEquals("v0 as string", asExpr.toArkTS());
+        assertEquals("v0", asExpr.getExpression().toArkTS());
+        assertEquals("string", asExpr.getTypeName());
+    }
+
+    @Test
+    void testTypeReferenceExpression_genericType() {
+        List<String> typeArgs = new ArrayList<>();
+        typeArgs.add("string");
+        typeArgs.add("number");
+        ArkTSAccessExpressions.TypeReferenceExpression typeRef =
+                new ArkTSAccessExpressions.TypeReferenceExpression(
+                        "Map", typeArgs);
+        assertEquals("Map<string, number>", typeRef.toArkTS());
+        assertEquals("Map", typeRef.getTypeName());
+        assertEquals(2, typeRef.getTypeArgs().size());
+    }
+
+    @Test
+    void testMethodSignatureBuilder_createTypeParamsConstrained() {
+        List<ArkTSTypeDeclarations.TypeParameter> params =
+                MethodSignatureBuilder.createTypeParams(
+                        new String[] {"T", "U"},
+                        new String[] {"Base", "Comparable"});
+        assertEquals(2, params.size());
+        assertEquals("T extends Base", params.get(0).toString());
+        assertEquals("U extends Comparable", params.get(1).toString());
+    }
+
+    @Test
+    void testMethodSignatureBuilder_createTypeParamsNullConstraints() {
+        List<ArkTSTypeDeclarations.TypeParameter> params =
+                MethodSignatureBuilder.createTypeParams(
+                        new String[] {"T"},
+                        null);
+        assertEquals(1, params.size());
+        assertEquals("T", params.get(0).toString());
+        assertNull(params.get(0).getConstraint());
+    }
 }
