@@ -171,13 +171,14 @@ public class ArkTSDecompiler {
                         startTimeNs);
             }
 
-            bodyStmts = removeUnusedVariables(
-                            convertIfElseChainToSwitch(
-                                    simplifyReturnIfTernary(
-                                            detectSwitchExpressions(
-                                                    mergeNestedIfConditions(
-                                                            ExpressionVisitor.inlineSingleUseVariables(
-                                                                    applyConstOptimization(bodyStmts)))))));
+            bodyStmts = simplifyIncrementDecrement(
+                            removeUnusedVariables(
+                                    convertIfElseChainToSwitch(
+                                            simplifyReturnIfTernary(
+                                                    detectSwitchExpressions(
+                                                            mergeNestedIfConditions(
+                                                                    ExpressionVisitor.inlineSingleUseVariables(
+                                                                            applyConstOptimization(bodyStmts))))))));
         } catch (Exception e) {
             List<ArkTSStatement> fallbackStmts = new ArrayList<>();
             fallbackStmts.add(new ArkTSStatement.ExpressionStatement(
@@ -233,6 +234,7 @@ public class ArkTSDecompiler {
             stmts = simplifyReturnIfTernary(stmts);
             stmts = convertIfElseChainToSwitch(stmts);
             stmts = removeUnusedVariables(stmts);
+            stmts = simplifyIncrementDecrement(stmts);
         } catch (Exception e) {
             return buildFallbackInstructionListing(instructions,
                     "statement generation failed: " + e);
@@ -472,13 +474,14 @@ public class ArkTSDecompiler {
                 return buildTimeoutBody(startTimeNs);
             }
 
-            return removeUnusedVariables(
-                    convertIfElseChainToSwitch(
-                            simplifyReturnIfTernary(
-                                    detectSwitchExpressions(
-                                            mergeNestedIfConditions(
-                                                    ExpressionVisitor.inlineSingleUseVariables(
-                                                            applyConstOptimization(stmts)))))));
+            return simplifyIncrementDecrement(
+                    removeUnusedVariables(
+                            convertIfElseChainToSwitch(
+                                    simplifyReturnIfTernary(
+                                            detectSwitchExpressions(
+                                                    mergeNestedIfConditions(
+                                                            ExpressionVisitor.inlineSingleUseVariables(
+                                                                    applyConstOptimization(stmts))))))));
         } catch (Exception e) {
             ctx.warnings.add("Statement generation failed: "
                     + e.getMessage());
@@ -1130,6 +1133,127 @@ public class ArkTSDecompiler {
         return init instanceof ArkTSExpression.CallExpression
                 || init instanceof ArkTSExpression.NewExpression
                 || init instanceof ArkTSExpression.AssignExpression;
+    }
+
+    // --- Increment/decrement simplification ---
+
+    /**
+     * Converts {@code x += 1} to {@code x++} and {@code x -= 1} to
+     * {@code x--} when used as ExpressionStatement.
+     */
+    static List<ArkTSStatement> simplifyIncrementDecrement(
+            List<ArkTSStatement> stmts) {
+        if (stmts == null || stmts.isEmpty()) {
+            return stmts;
+        }
+        List<ArkTSStatement> result = new ArrayList<>(stmts.size());
+        for (ArkTSStatement stmt : stmts) {
+            result.add(simplifyIncrementInStmt(stmt));
+        }
+        return result;
+    }
+
+    private static ArkTSStatement simplifyIncrementInStmt(
+            ArkTSStatement stmt) {
+        if (stmt instanceof ArkTSStatement.ExpressionStatement) {
+            ArkTSExpression expr =
+                    ((ArkTSStatement.ExpressionStatement) stmt)
+                            .getExpression();
+            ArkTSExpression simplified = tryIncrementDecrement(expr);
+            if (simplified != null) {
+                return new ArkTSStatement.ExpressionStatement(simplified);
+            }
+        }
+        if (stmt instanceof ArkTSControlFlow.IfStatement) {
+            ArkTSControlFlow.IfStatement ifStmt =
+                    (ArkTSControlFlow.IfStatement) stmt;
+            return new ArkTSControlFlow.IfStatement(
+                    ifStmt.getCondition(),
+                    simplifyIncrementInBlock(ifStmt.getThenBlock()),
+                    ifStmt.getElseBlock() != null
+                            ? simplifyIncrementInBlock(
+                                    ifStmt.getElseBlock())
+                            : null);
+        }
+        if (stmt instanceof ArkTSControlFlow.WhileStatement) {
+            ArkTSControlFlow.WhileStatement ws =
+                    (ArkTSControlFlow.WhileStatement) stmt;
+            return new ArkTSControlFlow.WhileStatement(
+                    ws.getCondition(),
+                    simplifyIncrementInBlock(ws.getBody()));
+        }
+        if (stmt instanceof ArkTSControlFlow.DoWhileStatement) {
+            ArkTSControlFlow.DoWhileStatement dw =
+                    (ArkTSControlFlow.DoWhileStatement) stmt;
+            return new ArkTSControlFlow.DoWhileStatement(
+                    dw.getBody(),
+                    dw.getCondition());
+        }
+        if (stmt instanceof ArkTSControlFlow.ForStatement) {
+            // Cannot rebuild ForStatement (no public getters for init/
+            // condition/update) — just return as-is, increment patterns
+            // in for-update are already correct
+            return stmt;
+        }
+        if (stmt instanceof ArkTSControlFlow.ForOfStatement) {
+            ArkTSControlFlow.ForOfStatement fo =
+                    (ArkTSControlFlow.ForOfStatement) stmt;
+            return new ArkTSControlFlow.ForOfStatement(
+                    fo.getVariableKind(), fo.getVariableName(),
+                    fo.getIterable(),
+                    simplifyIncrementInBlock(fo.getBody()));
+        }
+        if (stmt instanceof ArkTSStatement.BlockStatement) {
+            List<ArkTSStatement> body =
+                    ((ArkTSStatement.BlockStatement) stmt).getBody();
+            List<ArkTSStatement> newBody =
+                    new ArrayList<>(body.size());
+            for (ArkTSStatement s : body) {
+                newBody.add(simplifyIncrementInStmt(s));
+            }
+            return new ArkTSStatement.BlockStatement(newBody);
+        }
+        return stmt;
+    }
+
+    private static ArkTSStatement simplifyIncrementInBlock(
+            ArkTSStatement block) {
+        if (block == null) {
+            return null;
+        }
+        if (block instanceof ArkTSStatement.BlockStatement) {
+            return simplifyIncrementInStmt(block);
+        }
+        return simplifyIncrementInStmt(block);
+    }
+
+    private static ArkTSExpression tryIncrementDecrement(
+            ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.CompoundAssignExpression)) {
+            return null;
+        }
+        ArkTSExpression.CompoundAssignExpression compound =
+                (ArkTSExpression.CompoundAssignExpression) expr;
+        if (!"+=".equals(compound.getOperator())
+                && !"-=".equals(compound.getOperator())) {
+            return null;
+        }
+        ArkTSExpression value = compound.getValue();
+        if (!(value instanceof ArkTSExpression.LiteralExpression)) {
+            return null;
+        }
+        ArkTSExpression.LiteralExpression lit =
+                (ArkTSExpression.LiteralExpression) value;
+        if (lit.getKind()
+                != ArkTSExpression.LiteralExpression.LiteralKind.NUMBER) {
+            return null;
+        }
+        boolean isIncrement = "+=".equals(compound.getOperator());
+        if ("1".equals(lit.getValue())) {
+            return new ArkTSExpression.IncrementExpression(
+                    compound.getTarget(), false, isIncrement);
+        }
+        return null;
     }
 
     private static String extractUninitVarDecl(ArkTSStatement stmt) {
