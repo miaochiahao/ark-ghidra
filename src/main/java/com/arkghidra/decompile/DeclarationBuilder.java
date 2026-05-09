@@ -1078,6 +1078,35 @@ class DeclarationBuilder {
     }
 
     /**
+     * Resolves interface offsets to class names.
+     */
+    List<String> resolveInterfaceNames(List<Long> interfaceOffsets,
+            AbcFile abcFile) {
+        if (interfaceOffsets == null || interfaceOffsets.isEmpty()
+                || abcFile == null) {
+            return Collections.emptyList();
+        }
+        List<String> names = new ArrayList<>(interfaceOffsets.size());
+        for (Long off : interfaceOffsets) {
+            if (off == 0) {
+                continue;
+            }
+            String resolved = null;
+            for (AbcClass cls : abcFile.getClasses()) {
+                if (cls.getOffset() == off.longValue()) {
+                    resolved = sanitizeClassName(cls.getName());
+                    break;
+                }
+            }
+            if (resolved == null) {
+                resolved = "interface_" + off;
+            }
+            names.add(resolved);
+        }
+        return names;
+    }
+
+    /**
      * Checks if a setter body consists of only a single assignment.
      *
      * @param setter the setter to check
