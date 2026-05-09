@@ -6,9 +6,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+
+import com.arkghidra.disasm.ArkDisassembler;
+import com.arkghidra.disasm.ArkInstruction;
 
 /**
  * Tests for output quality: expression simplification,
@@ -222,6 +226,100 @@ class ArkTSOutputQualityTest {
             assertTrue(result.startsWith("outer:"));
             assertTrue(result.contains("while (true)"));
             assertTrue(result.contains("break outer"));
+        }
+    }
+
+    @Nested
+    @DisplayName("Const vs let differentiation")
+    class ConstLetTests {
+        private ArkTSDecompiler decompiler;
+        private ArkDisassembler disasm;
+
+        @BeforeEach
+        void setUp() {
+            decompiler = new ArkTSDecompiler();
+            disasm = new ArkDisassembler();
+        }
+
+        private List<ArkInstruction> dis(byte[] code) {
+            return disasm.disassemble(code, 0, code.length);
+        }
+
+        private static byte[] bytes(int... values) {
+            byte[] result = new byte[values.length];
+            for (int i = 0; i < values.length; i++) {
+                result[i] = (byte) values[i];
+            }
+            return result;
+        }
+
+        private static byte[] concat(byte[]... arrays) {
+            int total = 0;
+            for (byte[] a : arrays) {
+                total += a.length;
+            }
+            byte[] result = new byte[total];
+            int pos = 0;
+            for (byte[] a : arrays) {
+                System.arraycopy(a, 0, result, pos, a.length);
+                pos += a.length;
+            }
+            return result;
+        }
+
+        private static byte[] le32(int value) {
+            return new byte[] {
+                (byte) (value & 0xFF),
+                (byte) ((value >> 8) & 0xFF),
+                (byte) ((value >> 16) & 0xFF),
+                (byte) ((value >> 24) & 0xFF)
+            };
+        }
+
+        @Test
+        void testSingleAssignment_usesConst() {
+            // ldai 42 -> sta v2 -> lda v2 -> return
+            byte[] code = concat(bytes(0x62), le32(42),
+                    bytes(0x61, 0x02),
+                    bytes(0x60, 0x02),
+                    bytes(0x64));
+            List<ArkInstruction> insns = dis(code);
+            String result = decompiler.decompileInstructions(insns);
+            assertTrue(result.contains("const v2 = 42"),
+                    "Single-assignment should use const: " + result);
+        }
+
+        @Test
+        void testReassignment_usesLet() {
+            // ldai 1 -> sta v2 -> ldai 2 -> sta v2 -> return
+            byte[] code = concat(bytes(0x62), le32(1),
+                    bytes(0x61, 0x02),
+                    bytes(0x62), le32(2),
+                    bytes(0x61, 0x02),
+                    bytes(0x64));
+            List<ArkInstruction> insns = dis(code);
+            String result = decompiler.decompileInstructions(insns);
+            assertTrue(result.contains("let v2 = 1"),
+                    "Reassigned variable should use let: " + result);
+        }
+
+        @Test
+        void testMixedConstAndLet() {
+            // ldai 42 -> sta v2 (const) -> ldai 1 -> sta v3
+            // -> ldai 2 -> sta v3 (reassigned) -> return
+            byte[] code = concat(bytes(0x62), le32(42),
+                    bytes(0x61, 0x02),
+                    bytes(0x62), le32(1),
+                    bytes(0x61, 0x03),
+                    bytes(0x62), le32(2),
+                    bytes(0x61, 0x03),
+                    bytes(0x64));
+            List<ArkInstruction> insns = dis(code);
+            String result = decompiler.decompileInstructions(insns);
+            assertTrue(result.contains("const v2 = 42"),
+                    "Single-assigned v2 should use const: " + result);
+            assertTrue(result.contains("let v3 = 1"),
+                    "Reassigned v3 should use let: " + result);
         }
     }
 }

@@ -169,7 +169,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v0 = 10"));
+        assertTrue(result.contains("const v0 = 10"));
     }
 
     @Test
@@ -212,8 +212,8 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v0 = true"));
-        assertTrue(result.contains("let v1 = false"));
+        assertTrue(result.contains("const v0 = true"));
+        assertTrue(result.contains("const v1 = false"));
     }
 
     @Test
@@ -809,7 +809,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileMethod(method, code, null);
         assertNotNull(result);
         assertTrue(result.contains("function getAnswer()"));
-        assertTrue(result.contains("let v0 = 42"));
+        assertTrue(result.contains("const v0 = 42"));
         assertTrue(result.contains("return v0"));
     }
 
@@ -836,7 +836,7 @@ class ArkTSDecompilerTest {
         byte[] code = bytes(0x44, 0x01, 0x00);
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v1 = v0"));
+        assertTrue(result.contains("const v1 = v0"));
     }
 
     @Test
@@ -848,7 +848,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v0 = {  }"));
+        assertTrue(result.contains("const v0 = {  }"));
     }
 
     @Test
@@ -860,7 +860,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v0: Array<unknown> = []"));
+        assertTrue(result.contains("const v0: Array<unknown> = []"));
     }
 
     @Test
@@ -872,7 +872,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v0 = this"));
+        assertTrue(result.contains("const v0 = this"));
     }
 
     @Test
@@ -992,8 +992,8 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v0 = 2"));
-        assertTrue(result.contains("let v1 = 3"));
+        assertTrue(result.contains("const v0 = 2"));
+        assertTrue(result.contains("const v1 = 3"));
         assertTrue(result.contains("v0 + v1"));
         assertTrue(result.contains("return v2"));
     }
@@ -1417,7 +1417,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v0 = 42"));
+        assertTrue(result.contains("const v0 = 42"));
     }
 
     @Test
@@ -1430,7 +1430,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v0 = \"str_0\""));
+        assertTrue(result.contains("const v0 = \"str_0\""));
     }
 
     @Test
@@ -1443,7 +1443,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v0 = true"));
+        assertTrue(result.contains("const v0 = true"));
     }
 
     @Test
@@ -2590,7 +2590,7 @@ class ArkTSDecompilerTest {
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
         assertNotNull(result);
-        assertTrue(result.contains("{  }") || result.contains("let v0"));
+        assertTrue(result.contains("{  }") || result.contains("const v0"));
     }
 
     // --- Create array with buffer from bytecode ---
@@ -3016,7 +3016,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         // Without an ABC file, it should still produce a placeholder
         assertTrue(result.contains("str_0"));
-        assertTrue(result.contains("let v0 = \"str_0\""));
+        assertTrue(result.contains("const v0 = \"str_0\""));
     }
 
     // --- 5. Cross-method reference resolution ---
@@ -3127,7 +3127,7 @@ class ArkTSDecompilerTest {
                 AbcAccessFlags.ACC_PUBLIC, 0, 0);
         String result = decompiler.decompileMethod(method, code, null);
         assertNotNull(result);
-        assertTrue(result.contains("let v0 = 42"));
+        assertTrue(result.contains("const v0 = 42"));
         // The trailing return; should be stripped
         assertFalse(result.contains("return;"));
     }
@@ -6238,11 +6238,11 @@ class ArkTSDecompilerTest {
                         + result);
         assertFalse(result.contains("/* op */"),
                 "Should not produce operator placeholder: " + result);
-        assertTrue(result.contains("let v0 = 42"));
-        assertTrue(result.contains("let v1 = true"));
-        assertTrue(result.contains("let v2 = false"));
-        assertTrue(result.contains("let v3 = undefined"));
-        assertTrue(result.contains("let v4 = null"));
+        assertTrue(result.contains("const v0 = 42"));
+        assertTrue(result.contains("const v1 = true"));
+        assertTrue(result.contains("const v2 = false"));
+        assertTrue(result.contains("const v3 = undefined"));
+        assertTrue(result.contains("const v4 = null"));
     }
 
     @Test
@@ -6255,7 +6255,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v0 = 100"),
+        assertTrue(result.contains("const v0 = 100"),
                 "Number literal should not have redundant type annotation: "
                         + result);
         assertFalse(result.contains("let v0: number = 100"),
@@ -6336,10 +6336,10 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v0 = 10;"),
+        assertTrue(result.contains("const v0 = 10;"),
                 "First declaration should have no type annotation: "
                         + result);
-        assertTrue(result.contains("let v1 = 20;"),
+        assertTrue(result.contains("const v1 = 20;"),
                 "Second declaration should have no type annotation: "
                         + result);
         assertTrue(result.contains("v0 + v1"),
@@ -7052,7 +7052,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v0 = 5"),
+        assertTrue(result.contains("const v0 = 5"),
                 "Should have initial assignment: " + result);
         assertTrue(result.contains("[v1, v2] = v0"),
                 "Should produce destructuring: " + result);
@@ -7370,7 +7370,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertTrue(result.contains("v0 & v1"),
                 "Should contain bitwise AND: " + result);
-        assertTrue(result.contains("let v2: number"),
+        assertTrue(result.contains("const v2: number"),
                 "Bitwise AND result should be typed as number: " + result);
     }
 
@@ -7386,7 +7386,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertTrue(result.contains("v0 | v1"),
                 "Should contain bitwise OR: " + result);
-        assertTrue(result.contains("let v2: number"),
+        assertTrue(result.contains("const v2: number"),
                 "Bitwise OR result should be typed as number: " + result);
     }
 
@@ -7402,7 +7402,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertTrue(result.contains("v0 ^ v1"),
                 "Should contain bitwise XOR: " + result);
-        assertTrue(result.contains("let v2: number"),
+        assertTrue(result.contains("const v2: number"),
                 "Bitwise XOR result should be typed as number: " + result);
     }
 
@@ -7437,7 +7437,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertTrue(result.contains("v0 << v1"),
                 "Should contain left shift: " + result);
-        assertTrue(result.contains("let v2: number"),
+        assertTrue(result.contains("const v2: number"),
                 "Left shift result should be typed as number: " + result);
     }
 
@@ -7453,7 +7453,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertTrue(result.contains("v0 >> v1"),
                 "Should contain arithmetic right shift: " + result);
-        assertTrue(result.contains("let v2: number"),
+        assertTrue(result.contains("const v2: number"),
                 "Right shift result should be typed as number: " + result);
     }
 
@@ -7469,7 +7469,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertTrue(result.contains("v0 >>> v1"),
                 "Should contain unsigned right shift: " + result);
-        assertTrue(result.contains("let v2: number"),
+        assertTrue(result.contains("const v2: number"),
                 "Unsigned right shift result should be typed as number: "
                         + result);
     }
@@ -7486,7 +7486,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertTrue(result.contains("v0 === v1"),
                 "Should contain strict equality: " + result);
-        assertTrue(result.contains("let v2: boolean"),
+        assertTrue(result.contains("const v2: boolean"),
                 "Strict equality result should be typed as boolean: "
                         + result);
     }
@@ -7503,7 +7503,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertTrue(result.contains("v0 !== v1"),
                 "Should contain strict inequality: " + result);
-        assertTrue(result.contains("let v2: boolean"),
+        assertTrue(result.contains("const v2: boolean"),
                 "Strict inequality result should be typed as boolean: "
                         + result);
     }
@@ -7520,7 +7520,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertTrue(result.contains("v0 instanceof v1"),
                 "Should contain instanceof: " + result);
-        assertTrue(result.contains("let v2: boolean"),
+        assertTrue(result.contains("const v2: boolean"),
                 "instanceof result should be typed as boolean: " + result);
     }
 
@@ -7536,7 +7536,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertTrue(result.contains("typeof v0"),
                 "Should contain typeof: " + result);
-        assertTrue(result.contains("let v1: string"),
+        assertTrue(result.contains("const v1: string"),
                 "typeof result should be typed as string: " + result);
     }
 
@@ -7555,7 +7555,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertTrue(result.contains("v0 == v1"),
                 "Should contain loose equality: " + result);
-        assertTrue(result.contains("let v2: boolean"),
+        assertTrue(result.contains("const v2: boolean"),
                 "Loose equality result should be typed as boolean: "
                         + result);
     }
@@ -7572,7 +7572,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertTrue(result.contains("v0 != v1"),
                 "Should contain loose inequality: " + result);
-        assertTrue(result.contains("let v2: boolean"),
+        assertTrue(result.contains("const v2: boolean"),
                 "Loose inequality result should be typed as boolean: "
                         + result);
     }
@@ -7591,7 +7591,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertTrue(result.contains("v0 <= v1"),
                 "Should contain less-than-or-equal: " + result);
-        assertTrue(result.contains("let v2: boolean"),
+        assertTrue(result.contains("const v2: boolean"),
                 "Less-equal result should be typed as boolean: "
                         + result);
     }
@@ -7608,7 +7608,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertTrue(result.contains("v0 > v1"),
                 "Should contain greater-than: " + result);
-        assertTrue(result.contains("let v2: boolean"),
+        assertTrue(result.contains("const v2: boolean"),
                 "Greater-than result should be typed as boolean: "
                         + result);
     }
@@ -7625,7 +7625,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertTrue(result.contains("v0 >= v1"),
                 "Should contain greater-than-or-equal: " + result);
-        assertTrue(result.contains("let v2: boolean"),
+        assertTrue(result.contains("const v2: boolean"),
                 "Greater-equal result should be typed as boolean: "
                         + result);
     }
@@ -7644,7 +7644,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertTrue(result.contains("v0 ** v1"),
                 "Should contain exponentiation: " + result);
-        assertTrue(result.contains("let v2: number"),
+        assertTrue(result.contains("const v2: number"),
                 "Exponentiation result should be typed as number: "
                         + result);
     }
@@ -8009,7 +8009,7 @@ class ArkTSDecompilerTest {
         assertTrue(insns.get(0).isWide(),
                 "First instruction should be wide");
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v10"),
+        assertTrue(result.contains("const v10"),
                 "Should declare v10: " + result);
         assertTrue(result.contains("v20"),
                 "Should reference v20: " + result);
@@ -8149,7 +8149,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertFalse(result.contains("/* wide_"),
                 "Should not emit any wide comment fallback: " + result);
-        assertTrue(result.contains("let v2"),
+        assertTrue(result.contains("const v2"),
                 "Should declare v2: " + result);
         assertTrue(result.contains("[]"),
                 "Should contain array literal: " + result);
@@ -8797,7 +8797,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertTrue(result.contains("throw"),
                 "Should contain throw keyword, got: " + result);
-        assertTrue(result.contains("let v0 = 42"),
+        assertTrue(result.contains("const v0 = 42"),
                 "Should contain variable declaration, got: " + result);
     }
 
@@ -9119,7 +9119,7 @@ class ArkTSDecompilerTest {
                 List.of(ldaV0, awaitInsn, staV1, ldaV1, ret));
         assertTrue(result.contains("await"),
                 "Should contain 'await': " + result);
-        assertTrue(result.contains("let v1"),
+        assertTrue(result.contains("const v1"),
                 "Should declare v1: " + result);
     }
 
@@ -11182,7 +11182,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertNotNull(result,
                 "Should produce output even with invalid opcode");
-        assertTrue(result.contains("let v0"),
+        assertTrue(result.contains("const v0"),
                 "First variable should still be present");
     }
 

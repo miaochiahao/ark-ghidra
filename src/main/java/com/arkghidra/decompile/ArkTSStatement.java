@@ -156,7 +156,7 @@ public abstract class ArkTSStatement {
      * A variable declaration: let/const name = value.
      */
     public static class VariableDeclaration extends ArkTSStatement {
-        private final String kind;
+        private String kind;
         private final String name;
         private final String typeName;
         private final ArkTSExpression initializer;
@@ -183,6 +183,10 @@ public abstract class ArkTSStatement {
 
         public String getKind() {
             return kind;
+        }
+
+        public void setKind(String kind) {
+            this.kind = kind;
         }
 
         public String getTypeName() {

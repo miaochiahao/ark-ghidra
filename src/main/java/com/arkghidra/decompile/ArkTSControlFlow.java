@@ -131,6 +131,10 @@ public class ArkTSControlFlow {
             this.body = body;
         }
 
+        public ArkTSStatement getBody() {
+            return body;
+        }
+
         @Override
         public String toArkTS(int indent) {
             String initStr = init != null

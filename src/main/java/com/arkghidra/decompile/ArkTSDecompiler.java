@@ -122,7 +122,7 @@ public class ArkTSDecompiler {
 
         List<ArkTSStatement> bodyStmts;
         try {
-            bodyStmts = generateStatements(ctx);
+            bodyStmts = applyConstOptimization(generateStatements(ctx));
         } catch (Exception e) {
             List<ArkTSStatement> fallbackStmts = new ArrayList<>();
             fallbackStmts.add(new ArkTSStatement.ExpressionStatement(
@@ -171,9 +171,10 @@ public class ArkTSDecompiler {
         List<ArkTSStatement> stmts;
         try {
             stmts = generateStatements(ctx);
+            stmts = applyConstOptimization(stmts);
         } catch (Exception e) {
             return buildFallbackInstructionListing(instructions,
-                    "statement generation failed: " + e.getMessage());
+                    "statement generation failed: " + e);
         }
         StringBuilder sb = new StringBuilder();
         for (ArkTSStatement stmt : stmts) {
@@ -397,7 +398,8 @@ public class ArkTSDecompiler {
                 method, code, proto, abcFile, cfg, instructions);
 
         try {
-            return generateStatements(ctx);
+            List<ArkTSStatement> stmts = generateStatements(ctx);
+            return applyConstOptimization(stmts);
         } catch (Exception e) {
             ctx.warnings.add("Statement generation failed: "
                     + e.getMessage());
@@ -447,6 +449,252 @@ public class ArkTSDecompiler {
         Set<BasicBlock> visited = new HashSet<>();
         return cfReconstructor.reconstructControlFlow(
                 cfg, blocks, ctx, visited);
+    }
+
+    // --- Const vs let optimization ---
+
+    private static List<ArkTSStatement> applyConstOptimization(
+            List<ArkTSStatement> stmts) {
+        if (stmts == null || stmts.isEmpty()) {
+            return stmts;
+        }
+        Set<String> declared = new HashSet<>();
+        Set<String> reassigned = new HashSet<>();
+        collectVarUsage(stmts, declared, reassigned);
+
+        Set<String> constEligible = new HashSet<>(declared);
+        constEligible.removeAll(reassigned);
+        if (constEligible.isEmpty()) {
+            return stmts;
+        }
+        rewriteLetToConst(stmts, constEligible);
+        return stmts;
+    }
+
+    private static List<ArkTSStatement> extractBodyList(
+            ArkTSStatement block) {
+        if (block instanceof ArkTSStatement.BlockStatement) {
+            return ((ArkTSStatement.BlockStatement) block).getBody();
+        }
+        return null;
+    }
+
+    private static void collectVarUsage(List<ArkTSStatement> stmts,
+            Set<String> declared, Set<String> reassigned) {
+        for (ArkTSStatement stmt : stmts) {
+            if (stmt instanceof ArkTSStatement.VariableDeclaration) {
+                ArkTSStatement.VariableDeclaration varDecl =
+                        (ArkTSStatement.VariableDeclaration) stmt;
+                if ("let".equals(varDecl.getKind())) {
+                    declared.add(varDecl.getName());
+                }
+            } else if (stmt instanceof ArkTSStatement.ExpressionStatement) {
+                ArkTSExpression expr =
+                        ((ArkTSStatement.ExpressionStatement) stmt)
+                                .getExpression();
+                collectReassigned(expr, reassigned);
+            } else if (stmt instanceof ArkTSControlFlow.IfStatement) {
+                ArkTSControlFlow.IfStatement ifStmt =
+                        (ArkTSControlFlow.IfStatement) stmt;
+                collectVarUsageFromStmt(
+                        ifStmt.getThenBlock(), declared, reassigned);
+                collectVarUsageFromStmt(
+                        ifStmt.getElseBlock(), declared, reassigned);
+            } else if (stmt instanceof ArkTSControlFlow.WhileStatement) {
+                collectVarUsageFromStmt(
+                        ((ArkTSControlFlow.WhileStatement) stmt).getBody(),
+                        declared, reassigned);
+            } else if (stmt instanceof ArkTSControlFlow.DoWhileStatement) {
+                collectVarUsageFromStmt(
+                        ((ArkTSControlFlow.DoWhileStatement) stmt)
+                                .getBody(),
+                        declared, reassigned);
+            } else if (stmt instanceof ArkTSControlFlow.ForStatement) {
+                collectVarUsageFromStmt(
+                        ((ArkTSControlFlow.ForStatement) stmt).getBody(),
+                        declared, reassigned);
+            } else if (stmt instanceof ArkTSControlFlow.ForOfStatement) {
+                collectVarUsageFromStmt(
+                        ((ArkTSControlFlow.ForOfStatement) stmt).getBody(),
+                        declared, reassigned);
+            } else if (stmt instanceof ArkTSControlFlow.ForInStatement) {
+                collectVarUsageFromStmt(
+                        ((ArkTSControlFlow.ForInStatement) stmt).getBody(),
+                        declared, reassigned);
+            } else if (stmt
+                    instanceof ArkTSControlFlow.ForAwaitOfStatement) {
+                collectVarUsageFromStmt(
+                        ((ArkTSControlFlow.ForAwaitOfStatement) stmt)
+                                .getBody(),
+                        declared, reassigned);
+            } else if (stmt
+                    instanceof ArkTSControlFlow.SwitchStatement) {
+                ArkTSControlFlow.SwitchStatement sw =
+                        (ArkTSControlFlow.SwitchStatement) stmt;
+                for (ArkTSControlFlow.SwitchStatement.SwitchCase sc
+                        : sw.getCases()) {
+                    collectVarUsage(sc.getBody(), declared, reassigned);
+                }
+                collectVarUsageFromStmt(
+                        sw.getDefaultBlock(), declared, reassigned);
+            } else if (stmt
+                    instanceof ArkTSControlFlow.TryCatchStatement) {
+                ArkTSControlFlow.TryCatchStatement tc =
+                        (ArkTSControlFlow.TryCatchStatement) stmt;
+                collectVarUsageFromStmt(
+                        tc.getTryBlock(), declared, reassigned);
+                collectVarUsageFromStmt(
+                        tc.getCatchBlock(), declared, reassigned);
+                collectVarUsageFromStmt(
+                        tc.getFinallyBlock(), declared, reassigned);
+            } else if (stmt
+                    instanceof ArkTSControlFlow
+                            .MultiCatchTryCatchStatement) {
+                ArkTSControlFlow.MultiCatchTryCatchStatement mc =
+                        (ArkTSControlFlow.MultiCatchTryCatchStatement)
+                                stmt;
+                collectVarUsageFromStmt(
+                        mc.getTryBlock(), declared, reassigned);
+                for (ArkTSControlFlow.MultiCatchTryCatchStatement
+                        .CatchClause cc : mc.getCatchClauses()) {
+                    collectVarUsageFromStmt(
+                            cc.getBody(), declared, reassigned);
+                }
+                collectVarUsageFromStmt(
+                        mc.getFinallyBlock(), declared, reassigned);
+            } else if (stmt instanceof ArkTSStatement.BlockStatement) {
+                collectVarUsage(
+                        ((ArkTSStatement.BlockStatement) stmt).getBody(),
+                        declared, reassigned);
+            }
+        }
+    }
+
+    private static void collectVarUsageFromStmt(ArkTSStatement block,
+            Set<String> declared, Set<String> reassigned) {
+        if (block == null) {
+            return;
+        }
+        List<ArkTSStatement> body = extractBodyList(block);
+        if (body != null) {
+            collectVarUsage(body, declared, reassigned);
+        } else {
+            collectVarUsage(List.of(block), declared, reassigned);
+        }
+    }
+
+    private static void collectReassigned(ArkTSExpression expr,
+            Set<String> reassigned) {
+        if (expr instanceof ArkTSExpression.AssignExpression) {
+            ArkTSExpression.AssignExpression assign =
+                    (ArkTSExpression.AssignExpression) expr;
+            ArkTSExpression target = assign.getTarget();
+            if (target instanceof ArkTSExpression.VariableExpression) {
+                reassigned.add(
+                        ((ArkTSExpression.VariableExpression) target)
+                                .getName());
+            }
+        }
+    }
+
+    private static void rewriteLetToConst(List<ArkTSStatement> stmts,
+            Set<String> constEligible) {
+        for (ArkTSStatement stmt : stmts) {
+            if (stmt instanceof ArkTSStatement.VariableDeclaration) {
+                ArkTSStatement.VariableDeclaration varDecl =
+                        (ArkTSStatement.VariableDeclaration) stmt;
+                if ("let".equals(varDecl.getKind())
+                        && constEligible.contains(varDecl.getName())) {
+                    varDecl.setKind("const");
+                }
+            } else if (stmt instanceof ArkTSControlFlow.IfStatement) {
+                ArkTSControlFlow.IfStatement ifStmt =
+                        (ArkTSControlFlow.IfStatement) stmt;
+                rewriteLetToConstInStmt(
+                        ifStmt.getThenBlock(), constEligible);
+                rewriteLetToConstInStmt(
+                        ifStmt.getElseBlock(), constEligible);
+            } else if (stmt instanceof ArkTSControlFlow.WhileStatement) {
+                rewriteLetToConstInStmt(
+                        ((ArkTSControlFlow.WhileStatement) stmt).getBody(),
+                        constEligible);
+            } else if (stmt instanceof ArkTSControlFlow.DoWhileStatement) {
+                rewriteLetToConstInStmt(
+                        ((ArkTSControlFlow.DoWhileStatement) stmt)
+                                .getBody(),
+                        constEligible);
+            } else if (stmt instanceof ArkTSControlFlow.ForStatement) {
+                rewriteLetToConstInStmt(
+                        ((ArkTSControlFlow.ForStatement) stmt).getBody(),
+                        constEligible);
+            } else if (stmt instanceof ArkTSControlFlow.ForOfStatement) {
+                rewriteLetToConstInStmt(
+                        ((ArkTSControlFlow.ForOfStatement) stmt).getBody(),
+                        constEligible);
+            } else if (stmt instanceof ArkTSControlFlow.ForInStatement) {
+                rewriteLetToConstInStmt(
+                        ((ArkTSControlFlow.ForInStatement) stmt).getBody(),
+                        constEligible);
+            } else if (stmt
+                    instanceof ArkTSControlFlow.ForAwaitOfStatement) {
+                rewriteLetToConstInStmt(
+                        ((ArkTSControlFlow.ForAwaitOfStatement) stmt)
+                                .getBody(),
+                        constEligible);
+            } else if (stmt
+                    instanceof ArkTSControlFlow.SwitchStatement) {
+                ArkTSControlFlow.SwitchStatement sw =
+                        (ArkTSControlFlow.SwitchStatement) stmt;
+                for (ArkTSControlFlow.SwitchStatement.SwitchCase sc
+                        : sw.getCases()) {
+                    rewriteLetToConst(sc.getBody(), constEligible);
+                }
+                rewriteLetToConstInStmt(
+                        sw.getDefaultBlock(), constEligible);
+            } else if (stmt
+                    instanceof ArkTSControlFlow.TryCatchStatement) {
+                ArkTSControlFlow.TryCatchStatement tc =
+                        (ArkTSControlFlow.TryCatchStatement) stmt;
+                rewriteLetToConstInStmt(
+                        tc.getTryBlock(), constEligible);
+                rewriteLetToConstInStmt(
+                        tc.getCatchBlock(), constEligible);
+                rewriteLetToConstInStmt(
+                        tc.getFinallyBlock(), constEligible);
+            } else if (stmt
+                    instanceof ArkTSControlFlow
+                            .MultiCatchTryCatchStatement) {
+                ArkTSControlFlow.MultiCatchTryCatchStatement mc =
+                        (ArkTSControlFlow.MultiCatchTryCatchStatement)
+                                stmt;
+                rewriteLetToConstInStmt(
+                        mc.getTryBlock(), constEligible);
+                for (ArkTSControlFlow.MultiCatchTryCatchStatement
+                        .CatchClause cc : mc.getCatchClauses()) {
+                    rewriteLetToConstInStmt(
+                            cc.getBody(), constEligible);
+                }
+                rewriteLetToConstInStmt(
+                        mc.getFinallyBlock(), constEligible);
+            } else if (stmt instanceof ArkTSStatement.BlockStatement) {
+                rewriteLetToConst(
+                        ((ArkTSStatement.BlockStatement) stmt).getBody(),
+                        constEligible);
+            }
+        }
+    }
+
+    private static void rewriteLetToConstInStmt(ArkTSStatement block,
+            Set<String> constEligible) {
+        if (block == null) {
+            return;
+        }
+        List<ArkTSStatement> body = extractBodyList(block);
+        if (body != null) {
+            rewriteLetToConst(body, constEligible);
+        } else {
+            rewriteLetToConst(List.of(block), constEligible);
+        }
     }
 
     // --- Fallback listings ---
