@@ -11928,4 +11928,301 @@ class ArkTSDecompilerTest {
                 new ArkTSAccessExpressions.NonNullExpression(optional);
         assertEquals("obj?.value!", asserted.toArkTS());
     }
+
+    // --- Exception handling improvement tests (issue #83) ---
+
+    @Test
+    void testTryCatchFinally_typedCatchWithFinally_producesBoth() {
+        // Build try-catch-finally with typed catch (typeIdx=1) and
+        // catch-all (finally). Both catch and finally should appear.
+        byte[] codeBytes = concat(
+                bytes(0x62), le32(1),          // ldai 1     offset 0
+                bytes(0x61, 0x00),             // sta v0     offset 5
+                bytes(0x64),                    // return     offset 7
+                bytes(0x60, 0x00),             // lda v0     offset 8 (catch handler)
+                bytes(0x64),                    // return     offset 10
+                bytes(0x60, 0x00),             // lda v0     offset 11 (finally handler)
+                bytes(0x64)                     // return     offset 13
+        );
+        // Typed catch at offset 8, finally (catch-all) at offset 11
+        AbcCatchBlock typedCatch =
+                new AbcCatchBlock(1, 8, 2, false);
+        AbcCatchBlock finallyCatch =
+                new AbcCatchBlock(0, 11, 2, true);
+        AbcTryBlock tryBlock = new AbcTryBlock(0, 7,
+                List.of(typedCatch, finallyCatch));
+        AbcCode code = new AbcCode(2, 0, codeBytes.length, codeBytes,
+                List.of(tryBlock), 1);
+        AbcMethod method = new AbcMethod(0, 0, "test",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        String result = decompiler.decompileMethod(method, code, null);
+        assertNotNull(result);
+        assertTrue(result.contains("try"),
+                "Should contain try, got: " + result);
+        assertTrue(result.contains("catch"),
+                "Should contain catch for typed handler, got: " + result);
+        assertTrue(result.contains("finally"),
+                "Should contain finally for catch-all handler, got: "
+                        + result);
+    }
+
+    @Test
+    void testTryCatch_ObjectTypeFilteredFromCatchParam() {
+        // Test that the processor filters "Object" type from catch
+        // annotations, and that the AST node faithfully renders
+        // whatever type it receives.
+        // Verify: when processor passes null (after filtering Object),
+        // the catch clause has no type annotation.
+        ArkTSStatement tryBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("work()"))));
+        ArkTSStatement catchBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression(
+                                "handleError()"))));
+        // After processor filters "Object" to null, AST gets null type
+        ArkTSControlFlow.TryCatchStatement filtered =
+                new ArkTSControlFlow.TryCatchStatement(tryBody, "e",
+                        null, catchBody, null);
+        String filteredResult = filtered.toArkTS(0);
+        assertTrue(filteredResult.contains("catch (e)"),
+                "Filtered Object type should produce plain catch, got: "
+                        + filteredResult);
+        assertFalse(filteredResult.contains("catch (e: )"),
+                "Should not have empty type annotation, got: "
+                        + filteredResult);
+
+        // Verify non-Object types are preserved when processor passes them
+        ArkTSControlFlow.TryCatchStatement errorTyped =
+                new ArkTSControlFlow.TryCatchStatement(tryBody, "e",
+                        "Error", catchBody, null);
+        String errResult = errorTyped.toArkTS(0);
+        assertTrue(errResult.contains("catch (e: Error)"),
+                "Error type should be preserved, got: " + errResult);
+    }
+
+    @Test
+    void testTryCatch_nullTypeName_noAnnotation() {
+        // Test that null type name produces no type annotation.
+        // The processor filters "Object" and empty types to null
+        // before constructing the AST node.
+        ArkTSStatement tryBody = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSStatement catchBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression(
+                                "handle()"))));
+
+        // null type (what processor passes after filtering Object/empty)
+        ArkTSControlFlow.TryCatchStatement nullType =
+                new ArkTSControlFlow.TryCatchStatement(tryBody, "e",
+                        null, catchBody, null);
+        String nullResult = nullType.toArkTS(0);
+        assertTrue(nullResult.contains("catch (e)"),
+                "null type should produce plain catch (e), got: "
+                        + nullResult);
+        assertFalse(nullResult.contains("catch (e:"),
+                "null type should have no colon annotation, got: "
+                        + nullResult);
+    }
+
+    @Test
+    void testTryCatchFinally_multipleErrorTypes() {
+        // Test rendering of try-catch-finally with various error types
+        ArkTSStatement tryBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression(
+                                "riskyOperation()"))));
+        ArkTSStatement catchBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.CallExpression(
+                                new ArkTSExpression.VariableExpression(
+                                        "console.error"),
+                                List.of(new ArkTSExpression
+                                        .VariableExpression("err"))))));
+        ArkTSStatement finallyBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression(
+                                "cleanup()"))));
+
+        // TypeError with finally
+        ArkTSControlFlow.TryCatchStatement typeErrorFinally =
+                new ArkTSControlFlow.TryCatchStatement(tryBody, "err",
+                        "TypeError", catchBody, finallyBody);
+        String result = typeErrorFinally.toArkTS(0);
+        assertTrue(result.contains("catch (err: TypeError) {"),
+                "Should have TypeError annotation with finally, got: "
+                        + result);
+        assertTrue(result.contains("finally {"),
+                "Should have finally block, got: " + result);
+
+        // URIError with finally
+        ArkTSControlFlow.TryCatchStatement uriErrorFinally =
+                new ArkTSControlFlow.TryCatchStatement(tryBody, "ex",
+                        "URIError", catchBody, finallyBody);
+        assertTrue(uriErrorFinally.toArkTS(0).contains(
+                "catch (ex: URIError)"),
+                "Should have URIError annotation");
+    }
+
+    @Test
+    void testThrowNewError_withStringArgument() {
+        // Test throw new Error("message") pattern
+        // Build: lda.str 0 -> sta v0 -> lda v0 -> newobjrange 1, 0, v0 ->
+        //        sta v1 -> lda v1 -> throw
+        // newobjrange format: IMM8_IMM8_V8 = opcode + numArgs +
+        //                     unused_imm8 + firstReg (4 bytes)
+        byte[] code = concat(
+                bytes(0x3E, 0x00, 0x00),       // lda.str 0  offset 0
+                bytes(0x61, 0x00),              // sta v0     offset 3
+                bytes(0x60, 0x00),              // lda v0     offset 5
+                bytes(0x08, 0x01, 0x00, 0x00),  // newobjrange 1, 0, v0  offset 7
+                bytes(0x61, 0x01),              // sta v1     offset 11
+                bytes(0x60, 0x01),              // lda v1     offset 13
+                bytes(0xFE)                      // throw      offset 15
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("throw"),
+                "Should contain throw keyword, got: " + result);
+        assertTrue(result.contains("new"),
+                "Should contain new keyword for constructor, got: "
+                        + result);
+    }
+
+    @Test
+    void testNestedTryCatch_innerTypedOuterGeneric() {
+        // Build nested try: inner has typed catch, outer has catch-all
+        // Inner try: offsets 0-7, typed catch at 8
+        // Outer try: offsets 0-14, catch-all at 15
+        byte[] codeBytes = concat(
+                bytes(0x62), le32(1),          // ldai 1     offset 0
+                bytes(0x61, 0x00),             // sta v0     offset 5
+                bytes(0x62), le32(2),          // ldai 2     offset 7
+                bytes(0x61, 0x01),             // sta v1     offset 12
+                bytes(0x64),                    // return     offset 14
+                bytes(0x60, 0x00),             // lda v0     offset 15 (inner catch)
+                bytes(0x64),                    // return     offset 17
+                bytes(0x60, 0x01),             // lda v1     offset 18 (outer catch-all)
+                bytes(0x64)                     // return     offset 20
+        );
+        // Inner try: offsets 0-7, typed catch at 15
+        AbcCatchBlock innerCatch =
+                new AbcCatchBlock(1, 15, 2, false);
+        AbcTryBlock innerTry = new AbcTryBlock(0, 7,
+                List.of(innerCatch));
+        // Outer try: offsets 0-14, catch-all at 18
+        AbcCatchBlock outerCatchAll =
+                new AbcCatchBlock(0, 18, 2, true);
+        AbcTryBlock outerTry = new AbcTryBlock(0, 14,
+                List.of(outerCatchAll));
+        AbcCode code = new AbcCode(2, 0, codeBytes.length, codeBytes,
+                List.of(innerTry, outerTry), 1);
+        AbcMethod method = new AbcMethod(0, 0, "nestedTest",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        String result = decompiler.decompileMethod(method, code, null);
+        assertNotNull(result);
+        assertTrue(result.contains("try"),
+                "Should contain try, got: " + result);
+    }
+
+    @Test
+    void testTryCatchFinally_indentationCorrect() {
+        // Verify indentation is correct in try-catch-finally output
+        ArkTSStatement tryBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression(
+                                "doWork()"))));
+        ArkTSStatement catchBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression(
+                                "handleError()"))));
+        ArkTSStatement finallyBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression(
+                                "cleanup()"))));
+
+        ArkTSControlFlow.TryCatchStatement stmt =
+                new ArkTSControlFlow.TryCatchStatement(tryBody, "e",
+                        "Error", catchBody, finallyBody);
+        String result = stmt.toArkTS(0);
+
+        // Verify structure
+        assertTrue(result.startsWith("try {\n"),
+                "Should start with 'try {\\n', got: " + result);
+        assertTrue(result.contains("    doWork();"),
+                "Try body should be indented, got: " + result);
+        assertTrue(result.contains("} catch (e: Error) {\n"),
+                "Catch should have type, got: " + result);
+        assertTrue(result.contains("    handleError();"),
+                "Catch body should be indented, got: " + result);
+        assertTrue(result.contains("} finally {\n"),
+                "Finally should follow catch, got: " + result);
+        assertTrue(result.contains("    cleanup();"),
+                "Finally body should be indented, got: " + result);
+        assertTrue(result.endsWith("}"),
+                "Should end with closing brace, got: " + result);
+    }
+
+    @Test
+    void testTryCatch_nestedTryCatchFinally_innerTyped() {
+        // Inner try-catch-finally with typed catch + finally,
+        // outer try-catch with different typed catch
+        ArkTSStatement innerTryBody =
+                new ArkTSStatement.BlockStatement(
+                        List.of(new ArkTSStatement.ExpressionStatement(
+                                new ArkTSExpression.VariableExpression(
+                                        "innerWork()"))));
+        ArkTSStatement innerCatchBody =
+                new ArkTSStatement.BlockStatement(
+                        List.of(new ArkTSStatement.ExpressionStatement(
+                                new ArkTSExpression.VariableExpression(
+                                        "handleInner()"))));
+        ArkTSStatement innerFinallyBody =
+                new ArkTSStatement.BlockStatement(
+                        List.of(new ArkTSStatement.ExpressionStatement(
+                                new ArkTSExpression.VariableExpression(
+                                        "innerCleanup()"))));
+
+        ArkTSControlFlow.TryCatchStatement innerTry =
+                new ArkTSControlFlow.TryCatchStatement(innerTryBody,
+                        "err", "TypeError", innerCatchBody,
+                        innerFinallyBody);
+        String innerResult = innerTry.toArkTS(0);
+        assertTrue(innerResult.contains("catch (err: TypeError)"),
+                "Inner should have TypeError catch, got: "
+                        + innerResult);
+        assertTrue(innerResult.contains("finally {"),
+                "Inner should have finally, got: " + innerResult);
+
+        // Nest it inside an outer try-catch
+        ArkTSStatement outerTryBody =
+                new ArkTSStatement.BlockStatement(
+                        List.of(innerTry));
+        ArkTSStatement outerCatchBody =
+                new ArkTSStatement.BlockStatement(
+                        List.of(new ArkTSStatement.ExpressionStatement(
+                                new ArkTSExpression.VariableExpression(
+                                        "handleOuter()"))));
+        ArkTSControlFlow.TryCatchStatement outerTry =
+                new ArkTSControlFlow.TryCatchStatement(outerTryBody,
+                        "ex", "RangeError", outerCatchBody, null);
+        String outerResult = outerTry.toArkTS(0);
+        assertTrue(outerResult.contains("catch (ex: RangeError)"),
+                "Outer should have RangeError catch, got: "
+                        + outerResult);
+        assertTrue(outerResult.contains("catch (err: TypeError)"),
+                "Nested inner try should still have TypeError, got: "
+                        + outerResult);
+        // Count the number of "finally" occurrences -- should be 1
+        int finallyCount = 0;
+        int idx = 0;
+        while ((idx = outerResult.indexOf("finally", idx)) != -1) {
+            finallyCount++;
+            idx++;
+        }
+        assertEquals(1, finallyCount,
+                "Should have exactly one finally block, got: "
+                        + outerResult);
+    }
 }
