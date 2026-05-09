@@ -12527,4 +12527,238 @@ class ArkTSDecompilerTest {
         String result = forOf.toArkTS(0);
         assertEquals("for (const item of items) {\n}", result);
     }
+
+    // ======== SPREAD AND DESTRUCTURING IMPROVEMENT TESTS ========
+
+    @Test
+    void testArrayDestructuring_withRestAndSpread() {
+        // Array destructuring with rest element: [first, ...rest] = arr
+        // Tests the rest element in array destructuring using AST nodes
+        List<ArkTSPropertyExpressions.ArrayDestructuringExpression.ArrayBinding>
+                bindings = List.of(
+                        new ArkTSPropertyExpressions
+                                .ArrayDestructuringExpression
+                                .ArrayBinding("first"),
+                        new ArkTSPropertyExpressions
+                                .ArrayDestructuringExpression
+                                .ArrayBinding("second"));
+        ArkTSExpression source =
+                new ArkTSExpression.VariableExpression("arr");
+        ArkTSExpression expr =
+                new ArkTSPropertyExpressions.ArrayDestructuringExpression(
+                        bindings, "rest", source, true);
+        assertEquals("[first, second, ...rest] = arr", expr.toArkTS());
+    }
+
+    @Test
+    void testObjectDestructuring_withRenameSyntax() {
+        // Object destructuring with rename: { name: alias, value: val } = obj
+        List<ArkTSPropertyExpressions.ObjectDestructuringExpression
+                .DestructuringBinding> bindings = List.of(
+                        new ArkTSPropertyExpressions
+                                .ObjectDestructuringExpression
+                                .DestructuringBinding("name", "alias"),
+                        new ArkTSPropertyExpressions
+                                .ObjectDestructuringExpression
+                                .DestructuringBinding("value", "val"),
+                        new ArkTSPropertyExpressions
+                                .ObjectDestructuringExpression
+                                .DestructuringBinding("active", null));
+        ArkTSExpression source =
+                new ArkTSExpression.VariableExpression("obj");
+        ArkTSExpression expr =
+                new ArkTSPropertyExpressions
+                        .ObjectDestructuringExpression(
+                        bindings, source);
+        assertEquals("{ name: alias, value: val, active } = obj",
+                expr.toArkTS());
+    }
+
+    @Test
+    void testDestructuring_withDefaultValues() {
+        // Array and object destructuring with default values
+        // Array: [a, b = 0, c = 1] = arr
+        List<ArkTSPropertyExpressions.ArrayDestructuringExpression
+                .ArrayBinding> arrBindings = List.of(
+                        new ArkTSPropertyExpressions
+                                .ArrayDestructuringExpression
+                                .ArrayBinding("a"),
+                        new ArkTSPropertyExpressions
+                                .ArrayDestructuringExpression
+                                .ArrayBinding("b",
+                                        new ArkTSExpression.LiteralExpression(
+                                                "0",
+                                                ArkTSExpression
+                                                        .LiteralExpression
+                                                        .LiteralKind.NUMBER)),
+                        new ArkTSPropertyExpressions
+                                .ArrayDestructuringExpression
+                                .ArrayBinding("c",
+                                        new ArkTSExpression.LiteralExpression(
+                                                "1",
+                                                ArkTSExpression
+                                                        .LiteralExpression
+                                                        .LiteralKind.NUMBER)));
+        ArkTSExpression arrSource =
+                new ArkTSExpression.VariableExpression("arr");
+        ArkTSExpression arrExpr =
+                new ArkTSPropertyExpressions
+                        .ArrayDestructuringExpression(
+                        arrBindings, null, arrSource, true);
+        assertEquals("[a, b = 0, c = 1] = arr", arrExpr.toArkTS());
+
+        // Object: { x, y = 10 } = obj
+        List<ArkTSPropertyExpressions.ObjectDestructuringExpression
+                .DestructuringBinding> objBindings = List.of(
+                        new ArkTSPropertyExpressions
+                                .ObjectDestructuringExpression
+                                .DestructuringBinding("x", null),
+                        new ArkTSPropertyExpressions
+                                .ObjectDestructuringExpression
+                                .DestructuringBinding("y", null,
+                                        new ArkTSExpression.LiteralExpression(
+                                                "10",
+                                                ArkTSExpression
+                                                        .LiteralExpression
+                                                        .LiteralKind.NUMBER)));
+        ArkTSExpression objSource =
+                new ArkTSExpression.VariableExpression("obj");
+        ArkTSExpression objExpr =
+                new ArkTSPropertyExpressions
+                        .ObjectDestructuringExpression(
+                        objBindings, objSource);
+        assertEquals("{ x, y = 10 } = obj", objExpr.toArkTS());
+    }
+
+    @Test
+    void testSpreadInArrayLiteral_withMixedElements() {
+        // Spread in array literal: [1, ...arr, 2]
+        ArkTSExpression one =
+                new ArkTSExpression.LiteralExpression("1",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSExpression two =
+                new ArkTSExpression.LiteralExpression("2",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSExpression spreadArr =
+                new ArkTSAccessExpressions.SpreadExpression(
+                        new ArkTSExpression.VariableExpression("arr"));
+        ArkTSExpression expr =
+                new ArkTSAccessExpressions.SpreadArrayExpression(
+                        List.of(one, spreadArr, two));
+        assertEquals("[1, ...arr, 2]", expr.toArkTS());
+    }
+
+    @Test
+    void testObjectDestructuring_withRenameAndDefault() {
+        // Combined rename and default: { x: a = 5, y } = obj
+        List<ArkTSPropertyExpressions.ObjectDestructuringExpression
+                .DestructuringBinding> bindings = List.of(
+                        new ArkTSPropertyExpressions
+                                .ObjectDestructuringExpression
+                                .DestructuringBinding("x", "a",
+                                        new ArkTSExpression.LiteralExpression(
+                                                "5",
+                                                ArkTSExpression
+                                                        .LiteralExpression
+                                                        .LiteralKind.NUMBER)),
+                        new ArkTSPropertyExpressions
+                                .ObjectDestructuringExpression
+                                .DestructuringBinding("y", null));
+        ArkTSExpression source =
+                new ArkTSExpression.VariableExpression("obj");
+        ArkTSExpression expr =
+                new ArkTSPropertyExpressions
+                        .ObjectDestructuringExpression(
+                        bindings, source);
+        assertEquals("{ x: a = 5, y } = obj", expr.toArkTS());
+    }
+
+    @Test
+    void testArrayDestructuringIntegration_withDefaultBytecode() {
+        // Bytecode pattern: [a, b = 42] = arr
+        // lda v0; ldobjbyindex 0, 0; sta v1  (binding[0])
+        // lda v0; ldobjbyindex 0, 1; sta v2  (binding[1])
+        // lda v2; jnstrictequndefined +skip; ldai 42; sta v2  (default)
+        byte[] code = concat(
+                bytes(0x60, 0x00),                   // lda v0 (source)
+                bytes(0x3A, 0x00, 0x00, 0x00),       // ldobjbyindex 0, 0
+                bytes(0x61, 0x01),                   // sta v1
+                bytes(0x60, 0x00),                   // lda v0
+                bytes(0x3A, 0x00, 0x01, 0x00),       // ldobjbyindex 0, 1
+                bytes(0x61, 0x02),                   // sta v2
+                bytes(0x60, 0x02),                   // lda v2 (reload for check)
+                bytes(0xA6), le16(5),                // jnstrictequndefined +5
+                bytes(0x62), le32(42),               // ldai 42
+                bytes(0x61, 0x02),                   // sta v2 (default)
+                bytes(0x64)                          // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("[v1, v2"),
+                "Should produce array destructuring: " + result);
+        assertFalse(result.isEmpty(),
+                "Result should not be empty: " + result);
+    }
+
+    @Test
+    void testObjectDestructuringIntegration_withRenameBytecode() {
+        // Bytecode pattern: { str_0: v3, str_1: v4 } = obj
+        // lda v0; ldobjbyname 0, 0; sta v3  (rename: prop "str_0" -> alias v3)
+        // lda v0; ldobjbyname 0, 1; sta v4  (rename: prop "str_1" -> alias v4)
+        byte[] code = concat(
+                bytes(0x60, 0x00),                   // lda v0 (source)
+                bytes(0x42, 0x00, 0x00, 0x00),       // ldobjbyname 0, str_0
+                bytes(0x61, 0x03),                   // sta v3 (alias)
+                bytes(0x60, 0x00),                   // lda v0
+                bytes(0x42, 0x00, 0x01, 0x00),       // ldobjbyname 0, str_1
+                bytes(0x61, 0x04),                   // sta v4 (alias)
+                bytes(0x64)                          // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("str_0: v3"),
+                "Should have renamed property str_0 -> v3: " + result);
+        assertTrue(result.contains("str_1: v4"),
+                "Should have renamed property str_1 -> v4: " + result);
+    }
+
+    // --- Labeled statements and advanced control flow (#92) ---
+
+    @Test
+    void testBreakStatement_withLabel() {
+        ArkTSStatement.BreakStatement breakStmt =
+                new ArkTSStatement.BreakStatement("outer");
+        assertEquals("break outer;", breakStmt.toArkTS(0));
+    }
+
+    @Test
+    void testBreakStatement_withoutLabel() {
+        ArkTSStatement.BreakStatement breakStmt =
+                new ArkTSStatement.BreakStatement();
+        assertEquals("break;", breakStmt.toArkTS(0));
+    }
+
+    @Test
+    void testContinueStatement_withLabel() {
+        ArkTSStatement.ContinueStatement continueStmt =
+                new ArkTSStatement.ContinueStatement("outer");
+        assertEquals("continue outer;", continueStmt.toArkTS(0));
+    }
+
+    @Test
+    void testLabeledWhileLoop() {
+        ArkTSStatement labeled = new ArkTSStatement.LabeledStatement("outer",
+                new ArkTSControlFlow.WhileStatement(
+                        new ArkTSExpression.LiteralExpression("true",
+                                ArkTSExpression.LiteralExpression.LiteralKind
+                                        .BOOLEAN),
+                        new ArkTSStatement.BlockStatement(
+                                List.of(new ArkTSStatement.BreakStatement(
+                                        "outer")))));
+        String result = labeled.toArkTS(0);
+        assertTrue(result.startsWith("outer:"),
+                "Expected label prefix, got: " + result);
+        assertTrue(result.contains("break outer"),
+                "Expected labeled break, got: " + result);
+    }
 }

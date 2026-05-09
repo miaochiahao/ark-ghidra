@@ -222,8 +222,25 @@ public abstract class ArkTSStatement {
      * A break statement.
      */
     public static class BreakStatement extends ArkTSStatement {
+        private final String label;
+
+        BreakStatement() {
+            this(null);
+        }
+
+        BreakStatement(String label) {
+            this.label = label;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
         @Override
         public String toArkTS(int indent) {
+            if (label != null) {
+                return indent(indent) + "break " + label + ";";
+            }
             return indent(indent) + "break;";
         }
     }
@@ -234,9 +251,55 @@ public abstract class ArkTSStatement {
      * A continue statement.
      */
     public static class ContinueStatement extends ArkTSStatement {
+        private final String label;
+
+        ContinueStatement() {
+            this(null);
+        }
+
+        ContinueStatement(String label) {
+            this.label = label;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
         @Override
         public String toArkTS(int indent) {
+            if (label != null) {
+                return indent(indent) + "continue " + label + ";";
+            }
             return indent(indent) + "continue;";
+        }
+    }
+
+    // --- Labeled statement ---
+
+    /**
+     * A labeled statement: label: statement.
+     */
+    public static class LabeledStatement extends ArkTSStatement {
+        private final String label;
+        private final ArkTSStatement statement;
+
+        LabeledStatement(String label, ArkTSStatement statement) {
+            this.label = label;
+            this.statement = statement;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
+        public ArkTSStatement getStatement() {
+            return statement;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            return indent(indent) + label + ": "
+                    + statement.toArkTS(0).trim();
         }
     }
 
