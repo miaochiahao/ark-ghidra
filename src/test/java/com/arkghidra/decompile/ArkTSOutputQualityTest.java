@@ -1187,7 +1187,7 @@ class ArkTSOutputQualityTest {
             ArkTSExpression assign =
                     new ArkTSExpression.AssignExpression(target, value);
             ArkTSExpression replaced =
-                    ArkTSDecompiler.replaceVariablePublic(assign,
+                    ExpressionVisitor.replaceVariable(assign,
                             "v0",
                             new ArkTSExpression.LiteralExpression("42",
                                     ArkTSExpression.LiteralExpression
@@ -1207,7 +1207,7 @@ class ArkTSOutputQualityTest {
             ArkTSExpression call = new ArkTSExpression.CallExpression(
                     callee, List.of(arg));
             ArkTSExpression replaced =
-                    ArkTSDecompiler.replaceVariablePublic(call,
+                    ExpressionVisitor.replaceVariable(call,
                             "v0",
                             new ArkTSExpression.LiteralExpression("42",
                                     ArkTSExpression.LiteralExpression
