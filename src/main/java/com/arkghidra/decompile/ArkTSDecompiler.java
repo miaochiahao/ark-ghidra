@@ -171,12 +171,13 @@ public class ArkTSDecompiler {
                         startTimeNs);
             }
 
-            bodyStmts = convertIfElseChainToSwitch(
+            bodyStmts = removeUnusedVariables(
+                            convertIfElseChainToSwitch(
                                     simplifyReturnIfTernary(
                                             detectSwitchExpressions(
                                                     mergeNestedIfConditions(
                                                             ExpressionVisitor.inlineSingleUseVariables(
-                                                                    applyConstOptimization(bodyStmts))))));
+                                                                    applyConstOptimization(bodyStmts)))))));
         } catch (Exception e) {
             List<ArkTSStatement> fallbackStmts = new ArrayList<>();
             fallbackStmts.add(new ArkTSStatement.ExpressionStatement(
@@ -231,7 +232,7 @@ public class ArkTSDecompiler {
             stmts = detectSwitchExpressions(stmts);
             stmts = simplifyReturnIfTernary(stmts);
             stmts = convertIfElseChainToSwitch(stmts);
-            // stmts = removeUnusedVariables(stmts); // TODO: enable after test updates
+            stmts = removeUnusedVariables(stmts);
         } catch (Exception e) {
             return buildFallbackInstructionListing(instructions,
                     "statement generation failed: " + e);
@@ -471,12 +472,13 @@ public class ArkTSDecompiler {
                 return buildTimeoutBody(startTimeNs);
             }
 
-            return convertIfElseChainToSwitch(
+            return removeUnusedVariables(
+                    convertIfElseChainToSwitch(
                             simplifyReturnIfTernary(
                                     detectSwitchExpressions(
                                             mergeNestedIfConditions(
                                                     ExpressionVisitor.inlineSingleUseVariables(
-                                                            applyConstOptimization(stmts))))));
+                                                            applyConstOptimization(stmts)))))));
         } catch (Exception e) {
             ctx.warnings.add("Statement generation failed: "
                     + e.getMessage());

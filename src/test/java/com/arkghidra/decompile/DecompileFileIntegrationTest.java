@@ -189,12 +189,14 @@ class DecompileFileIntegrationTest {
         }
 
         @Test
-        @DisplayName("output uses let or const for variable declarations")
+        @DisplayName("output does not use var keyword")
         void testUsesLetOrConst() {
             ArkTSDecompiler decompiler = new ArkTSDecompiler();
             String result = decompiler.decompileFile(abcFile);
-            assertTrue(result.contains("let ") || result.contains("const "),
-                    "Should use 'let' or 'const' for variable declarations");
+            // After dead variable removal, some methods may have no let/const at all.
+            // The key ArkTS constraint is that 'var' must never appear.
+            assertFalse(result.contains("var "),
+                    "Should not use JavaScript 'var' keyword: " + result);
         }
     }
 

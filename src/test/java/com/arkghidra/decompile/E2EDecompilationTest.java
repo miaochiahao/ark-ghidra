@@ -614,10 +614,11 @@ class E2EDecompilationTest {
         @Test
         void testE2E_usesLetOrConst() {
             String result = decompiler.decompileFile(abc);
-            boolean hasLetOrConst = result.contains("let ")
-                    || result.contains("const ");
-            assertTrue(hasLetOrConst,
-                    "Should use 'let' or 'const' for variables: " + result);
+            // After dead variable removal, some methods may have no let/const at all
+            // (only bare assignments like v0 = this;). The key ArkTS constraint is
+            // that 'var' must never be used.
+            assertFalse(result.contains("var "),
+                    "Should not use JavaScript 'var' keyword: " + result);
         }
 
         @Test
