@@ -70,7 +70,7 @@ public abstract class ArkTSExpression {
                 case INFINITY:
                     return "Infinity";
                 default:
-                    return value;
+                    return formatNumberLiteral(value);
             }
         }
 
@@ -83,6 +83,35 @@ public abstract class ArkTSExpression {
          * @param s the raw string value
          * @return the escaped string (without surrounding quotes)
          */
+        /**
+         * Formats a number literal, using hex for common bitmask patterns.
+         *
+         * <p>Bitmask patterns: powers of 2 (256 → 0x100) and masks
+         * (255 → 0xFF, 65535 → 0xFFFF). Only formats numbers >= 256.
+         */
+        private static String formatNumberLiteral(String value) {
+            try {
+                long n = Long.parseLong(value);
+                if (n < 255) {
+                    return value;
+                }
+                if (isPowerOfTwo(n) || isAllOnes(n)) {
+                    return "0x" + Long.toHexString(n).toUpperCase();
+                }
+            } catch (NumberFormatException e) {
+                // non-integer or overflow — keep as-is
+            }
+            return value;
+        }
+
+        private static boolean isPowerOfTwo(long n) {
+            return n > 0 && (n & (n - 1)) == 0;
+        }
+
+        private static boolean isAllOnes(long n) {
+            return n > 0 && (n & (n + 1)) == 0;
+        }
+
         public static String escapeString(String s) {
             StringBuilder sb = new StringBuilder(s.length());
             for (int i = 0; i < s.length(); i++) {
