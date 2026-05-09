@@ -116,19 +116,23 @@ class LoadStoreHandler {
         }
         if (opcode == ArkOpcodesCompat.LDLOCALMODULEVAR) {
             int varIdx = (int) operands.get(0).getValue();
+            String resolvedName = resolveLocalModuleVar(
+                    varIdx, ctx);
             ArkTSExpression expr =
                     new ArkTSExpression.VariableExpression(
-                            "local_mod_" + varIdx);
+                            resolvedName);
             return new InstructionHandler.StatementResult(null, expr);
         }
         if (opcode == ArkOpcodesCompat.STMODULEVAR) {
             int varIdx = (int) operands.get(0).getValue();
+            String varName = resolveLocalModuleVar(
+                    varIdx, ctx);
             if (accValue != null) {
                 return new InstructionHandler.StatementResult(
                         new ArkTSStatement.ExpressionStatement(
                                 new ArkTSExpression.AssignExpression(
                                         new ArkTSExpression.VariableExpression(
-                                                "mod_" + varIdx),
+                                                varName),
                                         accValue)),
                         accValue);
             }
@@ -136,9 +140,11 @@ class LoadStoreHandler {
         }
         if (opcode == ArkOpcodesCompat.GETMODULENAMESPACE) {
             int varIdx = (int) operands.get(0).getValue();
+            String resolvedName = resolveNamespaceImport(
+                    varIdx, ctx);
             ArkTSExpression expr =
                     new ArkTSExpression.VariableExpression(
-                            "module_ns_" + varIdx);
+                            resolvedName);
             return new InstructionHandler.StatementResult(null, expr);
         }
 
@@ -851,6 +857,87 @@ class LoadStoreHandler {
             }
         }
         return "ext_mod_" + varIdx;
+    }
+
+    /**
+     * Resolves a local module variable index to its export name.
+     *
+     * <p>Local module variables correspond to the module's local exports.
+     * The variable index maps to the Nth local export's local name.</p>
+     *
+     * @param varIdx the variable index from ldlocalmodulevar
+     * @param ctx the decompilation context (may be null)
+     * @return the resolved export name or a placeholder
+     */
+    private static String resolveLocalModuleVar(
+            int varIdx, DecompilationContext ctx) {
+        if (ctx != null && ctx.abcFile != null) {
+            try {
+                for (int ci = 0;
+                        ci < ctx.abcFile.getClasses().size(); ci++) {
+                    com.arkghidra.format.AbcModuleRecord record =
+                            ctx.abcFile.getModuleRecord(ci);
+                    if (record == null) {
+                        continue;
+                    }
+                    List<com.arkghidra.format
+                            .AbcModuleRecord.LocalExport> exports =
+                            record.getLocalExports();
+                    if (varIdx >= 0 && varIdx < exports.size()) {
+                        String name = ctx.abcFile.getSourceFileName(
+                                exports.get(varIdx)
+                                        .getLocalNameOffset());
+                        if (name != null && !name.isEmpty()) {
+                            return name;
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // Fall through to placeholder
+            }
+        }
+        return "local_mod_" + varIdx;
+    }
+
+    /**
+     * Resolves a namespace import index to its local name.
+     *
+     * <p>Namespace imports follow regular imports in the module record's
+     * external variable index space. The offset accounts for regular
+     * imports first, then namespace imports.</p>
+     *
+     * @param varIdx the variable index from getmodulenamespace
+     * @param ctx the decompilation context (may be null)
+     * @return the resolved namespace name or a placeholder
+     */
+    private static String resolveNamespaceImport(
+            int varIdx, DecompilationContext ctx) {
+        if (ctx != null && ctx.abcFile != null) {
+            try {
+                for (int ci = 0;
+                        ci < ctx.abcFile.getClasses().size(); ci++) {
+                    com.arkghidra.format.AbcModuleRecord record =
+                            ctx.abcFile.getModuleRecord(ci);
+                    if (record == null) {
+                        continue;
+                    }
+                    List<com.arkghidra.format
+                            .AbcModuleRecord.NamespaceImport> nsImports =
+                            record.getNamespaceImports();
+                    if (varIdx >= 0 && varIdx < nsImports.size()) {
+                        String name = ctx.abcFile.getSourceFileName(
+                                nsImports.get(varIdx)
+                                        .getLocalNameOffset());
+                        if (name != null && !name.isEmpty()) {
+                            return name;
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // Fall through to placeholder
+            }
+        }
+        return "module_ns_" + varIdx;
     }
 
     /**
