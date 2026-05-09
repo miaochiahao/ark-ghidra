@@ -122,9 +122,13 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 35. ~~String escaping and template literals (#96)~~ DONE
 36. ~~Class inheritance and polymorphism (#97)~~ DONE
 37. ~~Expression simplification and dead code elimination (#98)~~ DONE
-38. feat: test with real HarmonyOS .abc files from Ark compiler #25
-28. Real .abc file support: test with actual HarmonyOS compiler output (#25)
-29. Performance: large file handling and incremental decompilation
+38. ~~Method signatures — generics, optional params, interface implements (#99)~~ DONE
+39. ~~Exception handling — catch-without-binding, empty else removal (#100)~~ DONE
+40. ~~Async patterns — for-await-of, Promise.all/race, dynamic import (#101)~~ DONE
+41. ~~CallRuntime opcodes — sendable classes, lazy modules, private fields (#103)~~ DONE
+42. ~~Control flow — multi-catch try/catch, catch-without-binding (#104)~~ DONE
+43. feat: test with real HarmonyOS .abc files from Ark compiler #25
+44. Performance: large file handling and incremental decompilation
 
 ### Rules for the loop
 
