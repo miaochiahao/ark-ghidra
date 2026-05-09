@@ -420,6 +420,8 @@ class ObjectCreationHandler {
 
     /**
      * Checks if a branch opcode is checking for undefined or null.
+     * Matches both "jump if equal" and "jump if not equal" variants
+     * since the compiler may use either to implement default values.
      */
     private static boolean isUndefinedCheckBranch(int branchOpcode) {
         return branchOpcode == ArkOpcodesCompat.JSTRICTEQUNDEFINED_IMM16
