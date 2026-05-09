@@ -188,7 +188,7 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Try/catch decompilation:** Use `AbcCode.getTryBlocks()` → `AbcTryBlock.getCatchBlocks()` → `AbcCatchBlock` to reconstruct exception handling. Map try start/end PC ranges to CFG block addresses. Catch-all blocks (typeIdx=0) map to `finally`.
 - **Jump offset calculation:** `jmp +0` at offset 0 with instruction length 2 gives target = 0+2+0 = 2 (not 0). For infinite loop (jmp to self), need negative offset = -instruction_length (e.g., `0xFE` for 2-byte jmp).
 - **Parameter naming convention:** Use `param_0`, `param_1` etc. (not `p0`/`p1`) for better readability. Falls back to untyped when no proto info available.
-- **Test count tracking:** 1235 tests across 20 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
+- **Test count tracking:** 1245 tests across 20 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
 - **ABC debug info parsing:** Tags 0x07 (SOURCE_FILE), 0x03 (DEBUG_INFO) in class/method tag values. Debug info contains line_start, num_params, param name string offsets, constant pool. LNP uses DWARF v3 state machine with special opcodes.
 - **Realistic test fixture design:** Use 16384-byte buffer with 200-byte spacing between areas (strings at 200, classes at 800, code at 2000, protos at 6000, etc.). Encode methods with ULEB128 for vregs/args/codeSize/triesSize.
 - **Debug parameter name resolution:** `AbcFile.getDebugInfoForMethod()` → `AbcDebugInfo.getParameterNames()` → pass to `MethodSignatureBuilder.buildParams(proto, numArgs, debugNames)`. Falls back to `param_N` for unnamed.
@@ -247,6 +247,10 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Agent rate limit (429) handling:** When agents hit 429 rate limits, they produce no code changes. Always check `git diff --stat` after agent completion. If empty, the agent failed and the task needs manual implementation or retry.
 - **Agent broken code patterns:** Agents sometimes add method calls referencing variables not in scope (e.g., `ctx` in static methods). Always compile after agent changes. Remove broken stubs before committing.
 - **Guard clause detection:** BranchProcessor has `detectGuardClausePattern()` that identifies early return patterns. Used for converting nested if-return patterns to flat guard clauses.
+- **Register expression tracking:** `DecompilationContext.setRegisterExpression/getRegisterExpression` tracks expressions stored to registers. `PropertyAccessHandler.resolveArgExpression()` inlines function expressions (arrow, anonymous, generator) as call arguments instead of variable refs. Enables `foo(() => ...)` instead of `let v2 = () => ...; foo(v2)`.
+- **Optional chaining:** `OptionalChainCallExpression` in ArkTSAccessExpressions for `obj?.method()`. Detection in BranchProcessor via null-check-after-property-load patterns. `OptionalChainExpression` for `obj?.prop` (dot and bracket).
+- **NonNullExpression:** `NonNullExpression` in ArkTSPropertyExpressions for `expr!` syntax (non-null assertion).
+- **Module system completeness:** DYNAMICIMPORT (0xBD) → `import('module')`, LDMODULEVAR/STMODULEVAR → module variable access. ModuleImportCollector for import deduplication. All handled in LoadStoreHandler.
 <!-- LINT_RULES_END -->
 
 ---
