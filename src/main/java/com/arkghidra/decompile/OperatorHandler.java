@@ -295,6 +295,12 @@ class OperatorHandler {
                 }
                 break;
             case "*":
+                if (isNumericZero(right)) {
+                    return right;
+                }
+                if (isNumericZero(left)) {
+                    return left;
+                }
                 if (isNumericOne(right)) {
                     return left;
                 }
@@ -308,6 +314,12 @@ class OperatorHandler {
                 }
                 break;
             case "||":
+                if (isBooleanTrue(right)) {
+                    return right;
+                }
+                if (isBooleanTrue(left)) {
+                    return left;
+                }
                 if (isBooleanFalse(right)) {
                     return left;
                 }
@@ -316,6 +328,12 @@ class OperatorHandler {
                 }
                 break;
             case "&&":
+                if (isBooleanFalse(right)) {
+                    return right;
+                }
+                if (isBooleanFalse(left)) {
+                    return left;
+                }
                 if (isBooleanTrue(right)) {
                     return left;
                 }
