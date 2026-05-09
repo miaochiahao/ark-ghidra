@@ -416,6 +416,83 @@ public abstract class ArkTSExpression {
         }
     }
 
+    // --- Compound Assignment ---
+
+    /**
+     * A compound assignment expression: target op= value.
+     * For example: {@code x += 1}, {@code y *= 2}.
+     */
+    public static class CompoundAssignExpression extends ArkTSExpression {
+        private final ArkTSExpression target;
+        private final String operator;
+        private final ArkTSExpression value;
+
+        public CompoundAssignExpression(ArkTSExpression target,
+                String operator, ArkTSExpression value) {
+            this.target = target;
+            this.operator = operator;
+            this.value = value;
+        }
+
+        public ArkTSExpression getTarget() {
+            return target;
+        }
+
+        public String getOperator() {
+            return operator;
+        }
+
+        public ArkTSExpression getValue() {
+            return value;
+        }
+
+        @Override
+        public String toArkTS() {
+            return target.toArkTS() + " " + operator + " "
+                    + value.toArkTS();
+        }
+    }
+
+    // --- Increment/Decrement ---
+
+    /**
+     * An increment or decrement expression: {@code x++}, {@code ++x},
+     * {@code x--}, {@code --x}.
+     */
+    public static class IncrementExpression extends ArkTSExpression {
+        private final ArkTSExpression target;
+        private final boolean isPrefix;
+        private final boolean isIncrement;
+
+        public IncrementExpression(ArkTSExpression target,
+                boolean isPrefix, boolean isIncrement) {
+            this.target = target;
+            this.isPrefix = isPrefix;
+            this.isIncrement = isIncrement;
+        }
+
+        public ArkTSExpression getTarget() {
+            return target;
+        }
+
+        public boolean isPrefix() {
+            return isPrefix;
+        }
+
+        public boolean isIncrement() {
+            return isIncrement;
+        }
+
+        @Override
+        public String toArkTS() {
+            String op = isIncrement ? "++" : "--";
+            if (isPrefix) {
+                return op + target.toArkTS();
+            }
+            return target.toArkTS() + op;
+        }
+    }
+
     // --- New ---
 
     /**

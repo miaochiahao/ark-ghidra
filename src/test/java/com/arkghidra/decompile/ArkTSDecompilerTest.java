@@ -534,6 +534,93 @@ class ArkTSDecompilerTest {
     }
 
     @Test
+    void testCompoundAssignExpression_add() {
+        ArkTSExpression target =
+                new ArkTSExpression.VariableExpression("x");
+        ArkTSExpression value =
+                new ArkTSExpression.VariableExpression("y");
+        ArkTSExpression.CompoundAssignExpression expr =
+                new ArkTSExpression.CompoundAssignExpression(
+                        target, "+=", value);
+        assertEquals("x += y", expr.toArkTS());
+    }
+
+    @Test
+    void testCompoundAssignExpression_multiply() {
+        ArkTSExpression target =
+                new ArkTSExpression.VariableExpression("sum");
+        ArkTSExpression value =
+                new ArkTSExpression.LiteralExpression("2",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSExpression.CompoundAssignExpression expr =
+                new ArkTSExpression.CompoundAssignExpression(
+                        target, "*=", value);
+        assertEquals("sum *= 2", expr.toArkTS());
+    }
+
+    @Test
+    void testIncrementExpression_post() {
+        ArkTSExpression target =
+                new ArkTSExpression.VariableExpression("i");
+        ArkTSExpression.IncrementExpression expr =
+                new ArkTSExpression.IncrementExpression(target, false, true);
+        assertEquals("i++", expr.toArkTS());
+    }
+
+    @Test
+    void testIncrementExpression_pre() {
+        ArkTSExpression target =
+                new ArkTSExpression.VariableExpression("i");
+        ArkTSExpression.IncrementExpression expr =
+                new ArkTSExpression.IncrementExpression(target, true, true);
+        assertEquals("++i", expr.toArkTS());
+    }
+
+    @Test
+    void testDecrementExpression_post() {
+        ArkTSExpression target =
+                new ArkTSExpression.VariableExpression("count");
+        ArkTSExpression.IncrementExpression expr =
+                new ArkTSExpression.IncrementExpression(target, false, false);
+        assertEquals("count--", expr.toArkTS());
+    }
+
+    @Test
+    void testDecrementExpression_pre() {
+        ArkTSExpression target =
+                new ArkTSExpression.VariableExpression("count");
+        ArkTSExpression.IncrementExpression expr =
+                new ArkTSExpression.IncrementExpression(target, true, false);
+        assertEquals("--count", expr.toArkTS());
+    }
+
+    @Test
+    void testOperatorPrecedence_nestedAddMul() {
+        // (a + b) * c should need parens around a + b
+        ArkTSExpression a = new ArkTSExpression.VariableExpression("a");
+        ArkTSExpression b = new ArkTSExpression.VariableExpression("b");
+        ArkTSExpression c = new ArkTSExpression.VariableExpression("c");
+        ArkTSExpression add = new ArkTSExpression.BinaryExpression(
+                a, "+", b);
+        ArkTSExpression mul = new ArkTSExpression.BinaryExpression(
+                add, "*", c);
+        assertEquals("(a + b) * c", mul.toArkTS());
+    }
+
+    @Test
+    void testOperatorPrecedence_mulAdd() {
+        // a * b + c should NOT need parens
+        ArkTSExpression a = new ArkTSExpression.VariableExpression("a");
+        ArkTSExpression b = new ArkTSExpression.VariableExpression("b");
+        ArkTSExpression c = new ArkTSExpression.VariableExpression("c");
+        ArkTSExpression mul = new ArkTSExpression.BinaryExpression(
+                a, "*", b);
+        ArkTSExpression add = new ArkTSExpression.BinaryExpression(
+                mul, "+", c);
+        assertEquals("a * b + c", add.toArkTS());
+    }
+
+    @Test
     void testCallExpression_noArgs() {
         ArkTSExpression callee = new ArkTSExpression.VariableExpression("foo");
         ArkTSExpression.CallExpression expr =
