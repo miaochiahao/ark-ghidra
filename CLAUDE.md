@@ -141,7 +141,8 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 54. ~~Cascading single-use inlining, throw support (#118)~~ DONE
 55. feat: test with real HarmonyOS .abc files from Ark compiler #25
 56. ~~Performance: shared file-level string cache (#144)~~ DONE
-57. ~~Source line number comments from debug info (#128)~~ DONE
+57. ~~Literal array resolution for createarraywithbuffer/createobjectwithbuffer (#145)~~ DONE
+58. ~~Source line number comments from debug info (#128)~~ DONE
 58. ~~Variable name inference from usage context (#133)~~ DONE
 59. ~~Comprehensive opcode decompilation tests (#134)~~ DONE
 60. ~~decompileFile() integration tests (#135)~~ DONE
@@ -341,6 +342,7 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **String cache pre-population:** `AbcFile.resolveStringByIndex()` lazily populates a file-level `String[]` cache from the LNP index. Shared across all method decompilations — `DecompilationContext.resolveString()` delegates to it when `abcFile` is non-null. No per-method string re-decoding.
 - **Per-method decompilation timeout:** `ArkTSDecompiler.setMethodTimeoutMs(long)` configures per-method timeout (default 5000ms, 0 = disabled). Timeout checked after CFG construction and after statement generation. Timed-out methods produce `/* decompilation timed out after Nms */` comment body.
 - **Analyzer string annotations:** `ArkBytecodeAnalyzer.annotateStrings()` iterates `abc.getLnpIndex()` to create plate comments at string offsets. `readMutf8String()` is package-visible for testing. Also annotates literal arrays with element counts.
+- **Literal array resolution:** `AbcLiteralArray` stores type tags alongside raw byte values (2-arg constructor with `List<Integer> tags`). `LoadStoreHandler.resolveLiteralArrayElements()` parses tags to produce typed `LiteralExpression` nodes (number, boolean, null). `resolveLiteralObjectProperties()` parses paired key-value entries. Falls back to `createPlaceholderElements()` on error. Tag values: 0x01=int8, 0x02/0x03=int32/float32, 0x04=double, 0x08=uint8, 0x09=int16, 0x19=boolean, 0xFF=null.
 - **Null method guard:** `decompileMethod(null, null, null)` returns `"/* unknown method */"` instead of NPE. Always null-check method parameter before accessing method.getName().
 - **Disassembler truncated instruction rejection:** `ArkDisassembler` throws `DisassemblyException` for truncated instructions (e.g., LDAI with only 2 bytes instead of 5). Tests should catch this or use try/catch patterns.
 - **Robustness test patterns:** For edge case tests, prefer try/catch with assertions on exception message content, or relaxed assertions (assertNotNull only) rather than asserting specific output format.
