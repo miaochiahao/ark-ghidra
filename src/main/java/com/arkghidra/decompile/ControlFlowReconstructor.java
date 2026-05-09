@@ -82,6 +82,7 @@ class ControlFlowReconstructor {
         List<SwitchCaseInfo> switchCases;
         BasicBlock switchDefaultBlock;
         BasicBlock switchEndBlock;
+        String forLoopCounterVar;
 
         ControlFlowPattern(PatternType type) {
             this.type = type;
@@ -349,6 +350,12 @@ class ControlFlowReconstructor {
                                 block, loopBody, cfg);
                 if (forAwaitOfP != null) {
                     return forAwaitOfP;
+                }
+                ControlFlowPattern forP =
+                        loopProcessor.detectClassicForLoopPattern(
+                                block, loopBody, cfg);
+                if (forP != null) {
+                    return forP;
                 }
                 ControlFlowPattern p = new ControlFlowPattern(
                         PatternType.WHILE_LOOP);
