@@ -103,8 +103,9 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 18. ~~Wide opcodes, bitwise operators, function expressions, module system (#48, #49, #50, #51)~~ DONE
 19. ~~Async/await, error handling, type annotations, iterator protocol (#52, #53, #54, #55)~~ DONE
 20. ~~Conditional jumps, call variants, property opcodes, module variables (#56, #57, #58, #59)~~ DONE
-21. Real .abc file support: test with actual HarmonyOS compiler output (#25)
-22. Performance: large file handling and incremental decompilation
+21. ~~Prototype/static, private fields, parameter defaults, built-in objects (#60, #61, #62, #63)~~ DONE
+22. Real .abc file support: test with actual HarmonyOS compiler output (#25)
+23. Performance: large file handling and incremental decompilation
 
 ### Rules for the loop
 
@@ -185,7 +186,7 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Try/catch decompilation:** Use `AbcCode.getTryBlocks()` → `AbcTryBlock.getCatchBlocks()` → `AbcCatchBlock` to reconstruct exception handling. Map try start/end PC ranges to CFG block addresses. Catch-all blocks (typeIdx=0) map to `finally`.
 - **Jump offset calculation:** `jmp +0` at offset 0 with instruction length 2 gives target = 0+2+0 = 2 (not 0). For infinite loop (jmp to self), need negative offset = -instruction_length (e.g., `0xFE` for 2-byte jmp).
 - **Parameter naming convention:** Use `param_0`, `param_1` etc. (not `p0`/`p1`) for better readability. Falls back to untyped when no proto info available.
-- **Test count tracking:** 1064 tests across 19 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
+- **Test count tracking:** 1073 tests across 19 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
 - **ABC debug info parsing:** Tags 0x07 (SOURCE_FILE), 0x03 (DEBUG_INFO) in class/method tag values. Debug info contains line_start, num_params, param name string offsets, constant pool. LNP uses DWARF v3 state machine with special opcodes.
 - **Realistic test fixture design:** Use 16384-byte buffer with 200-byte spacing between areas (strings at 200, classes at 800, code at 2000, protos at 6000, etc.). Encode methods with ULEB128 for vregs/args/codeSize/triesSize.
 - **Debug parameter name resolution:** `AbcFile.getDebugInfoForMethod()` → `AbcDebugInfo.getParameterNames()` → pass to `MethodSignatureBuilder.buildParams(proto, numArgs, debugNames)`. Falls back to `param_N` for unnamed.
