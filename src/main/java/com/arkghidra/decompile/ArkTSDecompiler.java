@@ -172,11 +172,11 @@ public class ArkTSDecompiler {
             }
 
             bodyStmts = convertIfElseChainToSwitch(
-                            simplifyReturnIfTernary(
-                                    detectSwitchExpressions(
-                                            mergeNestedIfConditions(
-                                                    ExpressionVisitor.inlineSingleUseVariables(
-                                                            applyConstOptimization(bodyStmts))))));
+                                    simplifyReturnIfTernary(
+                                            detectSwitchExpressions(
+                                                    mergeNestedIfConditions(
+                                                            ExpressionVisitor.inlineSingleUseVariables(
+                                                                    applyConstOptimization(bodyStmts))))));
         } catch (Exception e) {
             List<ArkTSStatement> fallbackStmts = new ArrayList<>();
             fallbackStmts.add(new ArkTSStatement.ExpressionStatement(
@@ -231,7 +231,7 @@ public class ArkTSDecompiler {
             stmts = detectSwitchExpressions(stmts);
             stmts = simplifyReturnIfTernary(stmts);
             stmts = convertIfElseChainToSwitch(stmts);
-            // stmts = removeUnusedVariables(stmts); // TODO: enable
+            // stmts = removeUnusedVariables(stmts); // TODO: enable after test updates
         } catch (Exception e) {
             return buildFallbackInstructionListing(instructions,
                     "statement generation failed: " + e);
@@ -472,11 +472,11 @@ public class ArkTSDecompiler {
             }
 
             return convertIfElseChainToSwitch(
-                    simplifyReturnIfTernary(
-                            detectSwitchExpressions(
-                                    mergeNestedIfConditions(
-                                            ExpressionVisitor.inlineSingleUseVariables(
-                                                    applyConstOptimization(stmts))))));
+                            simplifyReturnIfTernary(
+                                    detectSwitchExpressions(
+                                            mergeNestedIfConditions(
+                                                    ExpressionVisitor.inlineSingleUseVariables(
+                                                            applyConstOptimization(stmts))))));
         } catch (Exception e) {
             ctx.warnings.add("Statement generation failed: "
                     + e.getMessage());
@@ -613,11 +613,6 @@ public class ArkTSDecompiler {
         List<ArkTSStatement> result = new ArrayList<>(stmts.size());
         for (int i = 0; i < stmts.size(); i++) {
             ArkTSStatement stmt = stmts.get(i);
-            ArkTSStatement transformed = trySimplifyReturnIf(stmt);
-            if (transformed != null) {
-                result.add(transformed);
-                continue;
-            }
             // Check if-else with both branches returning
             if (stmt instanceof ArkTSControlFlow.IfStatement) {
                 ArkTSControlFlow.IfStatement ifStmt =
@@ -628,10 +623,61 @@ public class ArkTSDecompiler {
                     result.add(simplified);
                     continue;
                 }
+                // Check trailing return pattern:
+                // if (cond) { return a; } followed by return b;
+                if (ifStmt.getElseBlock() == null && i + 1 < stmts.size()) {
+                    ArkTSStatement next = stmts.get(i + 1);
+                    ArkTSStatement trailing =
+                            tryConvertTrailingReturn(ifStmt, next);
+                    if (trailing != null) {
+                        result.add(trailing);
+                        i++; // skip next statement
+                        continue;
+                    }
+                }
             }
             result.add(stmt);
         }
         return result;
+    }
+
+    /**
+     * Tries to convert if-return followed by a trailing return/throw
+     * into a single return/throw with ternary.
+     * Pattern: if (cond) { return a; } return b; → return cond ? a : b;
+     */
+    private static ArkTSStatement tryConvertTrailingReturn(
+            ArkTSControlFlow.IfStatement ifStmt,
+            ArkTSStatement next) {
+        ArkTSStatement thenBlock = ifStmt.getThenBlock();
+        ArkTSStatement.ReturnStatement thenReturn =
+                extractSingleReturn(thenBlock);
+        ArkTSStatement.ThrowStatement thenThrow =
+                thenReturn == null ? extractSingleThrow(thenBlock) : null;
+        if (thenReturn == null && thenThrow == null) {
+            return null;
+        }
+        if (thenReturn != null && next
+                instanceof ArkTSStatement.ReturnStatement) {
+            ArkTSStatement.ReturnStatement trailingReturn =
+                    (ArkTSStatement.ReturnStatement) next;
+            return new ArkTSStatement.ReturnStatement(
+                    new ArkTSAccessExpressions.ConditionalExpression(
+                            ifStmt.getCondition(),
+                            thenReturn.getValue(),
+                            trailingReturn.getValue()));
+        }
+        if (thenThrow != null && next
+                instanceof ArkTSStatement.ThrowStatement) {
+            ArkTSStatement.ThrowStatement trailingThrow =
+                    (ArkTSStatement.ThrowStatement) next;
+            return new ArkTSStatement.ThrowStatement(
+                    new ArkTSAccessExpressions.ConditionalExpression(
+                            ifStmt.getCondition(),
+                            thenThrow.getValue(),
+                            trailingThrow.getValue()));
+        }
+        return null;
     }
 
     /**
@@ -684,11 +730,6 @@ public class ArkTSDecompiler {
      * Tries to convert if-return followed by a trailing return/throw
      * into a single return with ternary. Returns null if not applicable.
      */
-    private static ArkTSStatement trySimplifyReturnIf(ArkTSStatement stmt) {
-        // This handles the next statement — not used here
-        // Pattern is handled inline in simplifyReturnIfTernary
-        return null;
-    }
 
     private static ArkTSStatement.ReturnStatement extractSingleReturn(
             ArkTSStatement block) {
@@ -894,7 +935,7 @@ public class ArkTSDecompiler {
      */
     static List<ArkTSStatement> removeUnusedVariables(
             List<ArkTSStatement> stmts) {
-        if (stmts == null || stmts.size() <= 1) {
+        if (stmts == null || stmts.isEmpty()) {
             return stmts;
         }
         // Collect all variable declaration names
@@ -942,11 +983,7 @@ public class ArkTSDecompiler {
             ArkTSStatement.VariableDeclaration decl =
                     (ArkTSStatement.VariableDeclaration) stmt;
             if (decl.getName().equals(varName)) {
-                // Don't count the declaration itself as a usage
-                return decl.getInitializer() != null
-                        ? ExpressionVisitor.countVariableUsage(
-                                decl.getInitializer(), varName)
-                        : 0;
+                return 0; // declaration itself is not a usage
             }
             return decl.getInitializer() != null
                     ? ExpressionVisitor.countVariableUsage(
@@ -991,6 +1028,10 @@ public class ArkTSDecompiler {
                     dw.getCondition(), varName);
             count += countVarUsageInBlock(dw.getBody(), varName);
             return count;
+        } else if (stmt instanceof ArkTSControlFlow.ForStatement) {
+            return countVarUsageInBlock(
+                    ((ArkTSControlFlow.ForStatement) stmt).getBody(),
+                    varName);
         } else if (stmt instanceof ArkTSControlFlow.ForOfStatement) {
             return countVarUsageInBlock(
                     ((ArkTSControlFlow.ForOfStatement) stmt).getBody(),
@@ -998,6 +1039,12 @@ public class ArkTSDecompiler {
         } else if (stmt instanceof ArkTSControlFlow.ForInStatement) {
             return countVarUsageInBlock(
                     ((ArkTSControlFlow.ForInStatement) stmt).getBody(),
+                    varName);
+        } else if (stmt
+                instanceof ArkTSControlFlow.ForAwaitOfStatement) {
+            return countVarUsageInBlock(
+                    ((ArkTSControlFlow.ForAwaitOfStatement) stmt)
+                            .getBody(),
                     varName);
         } else if (stmt instanceof ArkTSControlFlow.SwitchStatement) {
             ArkTSControlFlow.SwitchStatement sw =
@@ -1031,6 +1078,27 @@ public class ArkTSDecompiler {
             count += countVarUsageInBlock(
                     tc.getFinallyBlock(), varName);
             return count;
+        } else if (stmt
+                instanceof ArkTSControlFlow
+                        .MultiCatchTryCatchStatement) {
+            ArkTSControlFlow.MultiCatchTryCatchStatement mc =
+                    (ArkTSControlFlow.MultiCatchTryCatchStatement) stmt;
+            int count = countVarUsageInBlock(
+                    mc.getTryBlock(), varName);
+            for (ArkTSControlFlow.MultiCatchTryCatchStatement
+                    .CatchClause cc : mc.getCatchClauses()) {
+                count += countVarUsageInBlock(
+                        cc.getBody(), varName);
+            }
+            count += countVarUsageInBlock(
+                    mc.getFinallyBlock(), varName);
+            return count;
+        } else if (stmt
+                instanceof ArkTSStatement.LabeledStatement) {
+            return countVarUsageInStmt(
+                    ((ArkTSStatement.LabeledStatement) stmt)
+                            .getStatement(),
+                    varName);
         }
         return 0;
     }
