@@ -9913,4 +9913,768 @@ class ArkTSDecompilerTest {
         assertFalse(result.isEmpty(),
                 "Should produce output: " + result);
     }
+
+    // --- Issue #60: Object prototype and static member decompilation ---
+
+    @Test
+    void testDecompile_setObjectWithProto_basic() {
+        // setobjectwithproto has format IMM8_V8 (opcode 0x77)
+        // Pattern: lda v1 (load proto object); setobjectwithproto 0, v0
+        // This sets the prototype of v0 to the accumulator value
+        byte[] code = concat(
+                bytes(0x60, 0x01),           // lda v1 -> acc (proto object)
+                bytes(0x77, 0x00, 0x00),     // setobjectwithproto 0, v0
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("Object.setPrototypeOf"),
+                "Should contain Object.setPrototypeOf call: " + result);
+        assertTrue(result.contains("v0"),
+                "Should reference target object v0: " + result);
+    }
+
+    @Test
+    void testDecompile_setObjectWithProto_withCreateEmptyObject() {
+        // Full pattern: create object, load proto, set prototype
+        byte[] code = concat(
+                bytes(0x04),                 // createemptyobject -> acc
+                bytes(0x61, 0x00),           // sta v0 (store new object)
+                bytes(0x60, 0x01),           // lda v1 (load proto object)
+                bytes(0x77, 0x00, 0x00),     // setobjectwithproto 0, v0
+                bytes(0x61, 0x00),           // sta v0
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("Object.setPrototypeOf"),
+                "Should contain Object.setPrototypeOf: " + result);
+    }
+
+    @Test
+    void testDecompile_setObjectWithProto_withNullProto() {
+        // Pattern: load null as proto, set prototype
+        byte[] code = concat(
+                bytes(0x01),                 // ldnull -> acc (opcode 0x01)
+                bytes(0x77, 0x00, 0x00),     // setobjectwithproto 0, v0
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("Object.setPrototypeOf"),
+                "Should contain Object.setPrototypeOf with null: " + result);
+        assertTrue(result.contains("null"),
+                "Should contain null as prototype: " + result);
+    }
+
+    @Test
+    void testDecompile_defineFieldByName_staticField() {
+        // definefieldbyname has format IMM8_IMM16_V8 (opcode 0xDB)
+        // flags=0x01 (static), stringIdx=0x0001, objReg=v0
+        // acc holds the value to assign
+        byte[] code = concat(
+                bytes(0x62), le32(42),       // ldai 42 -> acc
+                bytes(0xDB, 0x01),           // definefieldbyname flags=0x01 (static)
+                le16(1),                     // stringIdx=1
+                bytes(0x00),                 // objReg=v0
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("static"),
+                "Should contain static keyword: " + result);
+        assertTrue(result.contains("str_1"),
+                "Should contain field name str_1: " + result);
+    }
+
+    @Test
+    void testDecompile_defineFieldByName_nonStaticField() {
+        // definefieldbyname with flags=0x00 (non-static)
+        byte[] code = concat(
+                bytes(0x62), le32(10),       // ldai 10 -> acc
+                bytes(0xDB, 0x00),           // definefieldbyname flags=0x00
+                le16(2),                     // stringIdx=2
+                bytes(0x01),                 // objReg=v1
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertFalse(result.contains("static"),
+                "Non-static field should NOT contain static keyword: " + result);
+        assertTrue(result.contains("str_2"),
+                "Should contain field name str_2: " + result);
+    }
+
+    @Test
+    void testDecompile_staticFieldExpression_toArkTS() {
+        // Test StaticFieldExpression directly
+        ArkTSExpression target =
+                new ArkTSExpression.MemberExpression(
+                        new ArkTSExpression.VariableExpression("MyClass"),
+                        new ArkTSExpression.VariableExpression("count"),
+                        false);
+        ArkTSExpression value =
+                new ArkTSExpression.LiteralExpression("0",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSPropertyExpressions.StaticFieldExpression expr =
+                new ArkTSPropertyExpressions.StaticFieldExpression(
+                        target, value);
+        String result = expr.toArkTS();
+        assertTrue(result.startsWith("static "),
+                "Should start with 'static ': " + result);
+        assertTrue(result.contains("MyClass.count"),
+                "Should contain target member: " + result);
+        assertTrue(result.contains("= 0"),
+                "Should contain assignment: " + result);
+    }
+
+    @Test
+    void testDecompile_staticFieldExpression_withBooleanValue() {
+        // Test StaticFieldExpression with boolean value
+        ArkTSExpression target =
+                new ArkTSExpression.MemberExpression(
+                        new ArkTSExpression.VariableExpression("Config"),
+                        new ArkTSExpression.VariableExpression("enabled"),
+                        false);
+        ArkTSExpression value =
+                new ArkTSExpression.LiteralExpression("true",
+                        ArkTSExpression.LiteralExpression.LiteralKind.BOOLEAN);
+        ArkTSPropertyExpressions.StaticFieldExpression expr =
+                new ArkTSPropertyExpressions.StaticFieldExpression(
+                        target, value);
+        String result = expr.toArkTS();
+        assertEquals("static Config.enabled = true", result);
+    }
+
+    @Test
+    void testDecompile_setObjectWithProto_classFieldDeclaration() {
+        // ClassFieldDeclaration with isStatic=true should render static
+        ArkTSDeclarations.ClassFieldDeclaration staticField =
+                new ArkTSDeclarations.ClassFieldDeclaration(
+                        "instanceCount", "number",
+                        new ArkTSExpression.LiteralExpression("0",
+                                ArkTSExpression.LiteralExpression
+                                        .LiteralKind.NUMBER),
+                        true, null);
+        String result = staticField.toArkTS(1);
+        assertTrue(result.contains("static"),
+                "Should contain static keyword: " + result);
+        assertTrue(result.contains("instanceCount"),
+                "Should contain field name: " + result);
+    }
+
+    @Test
+    void testDecompile_objectCreationHandler_buildSetPrototypeOfCall() {
+        // Test ObjectCreationHandler static helper for setPrototypeOf
+        ArkTSExpression obj =
+                new ArkTSExpression.VariableExpression("target");
+        ArkTSExpression proto =
+                new ArkTSExpression.VariableExpression("baseProto");
+        ArkTSExpression result =
+                ObjectCreationHandler.buildSetPrototypeOfCall(obj, proto);
+        String arkts = result.toArkTS();
+        assertEquals("Object.setPrototypeOf(target, baseProto)", arkts);
+    }
+
+    @Test
+    void testDecompile_objectCreationHandler_buildProtoAssignment() {
+        // Test ObjectCreationHandler static helper for __proto__ assignment
+        ArkTSExpression obj =
+                new ArkTSExpression.VariableExpression("target");
+        ArkTSExpression proto =
+                new ArkTSExpression.VariableExpression("baseProto");
+        ArkTSExpression result =
+                ObjectCreationHandler.buildProtoAssignment(obj, proto);
+        String arkts = result.toArkTS();
+        assertEquals("target.__proto__ = baseProto", arkts);
+    }
+
+    @Test
+    void testDecompile_objectCreationHandler_createObjectWithPrototype() {
+        // Test ObjectCreationHandler static helper for object with __proto__
+        List<ArkTSAccessExpressions.ObjectLiteralExpression.ObjectProperty>
+                props = new ArrayList<>();
+        props.add(new ArkTSAccessExpressions.ObjectLiteralExpression
+                .ObjectProperty("name",
+                        new ArkTSExpression.LiteralExpression("test",
+                                ArkTSExpression.LiteralExpression
+                                        .LiteralKind.STRING)));
+        ArkTSExpression proto =
+                new ArkTSExpression.VariableExpression("baseProto");
+        ArkTSExpression result =
+                ObjectCreationHandler.createObjectWithPrototype(props, proto);
+        String arkts = result.toArkTS();
+        assertTrue(arkts.contains("__proto__: baseProto"),
+                "Should contain __proto__ property: " + arkts);
+        assertTrue(arkts.contains("name: \"test\""),
+                "Should contain name property: " + arkts);
+    }
+
+    @Test
+    void testDecompile_defineFieldByName_staticFieldWithStringValue() {
+        // definefieldbyname static field with string value
+        byte[] code = concat(
+                bytes(0x6B), le16(5),        // lda.str 5 -> acc
+                bytes(0xDB, 0x01),           // definefieldbyname flags=0x01 (static)
+                le16(3),                     // stringIdx=3
+                bytes(0x00),                 // objReg=v0
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("static"),
+                "Should contain static keyword: " + result);
+        assertTrue(result.contains("str_3"),
+                "Should contain field name: " + result);
+    }
+
+    // --- Built-in object type tests ---
+
+    @Test
+    void testRegExpLiteralExpression_noFlags() {
+        ArkTSAccessExpressions.RegExpLiteralExpression expr =
+                new ArkTSAccessExpressions.RegExpLiteralExpression(
+                        "pattern", "");
+        assertEquals("/pattern/", expr.toArkTS());
+    }
+
+    @Test
+    void testRegExpLiteralExpression_withFlags() {
+        ArkTSAccessExpressions.RegExpLiteralExpression expr =
+                new ArkTSAccessExpressions.RegExpLiteralExpression(
+                        "test.*", "gi");
+        assertEquals("/test.*/gi", expr.toArkTS());
+    }
+
+    @Test
+    void testRegExpLiteralExpression_escapeForwardSlash() {
+        ArkTSAccessExpressions.RegExpLiteralExpression expr =
+                new ArkTSAccessExpressions.RegExpLiteralExpression(
+                        "a/b", "");
+        assertEquals("/a\\/b/", expr.toArkTS());
+    }
+
+    @Test
+    void testRegExpLiteralExpression_escapeBackslash() {
+        ArkTSAccessExpressions.RegExpLiteralExpression expr =
+                new ArkTSAccessExpressions.RegExpLiteralExpression(
+                        "a\\b", "m");
+        assertEquals("/a\\\\b/m", expr.toArkTS());
+    }
+
+    @Test
+    void testBuiltInNewExpression_newMap() {
+        ArkTSAccessExpressions.BuiltInNewExpression expr =
+                new ArkTSAccessExpressions.BuiltInNewExpression(
+                        "Map", Collections.emptyList());
+        assertEquals("new Map()", expr.toArkTS());
+    }
+
+    @Test
+    void testBuiltInNewExpression_newSet() {
+        ArkTSAccessExpressions.BuiltInNewExpression expr =
+                new ArkTSAccessExpressions.BuiltInNewExpression(
+                        "Set", Collections.emptyList());
+        assertEquals("new Set()", expr.toArkTS());
+    }
+
+    @Test
+    void testBuiltInNewExpression_newPromise() {
+        ArkTSExpression callback =
+                new ArkTSExpression.VariableExpression("func_0");
+        ArkTSAccessExpressions.BuiltInNewExpression expr =
+                new ArkTSAccessExpressions.BuiltInNewExpression(
+                        "Promise", List.of(callback));
+        assertEquals("new Promise(func_0)", expr.toArkTS());
+    }
+
+    @Test
+    void testBuiltInNewExpression_newProxy() {
+        ArkTSExpression target =
+                new ArkTSExpression.VariableExpression("v0");
+        ArkTSExpression handler =
+                new ArkTSExpression.VariableExpression("v1");
+        ArkTSAccessExpressions.BuiltInNewExpression expr =
+                new ArkTSAccessExpressions.BuiltInNewExpression(
+                        "Proxy", List.of(target, handler));
+        assertEquals("new Proxy(v0, v1)", expr.toArkTS());
+    }
+
+    @Test
+    void testBuiltInNewExpression_newWeakMap() {
+        ArkTSAccessExpressions.BuiltInNewExpression expr =
+                new ArkTSAccessExpressions.BuiltInNewExpression(
+                        "WeakMap", Collections.emptyList());
+        assertEquals("new WeakMap()", expr.toArkTS());
+    }
+
+    @Test
+    void testBuiltInNewExpression_newInt32Array() {
+        ArkTSExpression arg =
+                new ArkTSExpression.LiteralExpression("10",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSAccessExpressions.BuiltInNewExpression expr =
+                new ArkTSAccessExpressions.BuiltInNewExpression(
+                        "Int32Array", List.of(arg));
+        assertEquals("new Int32Array(10)", expr.toArkTS());
+    }
+
+    @Test
+    void testBuiltInClassSetContainsKnownTypes() {
+        assertTrue(ArkTSAccessExpressions.BuiltInNewExpression
+                .BUILT_IN_CLASSES.contains("Map"));
+        assertTrue(ArkTSAccessExpressions.BuiltInNewExpression
+                .BUILT_IN_CLASSES.contains("Set"));
+        assertTrue(ArkTSAccessExpressions.BuiltInNewExpression
+                .BUILT_IN_CLASSES.contains("Promise"));
+        assertTrue(ArkTSAccessExpressions.BuiltInNewExpression
+                .BUILT_IN_CLASSES.contains("Proxy"));
+        assertTrue(ArkTSAccessExpressions.BuiltInNewExpression
+                .BUILT_IN_CLASSES.contains("WeakMap"));
+        assertTrue(ArkTSAccessExpressions.BuiltInNewExpression
+                .BUILT_IN_CLASSES.contains("WeakSet"));
+        assertTrue(ArkTSAccessExpressions.BuiltInNewExpression
+                .BUILT_IN_CLASSES.contains("Date"));
+        assertTrue(ArkTSAccessExpressions.BuiltInNewExpression
+                .BUILT_IN_CLASSES.contains("RegExp"));
+        assertTrue(ArkTSAccessExpressions.BuiltInNewExpression
+                .BUILT_IN_CLASSES.contains("Error"));
+        assertFalse(ArkTSAccessExpressions.BuiltInNewExpression
+                .BUILT_IN_CLASSES.contains("MyClass"));
+    }
+
+    @Test
+    void testCreateRegExpWithLiteral_bytecode() {
+        // CREATEREGEXPWITHLITERAL = 0x71, IMM8_IMM16_IMM8 format
+        // opcode(0x71) + IMM8(prefix) + IMM16(stringIdx) + IMM8(flags)
+        // flags=0x03 means g(0x01) + i(0x02)
+        byte[] code = concat(
+                bytes(0x71, 0x00),            // createregexpwithliteral prefix=0
+                le16(5),                      // stringIdx=5
+                bytes(0x03),                  // flags=3 (gi)
+                bytes(0x61, 0x00),            // sta v0
+                bytes(0x64)                   // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("/str_5/gi"),
+                "Should contain regex literal with flags: " + result);
+    }
+
+    @Test
+    void testCreateRegExpWithLiteral_noFlags_bytecode() {
+        // flags=0x00 means no flags
+        byte[] code = concat(
+                bytes(0x71, 0x00),            // createregexpwithliteral
+                le16(3),                      // stringIdx=3
+                bytes(0x00),                  // flags=0
+                bytes(0x61, 0x00),            // sta v0
+                bytes(0x64)                   // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("/str_3/"),
+                "Should contain regex literal without flags: " + result);
+        assertFalse(result.contains("RegExp"),
+                "Should use regex literal syntax, not new RegExp(): "
+                        + result);
+    }
+
+    @Test
+    void testDecodeRegexFlags_allFlags() {
+        assertEquals("gimsuy",
+                LoadStoreHandler.decodeRegexFlags(0x3F));
+    }
+
+    @Test
+    void testDecodeRegexFlags_globalOnly() {
+        assertEquals("g",
+                LoadStoreHandler.decodeRegexFlags(0x01));
+    }
+
+    @Test
+    void testDecodeRegexFlags_ignoreCaseAndMultiline() {
+        assertEquals("im",
+                LoadStoreHandler.decodeRegexFlags(0x06));
+    }
+
+    @Test
+    void testDecodeRegexFlags_noFlags() {
+        assertEquals("",
+                LoadStoreHandler.decodeRegexFlags(0x00));
+    }
+
+    @Test
+    void testTryLdGlobalByName_resolvesName() {
+        // TRYLDGLOBALBYNAME = 0x3F, IMM8_IMM16 format
+        // opcode(0x3F) + IMM8 + IMM16(stringIdx)
+        byte[] code = concat(
+                bytes(0x3F, 0x00),            // tryldglobalbyname
+                le16(7),                      // stringIdx=7
+                bytes(0x61, 0x01),            // sta v1
+                bytes(0x64)                   // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("str_7"),
+                "Should resolve global name from string table: " + result);
+    }
+
+    @Test
+    void testNewObjRange_withBuiltinClassName() {
+        // Test that NEWOBJRANGE detects Map as a built-in class
+        // and produces BuiltInNewExpression instead of regular
+        // NewExpression.
+        ArkInstruction newobjrange = new ArkInstruction(
+                ArkOpcodesCompat.NEWOBJRANGE, "newobjrange",
+                ArkInstructionFormat.IMM8_IMM8_V8, 3, 1,
+                List.of(
+                        new ArkOperand(ArkOperand.Type.IMMEDIATE8, 0),
+                        new ArkOperand(ArkOperand.Type.IMMEDIATE8, 0),
+                        new ArkOperand(ArkOperand.Type.REGISTER, 0)),
+                false);
+        ArkTSExpression accValue =
+                new ArkTSExpression.VariableExpression("Map");
+        InstructionHandler handler =
+                new InstructionHandler(decompiler);
+        InstructionHandler.StatementResult result =
+                handler.processInstruction(newobjrange,
+                        makeTestContext(), accValue,
+                        new java.util.HashSet<>(),
+                        new TypeInference());
+        assertNotNull(result);
+        assertNotNull(result.newAccValue);
+        assertTrue(result.newAccValue instanceof
+                ArkTSAccessExpressions.BuiltInNewExpression,
+                "Should produce BuiltInNewExpression for Map: "
+                        + result.newAccValue.getClass().getSimpleName());
+        assertEquals("new Map()", result.newAccValue.toArkTS());
+    }
+
+    @Test
+    void testNewObjRange_withBuiltinSetAndArgs() {
+        ArkInstruction newobjrange = new ArkInstruction(
+                ArkOpcodesCompat.NEWOBJRANGE, "newobjrange",
+                ArkInstructionFormat.IMM8_IMM8_V8, 3, 1,
+                List.of(
+                        new ArkOperand(ArkOperand.Type.IMMEDIATE8, 1),
+                        new ArkOperand(ArkOperand.Type.IMMEDIATE8, 0),
+                        new ArkOperand(ArkOperand.Type.REGISTER, 2)),
+                false);
+        ArkTSExpression accValue =
+                new ArkTSExpression.VariableExpression("Set");
+        InstructionHandler handler =
+                new InstructionHandler(decompiler);
+        InstructionHandler.StatementResult result =
+                handler.processInstruction(newobjrange,
+                        makeTestContext(), accValue,
+                        new java.util.HashSet<>(),
+                        new TypeInference());
+        assertNotNull(result);
+        assertTrue(result.newAccValue instanceof
+                ArkTSAccessExpressions.BuiltInNewExpression);
+        assertEquals("new Set(v2)", result.newAccValue.toArkTS());
+    }
+
+    @Test
+    void testNewObjRange_withBuiltinPromise() {
+        ArkInstruction newobjrange = new ArkInstruction(
+                ArkOpcodesCompat.NEWOBJRANGE, "newobjrange",
+                ArkInstructionFormat.IMM8_IMM8_V8, 3, 1,
+                List.of(
+                        new ArkOperand(ArkOperand.Type.IMMEDIATE8, 1),
+                        new ArkOperand(ArkOperand.Type.IMMEDIATE8, 0),
+                        new ArkOperand(ArkOperand.Type.REGISTER, 1)),
+                false);
+        ArkTSExpression accValue =
+                new ArkTSExpression.VariableExpression("Promise");
+        InstructionHandler handler =
+                new InstructionHandler(decompiler);
+        InstructionHandler.StatementResult result =
+                handler.processInstruction(newobjrange,
+                        makeTestContext(), accValue,
+                        new java.util.HashSet<>(),
+                        new TypeInference());
+        assertNotNull(result);
+        assertTrue(result.newAccValue instanceof
+                ArkTSAccessExpressions.BuiltInNewExpression);
+        assertEquals("new Promise(v1)", result.newAccValue.toArkTS());
+    }
+
+    @Test
+    void testNewObjRange_withBuiltinProxy() {
+        ArkInstruction newobjrange = new ArkInstruction(
+                ArkOpcodesCompat.NEWOBJRANGE, "newobjrange",
+                ArkInstructionFormat.IMM8_IMM8_V8, 3, 1,
+                List.of(
+                        new ArkOperand(ArkOperand.Type.IMMEDIATE8, 2),
+                        new ArkOperand(ArkOperand.Type.IMMEDIATE8, 0),
+                        new ArkOperand(ArkOperand.Type.REGISTER, 0)),
+                false);
+        ArkTSExpression accValue =
+                new ArkTSExpression.VariableExpression("Proxy");
+        InstructionHandler handler =
+                new InstructionHandler(decompiler);
+        InstructionHandler.StatementResult result =
+                handler.processInstruction(newobjrange,
+                        makeTestContext(), accValue,
+                        new java.util.HashSet<>(),
+                        new TypeInference());
+        assertNotNull(result);
+        assertTrue(result.newAccValue instanceof
+                ArkTSAccessExpressions.BuiltInNewExpression);
+        assertEquals("new Proxy(v0, v1)",
+                result.newAccValue.toArkTS());
+    }
+
+    @Test
+    void testNewObjRange_nonBuiltinUsesRegularNewExpression() {
+        ArkInstruction newobjrange = new ArkInstruction(
+                ArkOpcodesCompat.NEWOBJRANGE, "newobjrange",
+                ArkInstructionFormat.IMM8_IMM8_V8, 3, 1,
+                List.of(
+                        new ArkOperand(ArkOperand.Type.IMMEDIATE8, 0),
+                        new ArkOperand(ArkOperand.Type.IMMEDIATE8, 0),
+                        new ArkOperand(ArkOperand.Type.REGISTER, 0)),
+                false);
+        ArkTSExpression accValue =
+                new ArkTSExpression.VariableExpression("MyClass");
+        InstructionHandler handler =
+                new InstructionHandler(decompiler);
+        InstructionHandler.StatementResult result =
+                handler.processInstruction(newobjrange,
+                        makeTestContext(), accValue,
+                        new java.util.HashSet<>(),
+                        new TypeInference());
+        assertNotNull(result);
+        assertFalse(result.newAccValue instanceof
+                ArkTSAccessExpressions.BuiltInNewExpression,
+                "Non-built-in should use regular NewExpression");
+        assertTrue(result.newAccValue instanceof
+                ArkTSExpression.NewExpression);
+        assertEquals("new MyClass()", result.newAccValue.toArkTS());
+    }
+
+    @Test
+    void testLdGlobalVar_resolvesName() {
+        // LDGLOBALVAR = 0x41, IMM8_IMM16 format
+        byte[] code = concat(
+                bytes(0x41, 0x00),            // ldglobalvar
+                le16(10),                     // stringIdx=10
+                bytes(0x61, 0x02),            // sta v2
+                bytes(0x64)                   // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("str_10"),
+                "Should resolve global var from string table: "
+                        + result);
+    }
+
+    // --- Parameter default value tests ---
+
+    @Test
+    void testFunctionParam_defaultInteger() {
+        ArkTSDeclarations.FunctionDeclaration.FunctionParam param =
+                new ArkTSDeclarations.FunctionDeclaration
+                        .FunctionParam("count", "number", false, "42",
+                                false);
+        assertEquals("count: number = 42", param.toString());
+    }
+
+    @Test
+    void testFunctionParam_defaultString() {
+        ArkTSDeclarations.FunctionDeclaration.FunctionParam param =
+                new ArkTSDeclarations.FunctionDeclaration
+                        .FunctionParam("name", "string", false,
+                                "str_5", false);
+        assertEquals("name: string = str_5", param.toString());
+    }
+
+    @Test
+    void testFunctionParam_defaultBooleanTrue() {
+        ArkTSDeclarations.FunctionDeclaration.FunctionParam param =
+                new ArkTSDeclarations.FunctionDeclaration
+                        .FunctionParam("flag", "boolean", false, "true",
+                                false);
+        assertEquals("flag: boolean = true", param.toString());
+    }
+
+    @Test
+    void testFunctionParam_defaultNull() {
+        ArkTSDeclarations.FunctionDeclaration.FunctionParam param =
+                new ArkTSDeclarations.FunctionDeclaration
+                        .FunctionParam("value", "Object", false, "null",
+                                false);
+        assertEquals("value: Object = null", param.toString());
+    }
+
+    @Test
+    void testFunctionParam_optionalNoDefault() {
+        ArkTSDeclarations.FunctionDeclaration.FunctionParam param =
+                new ArkTSDeclarations.FunctionDeclaration
+                        .FunctionParam("name", "string", false, null,
+                                true);
+        assertEquals("name?: string", param.toString());
+    }
+
+    @Test
+    void testFunctionParam_optionalWithNullDefault() {
+        ArkTSDeclarations.FunctionDeclaration.FunctionParam param =
+                new ArkTSDeclarations.FunctionDeclaration
+                        .FunctionParam("value", "string", false, "null",
+                                true);
+        assertEquals("value: string = null", param.toString());
+    }
+
+    @Test
+    void testFunctionParam_defaultUntyped() {
+        ArkTSDeclarations.FunctionDeclaration.FunctionParam param =
+                new ArkTSDeclarations.FunctionDeclaration
+                        .FunctionParam("x", null, false, "10", false);
+        assertEquals("x = 10", param.toString());
+    }
+
+    @Test
+    void testFunctionParam_noDefaultUnchanged() {
+        ArkTSDeclarations.FunctionDeclaration.FunctionParam param =
+                new ArkTSDeclarations.FunctionDeclaration
+                        .FunctionParam("x", "number", false);
+        assertEquals("x: number", param.toString());
+    }
+
+    @Test
+    void testParameterDefaultDetector_patternA_integerDefault() {
+        // Pattern A: lda v0; jneundefined +7; ldai 42; sta v0; return
+        byte[] code = concat(
+                bytes(0x60, 0x00),                   // lda v0
+                bytes(0x59, 0x07),                   // jneundefined +7 -> offset 11
+                bytes(0x62), le32(42),               // ldai 42
+                bytes(0x61, 0x00),                   // sta v0
+                bytes(0x64)                          // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        List<ParameterDefaultDetector.ParamDefault> defaults =
+                ParameterDefaultDetector.detectDefaults(insns, 1);
+        assertEquals(1, defaults.size());
+        assertNotNull(defaults.get(0));
+        assertEquals("42", defaults.get(0).defaultValue);
+        assertFalse(defaults.get(0).isOptional);
+    }
+
+    @Test
+    void testParameterDefaultDetector_patternA_booleanDefault() {
+        // lda v0; jneundefined +7; ldtrue; sta v0; return
+        byte[] code = concat(
+                bytes(0x60, 0x00),                   // lda v0
+                bytes(0x59, 0x07),                   // jneundefined +7 -> offset 11
+                bytes(0x02),                         // ldtrue
+                bytes(0x61, 0x00),                   // sta v0
+                bytes(0x64)                          // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        List<ParameterDefaultDetector.ParamDefault> defaults =
+                ParameterDefaultDetector.detectDefaults(insns, 1);
+        assertNotNull(defaults.get(0));
+        assertEquals("true", defaults.get(0).defaultValue);
+        assertFalse(defaults.get(0).isOptional);
+    }
+
+    @Test
+    void testParameterDefaultDetector_patternA_nullDefault_isOptional() {
+        // lda v0; jneundefined +7; ldnull; sta v0; return
+        byte[] code = concat(
+                bytes(0x60, 0x00),                   // lda v0
+                bytes(0x59, 0x07),                   // jneundefined +7 -> offset 11
+                bytes(0x01),                         // ldnull
+                bytes(0x61, 0x00),                   // sta v0
+                bytes(0x64)                          // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        List<ParameterDefaultDetector.ParamDefault> defaults =
+                ParameterDefaultDetector.detectDefaults(insns, 1);
+        assertNotNull(defaults.get(0));
+        assertEquals("null", defaults.get(0).defaultValue);
+        assertTrue(defaults.get(0).isOptional,
+                "null default should be marked optional");
+    }
+
+    @Test
+    void testParameterDefaultDetector_patternA_undefinedDefault_isOptional() {
+        // lda v0; jneundefined +7; ldundefined; sta v0; return
+        byte[] code = concat(
+                bytes(0x60, 0x00),                   // lda v0
+                bytes(0x59, 0x07),                   // jneundefined +7 -> offset 11
+                bytes(0x00),                         // ldundefined
+                bytes(0x61, 0x00),                   // sta v0
+                bytes(0x64)                          // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        List<ParameterDefaultDetector.ParamDefault> defaults =
+                ParameterDefaultDetector.detectDefaults(insns, 1);
+        assertNotNull(defaults.get(0));
+        assertEquals("undefined", defaults.get(0).defaultValue);
+        assertTrue(defaults.get(0).isOptional,
+                "undefined default should be marked optional");
+    }
+
+    @Test
+    void testParameterDefaultDetector_patternA_multipleParams() {
+        // lda v0; jneundefined +9; ldai 10; sta v0;
+        // lda v1; jneundefined +9; ldai 20; sta v1;
+        // return
+        byte[] code = concat(
+                bytes(0x60, 0x00),                   // lda v0
+                bytes(0x59, 0x09),                   // jneundefined +9 -> offset 13
+                bytes(0x62), le32(10),               // ldai 10
+                bytes(0x61, 0x00),                   // sta v0
+                bytes(0x60, 0x01),                   // lda v1
+                bytes(0x59, 0x09),                   // jneundefined +9 -> offset 24
+                bytes(0x62), le32(20),               // ldai 20
+                bytes(0x61, 0x01),                   // sta v1
+                bytes(0x64)                          // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        List<ParameterDefaultDetector.ParamDefault> defaults =
+                ParameterDefaultDetector.detectDefaults(insns, 2);
+        assertEquals(2, defaults.size());
+        assertNotNull(defaults.get(0));
+        assertEquals("10", defaults.get(0).defaultValue);
+        assertNotNull(defaults.get(1));
+        assertEquals("20", defaults.get(1).defaultValue);
+    }
+
+    @Test
+    void testParameterDefaultDetector_noDefault_prologueEnds() {
+        // Just regular code: ldai 5; sta v0; return
+        byte[] code = concat(
+                bytes(0x62), le32(5),                // ldai 5
+                bytes(0x61, 0x00),                   // sta v0
+                bytes(0x64)                          // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        List<ParameterDefaultDetector.ParamDefault> defaults =
+                ParameterDefaultDetector.detectDefaults(insns, 1);
+        assertNotNull(defaults,
+                "Should return a list (possibly empty)");
+    }
+
+    @Test
+    void testParameterDefaultDetector_patternB_strictEq() {
+        byte[] code = concat(
+                bytes(0x60, 0x00),                   // lda v0
+                bytes(0x00),                         // ldundefined
+                bytes(0x28, 0x00, 0x00),             // stricteq 0, v0
+                bytes(0x51, 0x02),                   // jnez +2
+                bytes(0x4C, 0x05),                   // jmp +5
+                bytes(0x62), le32(42),               // ldai 42
+                bytes(0x61, 0x00),                   // sta v0
+                bytes(0x64)                          // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        List<ParameterDefaultDetector.ParamDefault> defaults =
+                ParameterDefaultDetector.detectDefaults(insns, 1);
+        assertNotNull(defaults,
+                "Should return a list");
+    }
 }
