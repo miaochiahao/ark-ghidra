@@ -461,79 +461,191 @@ public class ArkTSDecompiler {
     // --- Single-use variable inlining ---
 
     /**
-     * Inlines single-use variables at the top level of a statement list.
+     * Inlines single-use variables at the top level.
      *
-     * <p>Scans from the end of the list backwards looking for the pattern:
-     * {@code let/const var = expr; return var;}. When found, replaces both
-     * statements with {@code return expr;}. Only applies when the variable
-     * is used exactly once (in the return statement immediately following
-     * the declaration).
+     * <p>Runs multiple passes to enable cascading inlining. Handles
+     * return, throw, and simple expression statement targets.
      *
      * @param stmts the statement list (may be modified)
-     * @return the statement list with single-use variables inlined
+     * @return the optimized statement list
      */
     static List<ArkTSStatement> inlineSingleUseVariables(
             List<ArkTSStatement> stmts) {
         if (stmts == null || stmts.size() < 2) {
             return stmts;
         }
-        // Scan backwards to find var decl + return var patterns
         List<ArkTSStatement> result = new ArrayList<>(stmts);
-        for (int i = result.size() - 2; i >= 0; i--) {
-            ArkTSStatement current = result.get(i);
-            ArkTSStatement next = result.get(i + 1);
-            if (!(current instanceof ArkTSStatement.VariableDeclaration)) {
-                continue;
-            }
-            if (!(next instanceof ArkTSStatement.ReturnStatement)) {
-                continue;
-            }
-            ArkTSStatement.VariableDeclaration varDecl =
-                    (ArkTSStatement.VariableDeclaration) current;
-            ArkTSStatement.ReturnStatement retStmt =
-                    (ArkTSStatement.ReturnStatement) next;
-            ArkTSExpression retValue = retStmt.getValue();
-            if (retValue == null) {
-                continue;
-            }
-            // Check that the return value is exactly this variable
-            if (!(retValue instanceof ArkTSExpression.VariableExpression)) {
-                continue;
-            }
-            String varName = varDecl.getName();
-            String retVarName =
-                    ((ArkTSExpression.VariableExpression) retValue).getName();
-            if (!varName.equals(retVarName)) {
-                continue;
-            }
-            // Must have an initializer to inline
-            ArkTSExpression init = varDecl.getInitializer();
-            if (init == null) {
-                continue;
-            }
-            // Check that the variable is not used in its own initializer
-            // (e.g. recursive expressions) and count total usage in init
-            if (countVariableUsage(init, varName) > 0) {
-                continue;
-            }
-            // Check that no earlier statement references this variable
-            boolean usedElsewhere = false;
-            for (int j = 0; j < i; j++) {
-                if (stmtReferencesVariable(result.get(j), varName)) {
-                    usedElsewhere = true;
-                    break;
+        boolean changed = true;
+        int passes = 0;
+        while (changed && passes < 3) {
+            changed = false;
+            passes++;
+            for (int i = result.size() - 2; i >= 0; i--) {
+                if (!(result.get(i)
+                        instanceof ArkTSStatement.VariableDeclaration)) {
+                    continue;
+                }
+                ArkTSStatement.VariableDeclaration varDecl =
+                        (ArkTSStatement.VariableDeclaration) result.get(i);
+                ArkTSExpression init = varDecl.getInitializer();
+                if (init == null) {
+                    continue;
+                }
+                String varName = varDecl.getName();
+                if (countVariableUsage(init, varName) > 0) {
+                    continue;
+                }
+                if (isUsedInEarlierStatements(result, i, varName)) {
+                    continue;
+                }
+                ArkTSStatement next = result.get(i + 1);
+                ArkTSStatement inlined =
+                        tryInlineInto(varName, init, next);
+                if (inlined != null) {
+                    result.set(i + 1, inlined);
+                    result.remove(i);
+                    changed = true;
                 }
             }
-            if (usedElsewhere) {
-                continue;
-            }
-            // Inline: remove the declaration and replace the return
-            ArkTSStatement newReturn =
-                    new ArkTSStatement.ReturnStatement(init);
-            result.set(i + 1, newReturn);
-            result.remove(i);
         }
         return result;
+    }
+
+    /**
+     * Tries to inline a variable's initializer into the next statement.
+     * Handles return, throw, and expression statements.
+     *
+     * @return the replacement statement, or null if inlining not possible
+     */
+    private static ArkTSStatement tryInlineInto(String varName,
+            ArkTSExpression init, ArkTSStatement target) {
+        if (target instanceof ArkTSStatement.ReturnStatement) {
+            ArkTSExpression val =
+                    ((ArkTSStatement.ReturnStatement) target).getValue();
+            if (isSingleVarRef(val, varName)) {
+                return new ArkTSStatement.ReturnStatement(init);
+            }
+        }
+        if (target instanceof ArkTSStatement.ThrowStatement) {
+            ArkTSExpression val =
+                    ((ArkTSStatement.ThrowStatement) target).getValue();
+            if (isSingleVarRef(val, varName)) {
+                return new ArkTSStatement.ThrowStatement(init);
+            }
+        }
+        if (target instanceof ArkTSStatement.ExpressionStatement) {
+            ArkTSExpression expr =
+                    ((ArkTSStatement.ExpressionStatement) target)
+                            .getExpression();
+            if (countVariableUsage(expr, varName) == 1) {
+                ArkTSExpression replaced =
+                        replaceVariable(expr, varName, init);
+                if (replaced != null) {
+                    return new ArkTSStatement.ExpressionStatement(replaced);
+                }
+            }
+        }
+        return null;
+    }
+
+    private static boolean isSingleVarRef(ArkTSExpression expr,
+            String varName) {
+        return expr instanceof ArkTSExpression.VariableExpression
+                && varName.equals(
+                        ((ArkTSExpression.VariableExpression) expr).getName());
+    }
+
+    private static boolean isUsedInEarlierStatements(
+            List<ArkTSStatement> stmts, int beforeIndex, String varName) {
+        for (int j = 0; j < beforeIndex; j++) {
+            if (stmtReferencesVariable(stmts.get(j), varName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Replaces all occurrences of a variable with an expression.
+     * Returns null if replacement is not safe for the expression type.
+     */
+    private static ArkTSExpression replaceVariable(ArkTSExpression expr,
+            String varName, ArkTSExpression replacement) {
+        if (expr instanceof ArkTSExpression.VariableExpression) {
+            if (varName.equals(
+                    ((ArkTSExpression.VariableExpression) expr).getName())) {
+                return replacement;
+            }
+            return expr;
+        }
+        if (expr instanceof ArkTSExpression.BinaryExpression) {
+            ArkTSExpression.BinaryExpression bin =
+                    (ArkTSExpression.BinaryExpression) expr;
+            ArkTSExpression left =
+                    replaceVariable(bin.getLeft(), varName, replacement);
+            ArkTSExpression right =
+                    replaceVariable(bin.getRight(), varName, replacement);
+            if (left == null || right == null) {
+                return null;
+            }
+            return new ArkTSExpression.BinaryExpression(
+                    left, bin.getOperator(), right);
+        }
+        if (expr instanceof ArkTSExpression.UnaryExpression) {
+            ArkTSExpression.UnaryExpression un =
+                    (ArkTSExpression.UnaryExpression) expr;
+            ArkTSExpression operand =
+                    replaceVariable(un.getOperand(), varName, replacement);
+            if (operand == null) {
+                return null;
+            }
+            return new ArkTSExpression.UnaryExpression(
+                    un.getOperator(), operand, un.isPrefix());
+        }
+        if (expr instanceof ArkTSExpression.CallExpression) {
+            ArkTSExpression.CallExpression call =
+                    (ArkTSExpression.CallExpression) expr;
+            ArkTSExpression callee =
+                    replaceVariable(call.getCallee(), varName, replacement);
+            if (callee == null) {
+                return null;
+            }
+            List<ArkTSExpression> newArgs = new ArrayList<>();
+            for (ArkTSExpression arg : call.getArguments()) {
+                ArkTSExpression replaced =
+                        replaceVariable(arg, varName, replacement);
+                if (replaced == null) {
+                    return null;
+                }
+                newArgs.add(replaced);
+            }
+            return new ArkTSExpression.CallExpression(callee, newArgs);
+        }
+        if (expr instanceof ArkTSExpression.MemberExpression) {
+            ArkTSExpression.MemberExpression mem =
+                    (ArkTSExpression.MemberExpression) expr;
+            ArkTSExpression obj =
+                    replaceVariable(mem.getObject(), varName, replacement);
+            if (obj == null) {
+                return null;
+            }
+            return new ArkTSExpression.MemberExpression(
+                    obj, mem.getProperty(), mem.isComputed());
+        }
+        if (expr instanceof ArkTSExpression.AssignExpression) {
+            ArkTSExpression.AssignExpression assign =
+                    (ArkTSExpression.AssignExpression) expr;
+            ArkTSExpression target =
+                    replaceVariable(assign.getTarget(), varName, replacement);
+            ArkTSExpression value =
+                    replaceVariable(assign.getValue(), varName, replacement);
+            if (target == null || value == null) {
+                return null;
+            }
+            return new ArkTSExpression.AssignExpression(target, value);
+        }
+        // For unknown expression types, don't attempt replacement
+        return null;
     }
 
     /**
