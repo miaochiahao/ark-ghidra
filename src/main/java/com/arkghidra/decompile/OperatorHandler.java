@@ -1,6 +1,7 @@
 package com.arkghidra.decompile;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Handles operator-related classification and translation for ArkTS
@@ -15,6 +16,93 @@ class OperatorHandler {
     private OperatorHandler() {
         // utility class
     }
+
+    // --- Built-in method return type map ---
+
+    private static final Map<String, String> BUILTIN_METHOD_RETURN_TYPES =
+            Map.ofEntries(
+                    // String methods
+                    Map.entry("charAt", "string"),
+                    Map.entry("charCodeAt", "number"),
+                    Map.entry("concat", "string"),
+                    Map.entry("includes", "boolean"),
+                    Map.entry("endsWith", "boolean"),
+                    Map.entry("indexOf", "number"),
+                    Map.entry("lastIndexOf", "number"),
+                    Map.entry("localeCompare", "number"),
+                    Map.entry("match", "Array"),
+                    Map.entry("padEnd", "string"),
+                    Map.entry("padStart", "string"),
+                    Map.entry("repeat", "string"),
+                    Map.entry("replace", "string"),
+                    Map.entry("replaceAll", "string"),
+                    Map.entry("search", "number"),
+                    Map.entry("slice", "string"),
+                    Map.entry("split", "Array"),
+                    Map.entry("startsWith", "boolean"),
+                    Map.entry("substring", "string"),
+                    Map.entry("toLowerCase", "string"),
+                    Map.entry("toUpperCase", "string"),
+                    Map.entry("trim", "string"),
+                    Map.entry("trimEnd", "string"),
+                    Map.entry("trimStart", "string"),
+                    Map.entry("toString", "string"),
+                    // Array methods
+                    Map.entry("every", "boolean"),
+                    Map.entry("filter", "Array"),
+                    Map.entry("findIndex", "number"),
+                    Map.entry("flat", "Array"),
+                    Map.entry("flatMap", "Array"),
+                    Map.entry("forEach", "void"),
+                    Map.entry("join", "string"),
+                    Map.entry("map", "Array"),
+                    Map.entry("push", "number"),
+                    Map.entry("reduce", "Object"),
+                    Map.entry("reverse", "Array"),
+                    Map.entry("shift", "Object"),
+                    Map.entry("some", "boolean"),
+                    Map.entry("sort", "Array"),
+                    Map.entry("splice", "Array"),
+                    Map.entry("unshift", "number"),
+                    // Math methods (static)
+                    Map.entry("abs", "number"),
+                    Map.entry("ceil", "number"),
+                    Map.entry("floor", "number"),
+                    Map.entry("round", "number"),
+                    Map.entry("max", "number"),
+                    Map.entry("min", "number"),
+                    Map.entry("pow", "number"),
+                    Map.entry("sqrt", "number"),
+                    Map.entry("random", "number"),
+                    Map.entry("trunc", "number"),
+                    Map.entry("sign", "number"),
+                    // Object static methods
+                    Map.entry("keys", "Array"),
+                    Map.entry("values", "Array"),
+                    Map.entry("entries", "Array"),
+                    Map.entry("assign", "Object"),
+                    Map.entry("freeze", "Object"),
+                    // JSON methods
+                    Map.entry("parse", "Object"),
+                    Map.entry("stringify", "string"),
+                    // Map/Set methods
+                    Map.entry("has", "boolean"),
+                    Map.entry("add", "Set"),
+                    Map.entry("delete", "boolean"),
+                    Map.entry("clear", "void"),
+                    // Number methods
+                    Map.entry("toFixed", "string"),
+                    Map.entry("toPrecision", "string"),
+                    // Promise static
+                    Map.entry("all", "Promise"),
+                    Map.entry("race", "Promise"),
+                    Map.entry("allSettled", "Promise"),
+                    Map.entry("resolve", "Promise"),
+                    Map.entry("reject", "Promise"),
+                    // Promise instance
+                    Map.entry("then", "Promise"),
+                    Map.entry("catch", "Promise"),
+                    Map.entry("finally", "Promise"));
 
     // --- Double negation simplification ---
 
@@ -961,6 +1049,20 @@ class OperatorHandler {
                     case "Promise" -> "Promise";
                     default -> null;
                 };
+            }
+            if (callee instanceof ArkTSExpression.MemberExpression) {
+                ArkTSExpression.MemberExpression member =
+                        (ArkTSExpression.MemberExpression) callee;
+                if (!member.isComputed()
+                        && member.getProperty()
+                                instanceof ArkTSExpression
+                                        .LiteralExpression) {
+                    String methodName =
+                            ((ArkTSExpression.LiteralExpression) member
+                                    .getProperty()).getValue();
+                    return BUILTIN_METHOD_RETURN_TYPES
+                            .getOrDefault(methodName, null);
+                }
             }
             return null;
         }
