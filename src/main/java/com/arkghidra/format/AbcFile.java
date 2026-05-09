@@ -256,7 +256,7 @@ public class AbcFile {
                 }
             }
 
-        return new AbcAnnotation(typeIdx, typeName, elements, off);
+            return new AbcAnnotation(typeIdx, typeName, elements, off);
         } catch (Exception | OutOfMemoryError e) {
             return null;
         }

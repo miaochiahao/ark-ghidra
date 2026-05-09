@@ -32,19 +32,27 @@
   <default_proto>
     <prototype name="__arkcall" extrapop="0" stackshift="0">
       <input>
-        <pentry minsize="1" maxsize="500" align="4" extension="inttype">
-          <addr offset="0x100" space="register"/>
+        <pentry minsize="1" maxsize="4" align="4">
+          <register name="v0"/>
+        </pentry>
+        <pentry minsize="1" maxsize="4" align="4">
+          <register name="v1"/>
+        </pentry>
+        <pentry minsize="1" maxsize="4" align="4">
+          <register name="v2"/>
+        </pentry>
+        <pentry minsize="1" maxsize="4" align="4">
+          <register name="v3"/>
         </pentry>
       </input>
       <output>
-        <pentry maxsize="8" minsize="1" extension="inttype">
+        <pentry maxsize="4" minsize="1">
           <register name="acc"/>
         </pentry>
       </output>
       <unaffected>
         <register name="fp"/>
         <register name="sp"/>
-        <varnode space="register" offset="0x1000" size="0x1000"/>
       </unaffected>
     </prototype>
   </default_proto>
