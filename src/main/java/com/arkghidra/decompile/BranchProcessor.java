@@ -290,7 +290,32 @@ class BranchProcessor {
                     ControlFlowReconstructor.ACC);
         }
 
+        int lastOpcode =
+                condBlock.getLastInstruction().getOpcode();
+
+        // --- Optional chaining detection ---
+        // After processing pre-branch instructions, check if acc holds
+        // a MemberExpression and the branch is a null check
+        List<ArkTSStatement> optChainResult =
+                tryProcessOptionalChain(condBlock, pattern, ctx,
+                        lastOpcode, condition, visited);
+        if (optChainResult != null) {
+            stmts.addAll(optChainResult);
+            return stmts;
+        }
+
+        // --- Guard clause detection ---
+        // If the branch block is a simple return, emit as guard clause
         BasicBlock branchBlock = pattern.trueBlock;
+        List<ArkTSStatement> guardResult =
+                tryProcessGuardClause(condBlock, pattern, ctx,
+                        lastOpcode, condition, branchBlock, visited);
+        if (guardResult != null) {
+            stmts.addAll(guardResult);
+            return stmts;
+        }
+
+        // --- Standard if-only processing ---
         visited.add(branchBlock);
 
         List<ArkTSStatement> thenStmts =
@@ -298,8 +323,6 @@ class BranchProcessor {
         ArkTSStatement thenBlock =
                 new ArkTSStatement.BlockStatement(thenStmts);
 
-        int lastOpcode =
-                condBlock.getLastInstruction().getOpcode();
         ArkTSExpression effectiveCondition = condition;
         if (reconstructor.isBranchOnFalse(lastOpcode)) {
             effectiveCondition =
@@ -313,6 +336,125 @@ class BranchProcessor {
         stmts.add(ifStmt);
 
         return stmts;
+    }
+
+    /**
+     * Tries to process an optional chaining pattern in an IF_ONLY block.
+     *
+     * <p>Checks if the branch is a null-check and the accumulator holds
+     * a MemberExpression (from a property load). If so, converts the
+     * if-only into an optional chain expression.
+     *
+     * @return statements with optional chaining, or null if not detected
+     */
+    private List<ArkTSStatement> tryProcessOptionalChain(
+            BasicBlock condBlock,
+            ControlFlowReconstructor.ControlFlowPattern pattern,
+            DecompilationContext ctx, int lastOpcode,
+            ArkTSExpression condition, Set<BasicBlock> visited) {
+
+        if (!isNullCheckBranch(lastOpcode)) {
+            return null;
+        }
+
+        ArkTSExpression accValue = ctx.currentAccValue;
+        if (accValue == null) {
+            return null;
+        }
+
+        if (!(accValue instanceof ArkTSExpression.MemberExpression)) {
+            return null;
+        }
+
+        // Determine which block is the null path vs non-null path
+        BasicBlock nullPathBlock;
+        BasicBlock nonNullPathBlock;
+        if (reconstructor.isBranchOnFalse(lastOpcode)) {
+            nullPathBlock = pattern.trueBlock;
+            nonNullPathBlock = pattern.falseBlock;
+        } else {
+            nullPathBlock = pattern.falseBlock;
+            nonNullPathBlock = pattern.trueBlock;
+        }
+
+        // Verify null path assigns null/undefined
+        if (!isSimpleNullAssignment(nullPathBlock, ctx)) {
+            return null;
+        }
+
+        visited.add(nullPathBlock);
+        visited.add(nonNullPathBlock);
+
+        ArkTSExpression optionalExpr =
+                tryConvertToOptionalChain(accValue);
+
+        // Find target variable from non-null path
+        ArkTSExpression savedAcc = ctx.currentAccValue;
+        ctx.currentAccValue = optionalExpr;
+
+        List<ArkTSStatement> nonNullStmts =
+                reconstructor.processBlockInstructions(
+                        nonNullPathBlock, ctx);
+        String targetVar = findStaTarget(nonNullStmts);
+
+        List<ArkTSStatement> result = new ArrayList<>();
+        if (targetVar != null) {
+            result.add(new ArkTSStatement.VariableDeclaration(
+                    "let", targetVar, null, optionalExpr));
+            for (ArkTSStatement s : nonNullStmts) {
+                if (!(s instanceof ArkTSStatement.VariableDeclaration)) {
+                    result.add(s);
+                }
+            }
+        } else {
+            result.add(new ArkTSStatement.ExpressionStatement(optionalExpr));
+            result.addAll(nonNullStmts);
+        }
+
+        ctx.currentAccValue = savedAcc;
+        return result;
+    }
+
+    /**
+     * Tries to process a guard clause pattern in an IF_ONLY block.
+     *
+     * <p>A guard clause is when the branch block contains only a simple
+     * return statement (early exit). Emits as: if (cond) return value;
+     *
+     * @return guard clause statements, or null if not a guard pattern
+     */
+    private List<ArkTSStatement> tryProcessGuardClause(
+            BasicBlock condBlock,
+            ControlFlowReconstructor.ControlFlowPattern pattern,
+            DecompilationContext ctx, int lastOpcode,
+            ArkTSExpression condition, BasicBlock branchBlock,
+            Set<BasicBlock> visited) {
+
+        if (!isGuardReturnBlock(branchBlock)) {
+            return null;
+        }
+
+        visited.add(branchBlock);
+
+        List<ArkTSStatement> guardStmts =
+                reconstructor.processBlockInstructions(
+                        branchBlock, ctx);
+        ArkTSStatement guardBody =
+                new ArkTSStatement.BlockStatement(guardStmts);
+
+        // Determine effective condition for the guard
+        ArkTSExpression guardCondition;
+        if (reconstructor.isBranchOnFalse(lastOpcode)) {
+            guardCondition = condition;
+        } else {
+            guardCondition =
+                    new ArkTSExpression.UnaryExpression("!", condition, true);
+        }
+
+        List<ArkTSStatement> result = new ArrayList<>();
+        result.add(new ArkTSControlFlow.IfStatement(
+                guardCondition, guardBody, null));
+        return result;
     }
 
     // --- Ternary processing ---
