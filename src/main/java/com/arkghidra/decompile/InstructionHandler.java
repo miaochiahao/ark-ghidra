@@ -620,6 +620,21 @@ class InstructionHandler {
             String accType =
                     OperatorHandler.getAccType(accValue, typeInf);
             typeInf.setRegisterType(varName, accType);
+
+            // Check for compound assignment or increment/decrement
+            ArkTSExpression compoundExpr =
+                    tryCompoundAssignOrUpdate(accValue, varName);
+            if (compoundExpr != null) {
+                if (!declaredVars.contains(varName)
+                        && !(reg < ctx.numArgs)) {
+                    declaredVars.add(varName);
+                }
+                return new StatementResult(
+                        new ArkTSStatement.ExpressionStatement(
+                                compoundExpr),
+                        accValue);
+            }
+
             String typeAnnotation =
                     TypeInference.formatTypeAnnotationForDeclaration(
                             accType, accValue);
@@ -632,6 +647,7 @@ class InstructionHandler {
                                 "let", varName, typeAnnotation, accValue),
                         accValue);
             }
+
             return new StatementResult(
                     new ArkTSStatement.ExpressionStatement(
                             new ArkTSExpression.AssignExpression(
@@ -641,6 +657,99 @@ class InstructionHandler {
                     accValue);
         }
         return null;
+    }
+
+    /**
+     * Checks if the accumulator value represents a compound assignment
+     * or increment/decrement pattern when stored back to the same
+     * register that was the left operand.
+     *
+     * <p>Patterns detected:
+     * <ul>
+     *   <li>{@code v0 + 1} stored to v0 -> {@code v0++}</li>
+     *   <li>{@code v0 - 1} stored to v0 -> {@code v0--}</li>
+     *   <li>{@code v0 + v1} stored to v0 -> {@code v0 += v1}</li>
+     *   <li>{@code v0 * v1} stored to v0 -> {@code v0 *= v1}</li>
+     * </ul>
+     *
+     * @param accValue the accumulator expression
+     * @param targetVarName the target variable name for the store
+     * @return a CompoundAssignExpression, IncrementExpression, or null
+     *         if no compound pattern is detected
+     */
+    private static ArkTSExpression tryCompoundAssignOrUpdate(
+            ArkTSExpression accValue, String targetVarName) {
+        if (!(accValue
+                instanceof ArkTSExpression.BinaryExpression)) {
+            return null;
+        }
+        ArkTSExpression.BinaryExpression binExpr =
+                (ArkTSExpression.BinaryExpression) accValue;
+        ArkTSExpression left = binExpr.getLeft();
+        String op = binExpr.getOperator();
+
+        // Left operand must be a variable matching the target
+        if (!(left instanceof ArkTSExpression.VariableExpression)) {
+            return null;
+        }
+        String leftName =
+                ((ArkTSExpression.VariableExpression) left).getName();
+        if (!leftName.equals(targetVarName)) {
+            return null;
+        }
+
+        // Only arithmetic and bitwise operators have compound forms
+        if (!isCompoundOperator(op)) {
+            return null;
+        }
+
+        // Check for increment/decrement: v0 + 1 -> v0++, v0 - 1 -> v0--
+        if (isLiteralOne(binExpr.getRight())) {
+            boolean isIncrement = "+".equals(op);
+            return new ArkTSExpression.IncrementExpression(
+                    new ArkTSExpression.VariableExpression(targetVarName),
+                    false, isIncrement);
+        }
+
+        // General compound assignment: v0 += v1
+        return new ArkTSExpression.CompoundAssignExpression(
+                new ArkTSExpression.VariableExpression(targetVarName),
+                op + "=",
+                binExpr.getRight());
+    }
+
+    /**
+     * Returns true if the operator supports a compound assignment form.
+     *
+     * @param op the operator string
+     * @return true if compound form exists (e.g. "+" -> "+=")
+     */
+    private static boolean isCompoundOperator(String op) {
+        return "+".equals(op) || "-".equals(op)
+                || "*".equals(op) || "/".equals(op)
+                || "%".equals(op) || "**".equals(op)
+                || "<<".equals(op) || ">>".equals(op)
+                || ">>>".equals(op) || "&".equals(op)
+                || "|".equals(op) || "^".equals(op);
+    }
+
+    /**
+     * Returns true if the expression is a literal numeric 1.
+     *
+     * @param expr the expression to check
+     * @return true if it is the literal value 1
+     */
+    private static boolean isLiteralOne(ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.LiteralExpression)) {
+            return false;
+        }
+        ArkTSExpression.LiteralExpression lit =
+                (ArkTSExpression.LiteralExpression) expr;
+        if (lit.getKind()
+                != ArkTSExpression.LiteralExpression.LiteralKind.NUMBER) {
+            return false;
+        }
+        return "1".equals(lit.getValue());
     }
 
     /**

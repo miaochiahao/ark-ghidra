@@ -129,7 +129,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("v0 - v1"));
+        assertTrue(result.contains("v0 -= v1"));
     }
 
     @Test
@@ -11357,4 +11357,256 @@ class ArkTSDecompilerTest {
      * Tests the comprehensive 2-class ABC fixture through the full
      * decompileFile pipeline.
      */
+
+    // =========================================================================
+    // Compound assignment and increment/decrement tests (issue #75)
+    // =========================================================================
+
+    @Test
+    void testCompoundAssignment_add() {
+        // ldai 10; sta v0; lda v0; add2 0, v1; sta v0 -> v0 += v1
+        byte[] code = concat(
+            bytes(0x62), le32(10),   // ldai 10
+            bytes(0x61, 0x00),       // sta v0 (declares v0)
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x0A, 0x00, 0x01), // add2 0, v1
+            bytes(0x61, 0x00)        // sta v0 (already declared -> compound)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0 += v1"),
+                "Expected compound add assignment, got: " + result);
+        assertFalse(result.contains("v0 = v0 + v1"),
+                "Should not have verbose form: " + result);
+    }
+
+    @Test
+    void testCompoundAssignment_subtract() {
+        // ldai 10; sta v0; lda v0; sub2 0, v1; sta v0 -> v0 -= v1
+        byte[] code = concat(
+            bytes(0x62), le32(10),   // ldai 10
+            bytes(0x61, 0x00),       // sta v0 (declares v0)
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x0B, 0x00, 0x01), // sub2 0, v1
+            bytes(0x61, 0x00)        // sta v0
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0 -= v1"),
+                "Expected compound subtract assignment, got: " + result);
+    }
+
+    @Test
+    void testCompoundAssignment_multiply() {
+        // ldai 10; sta v0; lda v0; mul2 0, v1; sta v0 -> v0 *= v1
+        byte[] code = concat(
+            bytes(0x62), le32(10),   // ldai 10
+            bytes(0x61, 0x00),       // sta v0 (declares v0)
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x0C, 0x00, 0x01), // mul2 0, v1
+            bytes(0x61, 0x00)        // sta v0
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0 *= v1"),
+                "Expected compound multiply assignment, got: " + result);
+    }
+
+    @Test
+    void testCompoundAssignment_divide() {
+        // ldai 10; sta v0; lda v0; div2 0, v1; sta v0 -> v0 /= v1
+        byte[] code = concat(
+            bytes(0x62), le32(10),   // ldai 10
+            bytes(0x61, 0x00),       // sta v0 (declares v0)
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x0D, 0x00, 0x01), // div2 0, v1
+            bytes(0x61, 0x00)        // sta v0
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0 /= v1"),
+                "Expected compound divide assignment, got: " + result);
+    }
+
+    @Test
+    void testCompoundAssignment_modulo() {
+        // ldai 10; sta v0; lda v0; mod2 0, v1; sta v0 -> v0 %= v1
+        byte[] code = concat(
+            bytes(0x62), le32(10),   // ldai 10
+            bytes(0x61, 0x00),       // sta v0 (declares v0)
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x0E, 0x00, 0x01), // mod2 0, v1
+            bytes(0x61, 0x00)        // sta v0
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0 %= v1"),
+                "Expected compound modulo assignment, got: " + result);
+    }
+
+    @Test
+    void testCompoundAssignment_bitwiseAnd() {
+        // ldai 10; sta v0; lda v0; and2 0, v1; sta v0 -> v0 &= v1
+        byte[] code = concat(
+            bytes(0x62), le32(10),   // ldai 10
+            bytes(0x61, 0x00),       // sta v0 (declares v0)
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x18, 0x00, 0x01), // and2 0, v1
+            bytes(0x61, 0x00)        // sta v0
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0 &= v1"),
+                "Expected compound bitwise AND assignment, got: " + result);
+    }
+
+    @Test
+    void testCompoundAssignment_shiftLeft() {
+        // ldai 10; sta v0; lda v0; shl2 0, v1; sta v0 -> v0 <<= v1
+        byte[] code = concat(
+            bytes(0x62), le32(10),   // ldai 10
+            bytes(0x61, 0x00),       // sta v0 (declares v0)
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x15, 0x00, 0x01), // shl2 0, v1
+            bytes(0x61, 0x00)        // sta v0
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0 <<= v1"),
+                "Expected compound shift left assignment, got: " + result);
+    }
+
+    @Test
+    void testCompoundAssignment_noMatch_differentRegister() {
+        // lda v0; add2 0, v1; sta v2 -> let v2 = v0 + v1 (no compound)
+        byte[] code = concat(
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x0A, 0x00, 0x01), // add2 0, v1
+            bytes(0x61, 0x02)        // sta v2 (different register)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0 + v1"),
+                "Should have regular binary expression, got: " + result);
+        assertFalse(result.contains("+= "),
+                "Should not have compound assignment: " + result);
+    }
+
+    @Test
+    void testIncrement_post() {
+        // ldai 10; sta v0; lda v0; inc 0; sta v0 -> v0++
+        byte[] code = concat(
+            bytes(0x62), le32(10),   // ldai 10
+            bytes(0x61, 0x00),       // sta v0 (declares v0)
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x21, 0x00),       // inc 0
+            bytes(0x61, 0x00)        // sta v0
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0++"),
+                "Expected post-increment, got: " + result);
+        assertFalse(result.contains("v0 += 1"),
+                "Should not have compound form for increment: " + result);
+    }
+
+    @Test
+    void testDecrement_post() {
+        // ldai 10; sta v0; lda v0; dec 0; sta v0 -> v0--
+        byte[] code = concat(
+            bytes(0x62), le32(10),   // ldai 10
+            bytes(0x61, 0x00),       // sta v0 (declares v0)
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x22, 0x00),       // dec 0
+            bytes(0x61, 0x00)        // sta v0
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0--"),
+                "Expected post-decrement, got: " + result);
+        assertFalse(result.contains("v0 -= 1"),
+                "Should not have compound form for decrement: " + result);
+    }
+
+    @Test
+    void testIncrement_toDifferentRegister_staysBinary() {
+        // lda v0; inc 0; sta v1 -> let v1 = v0 + 1 (not increment)
+        byte[] code = concat(
+            bytes(0x60, 0x00),   // lda v0
+            bytes(0x21, 0x00),   // inc 0
+            bytes(0x61, 0x01)    // sta v1 (different register)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0 + 1"),
+                "Should have binary expression when target differs, got: "
+                        + result);
+        assertFalse(result.contains("++"),
+                "Should not have increment when target differs: " + result);
+    }
+
+    @Test
+    void testCompoundAssignExpression_toArkTS() {
+        ArkTSExpression target =
+                new ArkTSExpression.VariableExpression("count");
+        ArkTSExpression value =
+                new ArkTSExpression.LiteralExpression("5",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSExpression.CompoundAssignExpression expr =
+                new ArkTSExpression.CompoundAssignExpression(
+                        target, "+=", value);
+        assertEquals("count += 5", expr.toArkTS());
+    }
+
+    @Test
+    void testIncrementExpression_toArkTS_postfix() {
+        ArkTSExpression target =
+                new ArkTSExpression.VariableExpression("x");
+        ArkTSExpression.IncrementExpression expr =
+                new ArkTSExpression.IncrementExpression(target, false, true);
+        assertEquals("x++", expr.toArkTS());
+    }
+
+    @Test
+    void testIncrementExpression_toArkTS_prefix() {
+        ArkTSExpression target =
+                new ArkTSExpression.VariableExpression("y");
+        ArkTSExpression.IncrementExpression expr =
+                new ArkTSExpression.IncrementExpression(target, true, true);
+        assertEquals("++y", expr.toArkTS());
+    }
+
+    @Test
+    void testDecrementExpression_toArkTS_postfix() {
+        ArkTSExpression target =
+                new ArkTSExpression.VariableExpression("z");
+        ArkTSExpression.IncrementExpression expr =
+                new ArkTSExpression.IncrementExpression(target, false, false);
+        assertEquals("z--", expr.toArkTS());
+    }
+
+    @Test
+    void testDecrementExpression_toArkTS_prefix() {
+        ArkTSExpression target =
+                new ArkTSExpression.VariableExpression("w");
+        ArkTSExpression.IncrementExpression expr =
+                new ArkTSExpression.IncrementExpression(target, true, false);
+        assertEquals("--w", expr.toArkTS());
+    }
+
+    @Test
+    void testCompoundAssignment_noMatch_comparisonOp() {
+        // Comparison operators should not produce compound assignments
+        // lda v0; less 0, v1; sta v0 -> v0 = v0 < v1 (no compound)
+        byte[] code = concat(
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x11, 0x00, 0x01), // less 0, v1
+            bytes(0x61, 0x00)        // sta v0
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0 < v1"),
+                "Comparison should remain as regular assignment, got: "
+                        + result);
+    }
 }

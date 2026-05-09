@@ -22,6 +22,107 @@ class LoopProcessor {
         this.reconstructor = reconstructor;
     }
 
+    // --- Do-while detection ---
+
+    /**
+     * Detects a do-while loop pattern where a body block flows into a
+     * condition block that conditionally jumps back to the body start.
+     *
+     * <p>CFG pattern:
+     * <pre>
+     * [body] -&gt; [condition] -&gt; (true)  -&gt; [body]  (backward edge)
+     *                     -&gt; (false) -&gt; [exit]
+     * </pre>
+     *
+     * <p>This is called from {@link ControlFlowReconstructor#detectPattern}
+     * when a 2-successor block has a back edge to an earlier block that is
+     * NOT the condition block itself (which would be a while loop).
+     *
+     * @param condBlock the block containing the conditional branch
+     * @param trueBranch the true-successor of the conditional branch
+     * @param falseBranch the false-successor of the conditional branch
+     * @param cfg the control flow graph
+     * @return the pattern if a do-while is detected, or null
+     */
+    ControlFlowReconstructor.ControlFlowPattern detectDoWhilePattern(
+            BasicBlock condBlock, BasicBlock trueBranch,
+            BasicBlock falseBranch, ControlFlowGraph cfg) {
+
+        ArkInstruction lastInsn = condBlock.getLastInstruction();
+        if (lastInsn == null) {
+            return null;
+        }
+
+        int opcode = lastInsn.getOpcode();
+        if (!ArkOpcodesCompat.isConditionalBranch(opcode)) {
+            return null;
+        }
+
+        // A do-while: the condition jumps backward to the body start.
+        // The body block is the one the condition jumps back to.
+        // In a while loop, the condition jumps backward to itself.
+        // In a do-while, the condition jumps backward to a DIFFERENT block
+        // (the body) that comes before the condition.
+
+        int jumpTarget = ControlFlowGraph.getJumpTargetPublic(lastInsn);
+
+        // The jump must go backward (to a block before the condition block)
+        if (jumpTarget >= condBlock.getStartOffset()) {
+            return null;
+        }
+
+        // The target block (body) must exist
+        BasicBlock bodyBlock = cfg.getBlockAt(jumpTarget);
+        if (bodyBlock == null) {
+            return null;
+        }
+
+        // The body block must flow into the condition block (directly or
+        // through a chain of blocks that eventually reaches the condition)
+        boolean bodyReachesCondition = false;
+
+        // Check direct edge from body to condition
+        for (CFGEdge edge : bodyBlock.getSuccessors()) {
+            if (edge.getToOffset() == condBlock.getStartOffset()) {
+                bodyReachesCondition = true;
+                break;
+            }
+        }
+
+        // Check indirect: body -> ... -> condition (1 hop)
+        if (!bodyReachesCondition) {
+            for (CFGEdge edge : bodyBlock.getSuccessors()) {
+                BasicBlock intermediate = cfg.getBlockAt(
+                        edge.getToOffset());
+                if (intermediate != null
+                        && intermediate != bodyBlock) {
+                    for (CFGEdge edge2 :
+                            intermediate.getSuccessors()) {
+                        if (edge2.getToOffset()
+                                == condBlock.getStartOffset()) {
+                            bodyReachesCondition = true;
+                            break;
+                        }
+                    }
+                }
+                if (bodyReachesCondition) {
+                    break;
+                }
+            }
+        }
+
+        if (!bodyReachesCondition) {
+            return null;
+        }
+
+        ControlFlowReconstructor.ControlFlowPattern p =
+                new ControlFlowReconstructor.ControlFlowPattern(
+                        ControlFlowReconstructor.PatternType.DO_WHILE);
+        p.conditionBlock = condBlock;
+        p.trueBlock = bodyBlock;
+        return p;
+    }
+
     // --- For-of detection ---
 
     ControlFlowReconstructor.ControlFlowPattern detectForOfPattern(
