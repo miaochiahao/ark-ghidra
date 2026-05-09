@@ -536,7 +536,7 @@ public class ArkTSPropertyExpressions {
 
         @Override
         public String toArkTS() {
-            return "(" + left.toArkTS() + " ?? " + right.toArkTS() + ")";
+            return left.toArkTS() + " ?? " + right.toArkTS();
         }
     }
 

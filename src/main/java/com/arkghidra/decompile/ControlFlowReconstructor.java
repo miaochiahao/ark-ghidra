@@ -304,9 +304,9 @@ class ControlFlowReconstructor {
 
         if (successors.size() == 2) {
             BasicBlock trueBranch = getSuccessorByType(successors,
-                    EdgeType.CONDITIONAL_TRUE);
+                    EdgeType.CONDITIONAL_TRUE, cfg);
             BasicBlock falseBranch = getSuccessorByType(successors,
-                    EdgeType.CONDITIONAL_FALSE);
+                    EdgeType.CONDITIONAL_FALSE, cfg);
 
             if (trueBranch == null || falseBranch == null) {
                 trueBranch = cfg.getBlockAt(
@@ -642,10 +642,10 @@ class ControlFlowReconstructor {
     // --- Helpers ---
 
     private BasicBlock getSuccessorByType(List<CFGEdge> edges,
-            EdgeType type) {
+            EdgeType type, ControlFlowGraph cfg) {
         for (CFGEdge edge : edges) {
             if (edge.getType() == type) {
-                return null;
+                return cfg.getBlockAt(edge.getToOffset());
             }
         }
         return null;

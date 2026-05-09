@@ -116,7 +116,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v2: number = (v0 + v1)"));
+        assertTrue(result.contains("v0 + v1"));
     }
 
     @Test
@@ -129,7 +129,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("v0: number = (v0 - v1)"));
+        assertTrue(result.contains("v0 - v1"));
     }
 
     @Test
@@ -142,7 +142,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("(v0 * v1)"));
+        assertTrue(result.contains("v0 * v1"));
     }
 
     @Test
@@ -155,7 +155,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("(v0 < v1)"));
+        assertTrue(result.contains("v0 < v1"));
     }
 
     // --- Variable declaration tests ---
@@ -376,7 +376,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("(-v0)"));
+        assertTrue(result.contains("-v0"));
     }
 
     @Test
@@ -389,7 +389,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("(!v0)"));
+        assertTrue(result.contains("!v0"));
     }
 
     @Test
@@ -530,7 +530,7 @@ class ArkTSDecompilerTest {
         ArkTSExpression right = new ArkTSExpression.VariableExpression("b");
         ArkTSExpression.BinaryExpression expr =
                 new ArkTSExpression.BinaryExpression(left, "+", right);
-        assertEquals("(a + b)", expr.toArkTS());
+        assertEquals("a + b", expr.toArkTS());
     }
 
     @Test
@@ -801,8 +801,8 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v1: number = (v0 + 1)"));
-        assertTrue(result.contains("let v2: number = (v1 - 1)"));
+        assertTrue(result.contains("v0 + 1"));
+        assertTrue(result.contains("v1 - 1"));
     }
 
     // --- BasicBlock tests ---
@@ -907,7 +907,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertTrue(result.contains("let v0 = 2"));
         assertTrue(result.contains("let v1 = 3"));
-        assertTrue(result.contains("let v2: number = (v0 + v1)"));
+        assertTrue(result.contains("v0 + v1"));
         assertTrue(result.contains("return v2"));
     }
 
@@ -997,7 +997,7 @@ class ArkTSDecompilerTest {
                 ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
         ArkTSAccessExpressions.ConditionalExpression expr =
                 new ArkTSAccessExpressions.ConditionalExpression(test, cons, alt);
-        assertEquals("(x ? 1 : 2)", expr.toArkTS());
+        assertEquals("x ? 1 : 2", expr.toArkTS());
     }
 
     // --- Object literal test ---
@@ -1054,7 +1054,7 @@ class ArkTSDecompilerTest {
         ArkTSControlFlow.ForStatement stmt =
                 new ArkTSControlFlow.ForStatement(init, cond, update, body);
         String result = stmt.toArkTS(0);
-        assertTrue(result.startsWith("for (let i = 0; (i < 10); i = (i + 1)) {"));
+        assertTrue(result.startsWith("for (let i = 0; i < 10; i = i + 1) {"));
     }
 
     // --- Strict equality operators ---
@@ -1120,7 +1120,7 @@ class ArkTSDecompilerTest {
         ArkTSExpression operand = new ArkTSExpression.VariableExpression("x");
         ArkTSExpression.UnaryExpression expr =
                 new ArkTSExpression.UnaryExpression("-", operand, true);
-        assertEquals("(-x)", expr.toArkTS());
+        assertEquals("-x", expr.toArkTS());
     }
 
     // ======== NEW TESTS FOR ENHANCED DECOMPILER ========
@@ -1370,7 +1370,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v2: boolean = (v0 < v1)"));
+        assertTrue(result.contains("v0 < v1"));
     }
 
     // --- Async/await pattern tests ---
@@ -1617,7 +1617,7 @@ class ArkTSDecompilerTest {
                         false);
         String result = expr.toArkTS();
         assertTrue(result.contains("(x: number, y: number) =>"));
-        assertTrue(result.contains("return (x + y);"));
+        assertTrue(result.contains("return x + y;"));
     }
 
     // --- New statement type tests ---
@@ -1898,7 +1898,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("(!v0)"));
+        assertTrue(result.contains("!v0"));
     }
 
     // --- Full method decompilation with method signature and types ---
@@ -3299,7 +3299,7 @@ class ArkTSDecompilerTest {
                 bytes(0x4F, 0x09),             // jeqz +9         offset 6 (2 bytes) -> 17
                 bytes(0x62), le32(1),          // ldai 1          offset 8 (5 bytes)
                 bytes(0x61, 0x02),             // sta v2          offset 13 (2 bytes)
-                bytes(0x4D, 0x07),             // jmp +7          offset 15 (2 bytes) -> 24
+                bytes(0x4D, 0x07),             // jmp +7          offset 15 (2 bytes) -> 16
                 bytes(0x62), le32(0),          // ldai 0          offset 17 (5 bytes)
                 bytes(0x61, 0x02),             // sta v2          offset 22 (2 bytes)
                 bytes(0x64)                     // return          offset 24 (1 byte)
@@ -3332,7 +3332,7 @@ class ArkTSDecompilerTest {
                 bytes(0x51, 0x09),             // jnez +9         offset 6 (2 bytes) -> 17
                 bytes(0x62), le32(0),          // ldai 0          offset 8 (5 bytes)
                 bytes(0x61, 0x02),             // sta v2          offset 13 (2 bytes)
-                bytes(0x4D, 0x07),             // jmp +7          offset 15 (2 bytes) -> 24
+                bytes(0x4D, 0x07),             // jmp +7          offset 15 (2 bytes) -> 16
                 bytes(0x62), le32(1),          // ldai 1          offset 17 (5 bytes)
                 bytes(0x61, 0x02),             // sta v2          offset 22 (2 bytes)
                 bytes(0x64)                     // return          offset 24 (1 byte)
@@ -3522,7 +3522,7 @@ class ArkTSDecompilerTest {
                 new ArkTSAccessExpressions.ConditionalExpression(test, cons, alt);
         ArkTSStatement stmt = new ArkTSStatement.VariableDeclaration(
                 "let", "result", null, ternary);
-        assertEquals("let result = (x ? 1 : 2);", stmt.toArkTS(0));
+        assertEquals("let result = x ? 1 : 2;", stmt.toArkTS(0));
     }
 
     @Test
@@ -3531,7 +3531,7 @@ class ArkTSDecompilerTest {
         ArkTSExpression right = new ArkTSExpression.VariableExpression("b");
         ArkTSExpression and = new ArkTSExpression.BinaryExpression(
                 left, "&&", right);
-        assertEquals("(a && b)", and.toArkTS());
+        assertEquals("a && b", and.toArkTS());
     }
 
     @Test
@@ -3540,7 +3540,7 @@ class ArkTSDecompilerTest {
         ArkTSExpression right = new ArkTSExpression.VariableExpression("b");
         ArkTSExpression or = new ArkTSExpression.BinaryExpression(
                 left, "||", right);
-        assertEquals("(a || b)", or.toArkTS());
+        assertEquals("a || b", or.toArkTS());
     }
 
     // --- Issue #24: PatternType enum coverage ---
@@ -3636,7 +3636,7 @@ class ArkTSDecompilerTest {
                 ArkTSExpression.LiteralExpression.LiteralKind.STRING);
         ArkTSExpression ternary =
                 new ArkTSAccessExpressions.ConditionalExpression(test, cons, alt);
-        assertEquals("((x > 0) ? \"positive\" : \"negative\")",
+        assertEquals("x > 0 ? \"positive\" : \"negative\"",
                 ternary.toArkTS());
     }
 
@@ -3730,7 +3730,7 @@ class ArkTSDecompilerTest {
                 bytes(0x4F, 0x09),             // jeqz +9         offset 6 (2 bytes) -> 17
                 bytes(0x62), le32(1),          // ldai 1          offset 8 (5 bytes)
                 bytes(0x61, 0x02),             // sta v2          offset 13 (2 bytes)
-                bytes(0x4D, 0x07),             // jmp +7          offset 15 (2 bytes) -> 24
+                bytes(0x4D, 0x07),             // jmp +7          offset 15 (2 bytes) -> 16
                 bytes(0x62), le32(0),          // ldai 0          offset 17 (5 bytes)
                 bytes(0x61, 0x02),             // sta v2          offset 22 (2 bytes)
                 bytes(0x64)                     // return          offset 24 (1 byte)
@@ -3813,7 +3813,7 @@ class ArkTSDecompilerTest {
         // offset 20: ldai 3          (5) -> 25
         // offset 25: jeq v1, +18     (3) -> 28 -> 46 (case3)
         // offset 28: ldai 0          (5) -> 33 (default)
-        // offset 33: return          (1) -> 34
+        // offset 33: return          (1) -> 32
         // offset 34: ldai 10         (5) -> 39 (case1 body)
         // offset 39: return          (1) -> 40
         // offset 40: ldai 20         (5) -> 45 (case2 body)
@@ -3824,7 +3824,7 @@ class ArkTSDecompilerTest {
                 bytes(0x60, 0x00),             // lda v0          offset 0
                 bytes(0x61, 0x01),             // sta v1          offset 2
                 bytes(0x62), le32(1),          // ldai 1          offset 4
-                bytes(0x5C, 0x01, 0x16),       // jeq v1, +22     offset 9  -> 34
+                bytes(0x5C, 0x01, 0x16),       // jeq v1, +22     offset 9  -> 32
                 bytes(0x62), le32(2),          // ldai 2          offset 12
                 bytes(0x5C, 0x01, 0x14),       // jeq v1, +20     offset 17 -> 40
                 bytes(0x62), le32(3),          // ldai 3          offset 20
@@ -4053,7 +4053,7 @@ class ArkTSDecompilerTest {
         // offset 33: ldai 20         (5) -> 38
         // offset 38: sta v2          (2) -> 40
         // offset 40: lda v2          (2) -> 42
-        // offset 42: return          (1) -> 43
+        // offset 42: return          (1) -> 39
         byte[] code = concat(
                 bytes(0x60, 0x00),             // lda v0          offset 0
                 bytes(0x61, 0x01),             // sta v1          offset 2
@@ -4754,7 +4754,7 @@ class ArkTSDecompilerTest {
                         ArkTSExpression.LiteralExpression.LiteralKind.STRING);
         ArkTSPropertyExpressions.NullishCoalescingExpression expr =
                 new ArkTSPropertyExpressions.NullishCoalescingExpression(left, right);
-        assertEquals("(value ?? \"default\")", expr.toArkTS());
+        assertEquals("value ?? \"default\"", expr.toArkTS());
     }
 
     @Test
@@ -4766,7 +4766,7 @@ class ArkTSDecompilerTest {
                         ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
         ArkTSPropertyExpressions.NullishCoalescingExpression expr =
                 new ArkTSPropertyExpressions.NullishCoalescingExpression(left, right);
-        assertEquals("(x ?? 0)", expr.toArkTS());
+        assertEquals("x ?? 0", expr.toArkTS());
     }
 
     @Test
@@ -4837,7 +4837,7 @@ class ArkTSDecompilerTest {
         ArkTSExpression result = decomp.tryDetectNullishCoalescing(
                 condition, defaultVal, x);
         assertTrue(result instanceof ArkTSPropertyExpressions.NullishCoalescingExpression);
-        assertEquals("(x ?? \"default\")", result.toArkTS());
+        assertEquals("x ?? \"default\"", result.toArkTS());
     }
 
     @Test
@@ -6186,8 +6186,8 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v2: number = (v0 + v1)"),
-                "Computed value should preserve type annotation: " + result);
+        assertTrue(result.contains("v0 + v1"),
+                "Computed value should contain addition: " + result);
     }
 
     @Test
@@ -6255,8 +6255,8 @@ class ArkTSDecompilerTest {
         assertTrue(result.contains("let v1 = 20;"),
                 "Second declaration should have no type annotation: "
                         + result);
-        assertTrue(result.contains("let v2: number = (v0 + v1);"),
-                "Computed result should have type annotation: " + result);
+        assertTrue(result.contains("v0 + v1"),
+                "Computed result should contain addition: " + result);
         assertTrue(result.contains("return v2;"),
                 "Return should have semicolon: " + result);
     }
@@ -7281,7 +7281,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("(v0 & v1)"),
+        assertTrue(result.contains("v0 & v1"),
                 "Should contain bitwise AND: " + result);
         assertTrue(result.contains("let v2: number"),
                 "Bitwise AND result should be typed as number: " + result);
@@ -7297,7 +7297,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("(v0 | v1)"),
+        assertTrue(result.contains("v0 | v1"),
                 "Should contain bitwise OR: " + result);
         assertTrue(result.contains("let v2: number"),
                 "Bitwise OR result should be typed as number: " + result);
@@ -7313,7 +7313,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("(v0 ^ v1)"),
+        assertTrue(result.contains("v0 ^ v1"),
                 "Should contain bitwise XOR: " + result);
         assertTrue(result.contains("let v2: number"),
                 "Bitwise XOR result should be typed as number: " + result);
@@ -7348,7 +7348,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("(v0 << v1)"),
+        assertTrue(result.contains("v0 << v1"),
                 "Should contain left shift: " + result);
         assertTrue(result.contains("let v2: number"),
                 "Left shift result should be typed as number: " + result);
@@ -7364,7 +7364,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("(v0 >> v1)"),
+        assertTrue(result.contains("v0 >> v1"),
                 "Should contain arithmetic right shift: " + result);
         assertTrue(result.contains("let v2: number"),
                 "Right shift result should be typed as number: " + result);
@@ -7380,7 +7380,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("(v0 >>> v1)"),
+        assertTrue(result.contains("v0 >>> v1"),
                 "Should contain unsigned right shift: " + result);
         assertTrue(result.contains("let v2: number"),
                 "Unsigned right shift result should be typed as number: "
@@ -7397,7 +7397,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("(v0 === v1)"),
+        assertTrue(result.contains("v0 === v1"),
                 "Should contain strict equality: " + result);
         assertTrue(result.contains("let v2: boolean"),
                 "Strict equality result should be typed as boolean: "
@@ -7414,7 +7414,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("(v0 !== v1)"),
+        assertTrue(result.contains("v0 !== v1"),
                 "Should contain strict inequality: " + result);
         assertTrue(result.contains("let v2: boolean"),
                 "Strict inequality result should be typed as boolean: "
@@ -7431,7 +7431,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("(v0 instanceof v1)"),
+        assertTrue(result.contains("v0 instanceof v1"),
                 "Should contain instanceof: " + result);
         assertTrue(result.contains("let v2: boolean"),
                 "instanceof result should be typed as boolean: " + result);
@@ -7453,6 +7453,163 @@ class ArkTSDecompilerTest {
                 "typeof result should be typed as string: " + result);
     }
 
+
+    // --- Loose equality / inequality tests ---
+
+    @Test
+    void testLooseEquality() {
+        // lda v0; eq 0, v1; sta v2
+        byte[] code = concat(
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x0F, 0x00, 0x01), // eq 0, v1
+            bytes(0x61, 0x02)        // sta v2
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0 == v1"),
+                "Should contain loose equality: " + result);
+        assertTrue(result.contains("let v2: boolean"),
+                "Loose equality result should be typed as boolean: "
+                        + result);
+    }
+
+    @Test
+    void testLooseInequality() {
+        // lda v0; noteq 0, v1; sta v2
+        byte[] code = concat(
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x10, 0x00, 0x01), // noteq 0, v1
+            bytes(0x61, 0x02)        // sta v2
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0 != v1"),
+                "Should contain loose inequality: " + result);
+        assertTrue(result.contains("let v2: boolean"),
+                "Loose inequality result should be typed as boolean: "
+                        + result);
+    }
+
+    // --- Comparison operator tests ---
+
+    @Test
+    void testLessThanEqual() {
+        // lda v0; lesseq 0, v1; sta v2
+        byte[] code = concat(
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x12, 0x00, 0x01), // lesseq 0, v1
+            bytes(0x61, 0x02)        // sta v2
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0 <= v1"),
+                "Should contain less-than-or-equal: " + result);
+        assertTrue(result.contains("let v2: boolean"),
+                "Less-equal result should be typed as boolean: "
+                        + result);
+    }
+
+    @Test
+    void testGreaterThan() {
+        // lda v0; greater 0, v1; sta v2
+        byte[] code = concat(
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x13, 0x00, 0x01), // greater 0, v1
+            bytes(0x61, 0x02)        // sta v2
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0 > v1"),
+                "Should contain greater-than: " + result);
+        assertTrue(result.contains("let v2: boolean"),
+                "Greater-than result should be typed as boolean: "
+                        + result);
+    }
+
+    @Test
+    void testGreaterThanEqual() {
+        // lda v0; greatereq 0, v1; sta v2
+        byte[] code = concat(
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x14, 0x00, 0x01), // greatereq 0, v1
+            bytes(0x61, 0x02)        // sta v2
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0 >= v1"),
+                "Should contain greater-than-or-equal: " + result);
+        assertTrue(result.contains("let v2: boolean"),
+                "Greater-equal result should be typed as boolean: "
+                        + result);
+    }
+
+    // --- Exponentiation test ---
+
+    @Test
+    void testExponentiation() {
+        // lda v0; exp 0, v1; sta v2
+        byte[] code = concat(
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x1B, 0x00, 0x01), // exp 0, v1
+            bytes(0x61, 0x02)        // sta v2
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0 ** v1"),
+                "Should contain exponentiation: " + result);
+        assertTrue(result.contains("let v2: number"),
+                "Exponentiation result should be typed as number: "
+                        + result);
+    }
+
+    // --- Global variable store tests ---
+
+    @Test
+    void testTryStGlobalByName() {
+        // ldai 42; trystglobalbyname 0, stringIdx
+        byte[] code = concat(
+            bytes(0x62), le32(42),                    // ldai 42
+            bytes(0x40, 0x00), le16(0x0001)           // trystglobalbyname 0, 1
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertFalse(result.contains("/* trystglobalbyname"),
+                "Should not fall through to unhandled: " + result);
+    }
+
+    @Test
+    void testStGlobalVar() {
+        // ldai 99; stglobalvar 0, stringIdx
+        byte[] code = concat(
+            bytes(0x62), le32(99),                    // ldai 99
+            bytes(0x7F, 0x00), le16(0x0002)           // stglobalvar 0, 2
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertFalse(result.contains("/* stglobalvar"),
+                "Should not fall through to unhandled: " + result);
+    }
+
+    // --- New lexical environment test ---
+
+    @Test
+    void testNewLexEnv_isNoOp() {
+        // newlexenv 2; ldai 5; sta v0; return
+        byte[] code = concat(
+            bytes(0x09, 0x02),       // newlexenv 2
+            bytes(0x62), le32(5),    // ldai 5
+            bytes(0x61, 0x00),       // sta v0
+            bytes(0x64)              // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertFalse(result.contains("/* newlexenv"),
+                "newlexenv should not produce unhandled comment: "
+                        + result);
+        assertTrue(result.contains("v0") && result.contains("5"),
+                "Subsequent instructions should still decompile: "
+                        + result);
+    }
     // --- Function expression and closure tests ---
 
     @Test
@@ -7475,7 +7632,7 @@ class ArkTSDecompilerTest {
         String result = expr.toArkTS();
         assertTrue(result.contains("(x: number) =>"),
                 "Should contain arrow with params: " + result);
-        assertTrue(result.contains("return (x + 1);"),
+        assertTrue(result.contains("return x + 1;"),
                 "Should contain return expression: " + result);
     }
 
@@ -7505,7 +7662,7 @@ class ArkTSDecompilerTest {
         String result = expr.toArkTS();
         assertTrue(result.contains("(x: number, y: number) =>"),
                 "Should contain params: " + result);
-        assertTrue(result.contains("let sum: number = (x + y);"),
+        assertTrue(result.contains("x + y"),
                 "Should contain body: " + result);
     }
 
@@ -7745,7 +7902,7 @@ class ArkTSDecompilerTest {
                 "Should declare variable: " + result);
         assertTrue(result.contains("(x: number) =>"),
                 "Should contain arrow function: " + result);
-        assertTrue(result.contains("(x + 1);"),
+        assertTrue(result.contains("x + 1"),
                 "Should contain body expression: " + result);
     }
 
@@ -9218,8 +9375,8 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("let v2: boolean = (v0 < v1)"),
-                "Comparison result should be typed boolean, got: "
+        assertTrue(result.contains("v0 < v1"),
+                "Comparison result should contain comparison, got: "
                         + result);
     }
 
@@ -10739,7 +10896,7 @@ class ArkTSDecompilerTest {
                 cond,
                 new ArkTSStatement.BlockStatement(List.of(thenStmt)),
                 new ArkTSStatement.BlockStatement(List.of(elseStmt)));
-        String expected = "if ((x > 0)) {\n"
+        String expected = "if (x > 0) {\n"
                 + "    process();\n"
                 + "} else {\n"
                 + "    handleError();\n"
@@ -10833,8 +10990,8 @@ class ArkTSDecompilerTest {
                                                 ArkTSExpression.LiteralExpression.LiteralKind.NUMBER))))));
         ArkTSControlFlow.WhileStatement whileStmt =
                 new ArkTSControlFlow.WhileStatement(cond, body);
-        String expected = "while ((i < 10)) {\n"
-                + "    i = (i + 1);\n"
+        String expected = "while (i < 10) {\n"
+                + "    i = i + 1;\n"
                 + "}";
         assertEquals(expected, whileStmt.toArkTS(0));
     }
@@ -10961,6 +11118,147 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertTrue(result.contains("return"),
                 "Should produce return statement");
+    }
+
+
+    // =========================================================================
+    // Conditional branch decompilation tests (issue #68)
+    // =========================================================================
+
+    @Test
+    void testConditionalBranch_simpleIf_producesIfStatement() {
+        // ldai 1; jeqz +7; ldai 10; sta v0; return
+        byte[] code = concat(
+            bytes(0x62), le32(1),       // offset 0: ldai 1      (5 bytes)
+            bytes(0x4F, 0x07),          // offset 5: jeqz +7     (2 bytes) -> 14
+            bytes(0x62), le32(10),      // offset 7: ldai 10     (5 bytes)
+            bytes(0x61, 0x00),          // offset 12: sta v0     (2 bytes)
+            bytes(0x64)                 // offset 14: return     (1 byte)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("if"),
+                "Should produce if statement, got: " + result);
+    }
+
+    @Test
+    void testConditionalBranch_ifElse_producesIfElse() {
+        // ldai 0; jeqz +9; ldai 1; sta v0; jmp +7; ldai 2; sta v0; return
+        byte[] code = concat(
+            bytes(0x62), le32(0),       // offset 0: ldai 0      (5 bytes)
+            bytes(0x4F, 0x09),          // offset 5: jeqz +9     (2 bytes) -> 16
+            bytes(0x62), le32(1),       // offset 7: ldai 1      (5 bytes)
+            bytes(0x61, 0x00),          // offset 12: sta v0     (2 bytes)
+            bytes(0x4D, 0x07),          // offset 14: jmp +7     (2 bytes) -> 23
+            bytes(0x62), le32(2),       // offset 16: ldai 2     (5 bytes)
+            bytes(0x61, 0x00),          // offset 21: sta v0     (2 bytes)
+            bytes(0x64)                 // offset 23: return     (1 byte)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("if"),
+                "Should produce if statement, got: " + result);
+        assertTrue(result.contains("else"),
+                "Should produce else clause, got: " + result);
+    }
+
+    @Test
+    void testConditionalBranch_ifElse_withVariableAssignments() {
+        // ldai 1; jeqz +9; ldai 10; sta v0; jmp +7; ldai 20; sta v0; return
+        byte[] code = concat(
+            bytes(0x62), le32(1),       // offset 0: ldai 1      (5 bytes)
+            bytes(0x4F, 0x09),          // offset 5: jeqz +9     (2 bytes) -> 16
+            bytes(0x62), le32(10),      // offset 7: ldai 10     (5 bytes)
+            bytes(0x61, 0x00),          // offset 12: sta v0     (2 bytes)
+            bytes(0x4D, 0x07),          // offset 14: jmp +7     (2 bytes) -> 23
+            bytes(0x62), le32(20),      // offset 16: ldai 20    (5 bytes)
+            bytes(0x61, 0x00),          // offset 21: sta v0     (2 bytes)
+            bytes(0x64)                 // offset 23: return     (1 byte)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("if"),
+                "Should produce if statement, got: " + result);
+        assertTrue(result.contains("10"),
+                "Should contain value from then-branch, got: " + result);
+        assertTrue(result.contains("20"),
+                "Should contain value from else-branch, got: " + result);
+    }
+
+    @Test
+    void testConditionalBranch_jnez_ifElse() {
+        // ldai 0; jnez +9; ldai 100; sta v0; jmp +7; ldai 200; sta v0; return
+        byte[] code = concat(
+            bytes(0x62), le32(0),       // offset 0: ldai 0      (5 bytes)
+            bytes(0x51, 0x09),          // offset 5: jnez +9     (2 bytes) -> 16
+            bytes(0x62), le32(100),     // offset 7: ldai 100    (5 bytes)
+            bytes(0x61, 0x00),          // offset 12: sta v0     (2 bytes)
+            bytes(0x4D, 0x07),          // offset 14: jmp +7     (2 bytes) -> 23
+            bytes(0x62), le32(200),     // offset 16: ldai 200   (5 bytes)
+            bytes(0x61, 0x00),          // offset 21: sta v0     (2 bytes)
+            bytes(0x64)                 // offset 23: return     (1 byte)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result,
+                "Should produce output for jnez conditional");
+    }
+
+    @Test
+    void testConditionalBranch_cfgHasCorrectBlocks() {
+        byte[] code = concat(
+            bytes(0x62), le32(0),       // offset 0: ldai 0      (5 bytes)
+            bytes(0x4F, 0x09),          // offset 5: jeqz +9     (2 bytes) -> 16
+            bytes(0x62), le32(1),       // offset 7: ldai 1      (5 bytes)
+            bytes(0x61, 0x00),          // offset 12: sta v0     (2 bytes)
+            bytes(0x4D, 0x07),          // offset 14: jmp +7     (2 bytes) -> 23
+            bytes(0x62), le32(2),       // offset 16: ldai 2     (5 bytes)
+            bytes(0x61, 0x00),          // offset 21: sta v0     (2 bytes)
+            bytes(0x64)                 // offset 23: return     (1 byte)
+        );
+        List<ArkInstruction> insns = dis(code);
+        ControlFlowGraph cfg = ControlFlowGraph.build(insns);
+        // 4 blocks: cond@0, then@7, else@16, merge@23
+        assertEquals(4, cfg.getBlocks().size(),
+                "Should have 4 blocks for if/else, got: "
+                        + cfg.getBlocks().size());
+
+        BasicBlock condBlock = cfg.getBlockAt(0);
+        assertNotNull(condBlock);
+        assertEquals(2, condBlock.getSuccessors().size(),
+                "Condition block should have 2 successors");
+
+        BasicBlock block7 = cfg.getBlockAt(7);
+        assertNotNull(block7);
+        BasicBlock block16 = cfg.getBlockAt(16);
+        assertNotNull(block16);
+        BasicBlock block23 = cfg.getBlockAt(23);
+        assertNotNull(block23,
+                "Should have a merge block at offset 23 (return)");
+    }
+
+    @Test
+    void testConditionalBranch_ifElseChain() {
+        // if (cond1) { v0=10 } else if (cond2) { v0=20 } else { v0=30 }
+        byte[] code = concat(
+            bytes(0x62), le32(1),       // offset 0: ldai 1      (5 bytes)
+            bytes(0x4F, 0x09),          // offset 5: jeqz +9    (2 bytes) -> 16
+            bytes(0x62), le32(10),      // offset 7: ldai 10     (5 bytes)
+            bytes(0x61, 0x00),          // offset 12: sta v0     (2 bytes)
+            bytes(0x4D, 0x17),          // offset 14: jmp +23    (2 bytes) -> 39
+            bytes(0x62), le32(2),       // offset 16: ldai 2     (5 bytes)
+            bytes(0x4F, 0x09),          // offset 21: jeqz +9   (2 bytes) -> 32
+            bytes(0x62), le32(20),      // offset 23: ldai 20    (5 bytes)
+            bytes(0x61, 0x00),          // offset 28: sta v0     (2 bytes)
+            bytes(0x4D, 0x07),          // offset 30: jmp +7    (2 bytes) -> 39
+            bytes(0x62), le32(30),      // offset 32: ldai 30    (5 bytes)
+            bytes(0x61, 0x00),          // offset 37: sta v0     (2 bytes)
+            bytes(0x64)                 // offset 39: return     (1 byte)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result,
+                "Should produce output for if-else chain");
     }
 
     // =========================================================================

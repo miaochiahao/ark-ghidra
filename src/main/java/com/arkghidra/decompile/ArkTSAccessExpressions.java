@@ -416,7 +416,7 @@ public class ArkTSAccessExpressions {
 
         @Override
         public String toArkTS() {
-            return String.format(java.util.Locale.ROOT, "(%s ? %s : %s)",
+            return String.format(java.util.Locale.ROOT, "%s ? %s : %s",
                     test.toArkTS(), consequent.toArkTS(),
                     alternate.toArkTS());
         }

@@ -37,6 +37,8 @@ class InstructionHandler {
      * Result of processing a single instruction.
      */
     static class StatementResult {
+        static final StatementResult NO_OP = new StatementResult(null, null);
+
         ArkTSStatement statement;
         ArkTSExpression newAccValue;
 
@@ -149,7 +151,7 @@ class InstructionHandler {
         // --- Async function enter ---
         if (opcode == ArkOpcodesCompat.ASYNCFUNCTIONENTER) {
             ctx.isAsync = true;
-            return null;
+            return StatementResult.NO_OP;
         }
 
         // --- Generator operations ---
@@ -1040,7 +1042,7 @@ class InstructionHandler {
             // callinit takes a V8 register for the object being
             // initialized. This is typically a no-op in ArkTS output
             // since constructor initialization is implicit.
-            return null;
+            return StatementResult.NO_OP;
         }
 
         // --- definefieldbyvalue: obj[key] = acc (field definition) ---
@@ -1152,7 +1154,7 @@ class InstructionHandler {
 
         // --- newsendableenv: create sendable lexical environment ---
         if (subOpcode == ArkOpcodesCompat.CRT_NEWSENDABLEENV) {
-            return null;
+            return StatementResult.NO_OP;
         }
 
         // --- definesendableclass: define a sendable class ---

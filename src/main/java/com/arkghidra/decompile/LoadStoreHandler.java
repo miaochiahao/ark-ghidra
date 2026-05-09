@@ -85,6 +85,25 @@ class LoadStoreHandler {
                     new ArkTSExpression.VariableExpression(globalName));
         }
 
+        // --- Global name store (trystglobalbyname / stglobalvar) ---
+        if (opcode == ArkOpcodesCompat.TRYSTGLOBALBYNAME
+                || opcode == ArkOpcodesCompat.STGLOBALVAR) {
+            int stringIdx = operands.size() >= 2
+                    ? (int) operands.get(1).getValue()
+                    : (int) operands.get(0).getValue();
+            String globalName = ctx.resolveString(stringIdx);
+            ArkTSExpression value = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            return new InstructionHandler.StatementResult(
+                    new ArkTSStatement.ExpressionStatement(
+                            new ArkTSExpression.AssignExpression(
+                                    new ArkTSExpression.VariableExpression(
+                                            globalName),
+                                    value)),
+                    value);
+        }
+
         // --- Module variable access ---
         if (opcode == ArkOpcodesCompat.LDEXTERNALMODULEVAR) {
             int varIdx = (int) operands.get(0).getValue();
@@ -263,10 +282,13 @@ class LoadStoreHandler {
 
         // --- Lexical environment ---
         if (opcode == ArkOpcodesCompat.POPLEXENV) {
-            return null;
+            return InstructionHandler.StatementResult.NO_OP;
+        }
+        if (opcode == ArkOpcodesCompat.NEWLEXENV) {
+            return InstructionHandler.StatementResult.NO_OP;
         }
         if (opcode == ArkOpcodesCompat.NEWLEXENVWITHNAME) {
-            return null;
+            return InstructionHandler.StatementResult.NO_OP;
         }
 
         // --- Argument handling ---

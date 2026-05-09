@@ -85,6 +85,9 @@ public abstract class ArkTSExpression {
                     case '"':
                         sb.append("\\\"");
                         break;
+                    case '\'':
+                        sb.append("'");
+                        break;
                     case '\n':
                         sb.append("\\n");
                         break;
@@ -94,8 +97,21 @@ public abstract class ArkTSExpression {
                     case '\t':
                         sb.append("\\t");
                         break;
+                    case '\b':
+                        sb.append("\\b");
+                        break;
+                    case '\f':
+                        sb.append("\\f");
+                        break;
+                    case '\0':
+                        sb.append("\\0");
+                        break;
                     default:
-                        sb.append(c);
+                        if (c < ' ') {
+                            sb.append(String.format("\\x%02x", (int) c));
+                        } else {
+                            sb.append(c);
+                        }
                         break;
                 }
             }
@@ -168,8 +184,60 @@ public abstract class ArkTSExpression {
 
         @Override
         public String toArkTS() {
-            return "(" + left.toArkTS() + " " + operator + " "
-                    + right.toArkTS() + ")";
+            int prec = operatorPrecedence(operator);
+            String leftStr = left.toArkTS();
+            String rightStr = right.toArkTS();
+            boolean leftParens = needsParensLeft(left, prec);
+            boolean rightParens = needsParensRight(right, prec);
+            StringBuilder sb = new StringBuilder();
+            if (leftParens) {
+                sb.append("(").append(leftStr).append(")");
+            } else {
+                sb.append(leftStr);
+            }
+            sb.append(" ").append(operator).append(" ");
+            if (rightParens) {
+                sb.append("(").append(rightStr).append(")");
+            } else {
+                sb.append(rightStr);
+            }
+            return sb.toString();
+        }
+
+        private static boolean needsParensLeft(ArkTSExpression expr,
+                int parentPrec) {
+            if (!(expr instanceof BinaryExpression)) {
+                return false;
+            }
+            return operatorPrecedence(
+                    ((BinaryExpression) expr).operator) < parentPrec;
+        }
+
+        private static boolean needsParensRight(ArkTSExpression expr,
+                int parentPrec) {
+            if (!(expr instanceof BinaryExpression)) {
+                return false;
+            }
+            int childPrec = operatorPrecedence(
+                    ((BinaryExpression) expr).operator);
+            return childPrec < parentPrec;
+        }
+
+        private static int operatorPrecedence(String op) {
+            return switch (op) {
+                case "||", "??", "&&" -> 1;
+                case "==", "!=", "===",
+                        "!==", "<", ">", "<=", ">=",
+                        "in", "instanceof" -> 2;
+                case "+", "-" -> 3;
+                case "*", "/", "%" -> 4;
+                case "**" -> 5;
+                case "<<", ">>", ">>>" -> 6;
+                case "&" -> 7;
+                case "^" -> 8;
+                case "|" -> 9;
+                default -> 0;
+            };
         }
     }
 
@@ -212,15 +280,19 @@ public abstract class ArkTSExpression {
         @Override
         public String toArkTS() {
             if (prefix) {
-                // Word operators like typeof need a space
                 if (operator.equals("typeof") || operator.equals("void")
                         || operator.equals("delete")
                         || operator.equals("await")) {
                     return operator + " " + operand.toArkTS();
                 }
-                return "(" + operator + operand.toArkTS() + ")";
+                boolean needParens = operand instanceof BinaryExpression;
+                String inner = operand.toArkTS();
+                if (needParens) {
+                    return operator + "(" + inner + ")";
+                }
+                return operator + inner;
             }
-            return "(" + operand.toArkTS() + operator + ")";
+            return operand.toArkTS() + operator;
         }
     }
 

@@ -201,16 +201,23 @@ public class AbcTestFixture {
 
     /**
      * Builds the bytecode for a conditional branch (if/else) method:
-     * ldai 0, jeqz +8, ldai 1, jmp +4, ldai 2, return
+     * <pre>
+     *   offset  0: ldai 0       (5 bytes)
+     *   offset  5: jeqz +7      (2 bytes) -&gt; target 14
+     *   offset  7: ldai 1       (5 bytes)
+     *   offset 12: jmp +5       (2 bytes) -&gt; target 19
+     *   offset 14: ldai 2       (5 bytes)
+     *   offset 19: return       (1 byte)
+     * </pre>
      *
      * @return bytecode bytes
      */
     public static byte[] conditionalBranchMethodCode() {
         return concat(
             new byte[] {0x62}, le32(0),     // ldai 0
-            new byte[] {0x4F, 0x08},        // jeqz +8 (skip to ldai 2)
+            new byte[] {0x4F, 0x07},        // jeqz +7 (target = offset 14)
             new byte[] {0x62}, le32(1),     // ldai 1
-            new byte[] {0x4D, 0x04},        // jmp +4 (skip to return)
+            new byte[] {0x4D, 0x05},        // jmp +5 (target = offset 19)
             new byte[] {0x62}, le32(2),     // ldai 2
             new byte[] {0x64}               // return
         );

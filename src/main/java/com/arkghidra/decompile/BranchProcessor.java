@@ -215,6 +215,22 @@ class BranchProcessor {
                     ControlFlowReconstructor.ACC);
         }
 
+        // For "branch on false" opcodes (jeqz, etc.), the trueBranch
+        // edge is taken when the condition is falsy. In that case the
+        // then-block is the falseBranch (fall-through) and the
+        // else-block is the trueBranch (jump target).
+        int lastOpcode =
+                condBlock.getLastInstruction().getOpcode();
+        BasicBlock thenBlock;
+        BasicBlock elseBlock;
+        if (reconstructor.isBranchOnFalse(lastOpcode)) {
+            thenBlock = pattern.falseBlock;
+            elseBlock = pattern.trueBlock;
+        } else {
+            thenBlock = pattern.trueBlock;
+            elseBlock = pattern.falseBlock;
+        }
+
         visited.add(pattern.trueBlock);
         visited.add(pattern.falseBlock);
         if (pattern.mergeBlock != null) {
@@ -223,20 +239,28 @@ class BranchProcessor {
 
         List<ArkTSStatement> thenStmts =
                 reconstructor.processBlockInstructions(
-                        pattern.trueBlock, ctx);
-        ArkTSStatement thenBlock =
+                        thenBlock, ctx);
+        ArkTSStatement thenStmt =
                 new ArkTSStatement.BlockStatement(thenStmts);
 
         List<ArkTSStatement> elseStmts =
                 reconstructor.processBlockInstructions(
-                        pattern.falseBlock, ctx);
-        ArkTSStatement elseBlock =
+                        elseBlock, ctx);
+        ArkTSStatement elseStmt =
                 new ArkTSStatement.BlockStatement(elseStmts);
 
         ArkTSControlFlow.IfStatement ifStmt =
-                new ArkTSControlFlow.IfStatement(condition, thenBlock,
-                        elseBlock);
+                new ArkTSControlFlow.IfStatement(condition, thenStmt,
+                        elseStmt);
         stmts.add(ifStmt);
+
+        // Process the merge block (code after both branches converge)
+        if (pattern.mergeBlock != null) {
+            List<ArkTSStatement> mergeStmts =
+                    reconstructor.processBlockInstructions(
+                            pattern.mergeBlock, ctx);
+            stmts.addAll(mergeStmts);
+        }
 
         return stmts;
     }
