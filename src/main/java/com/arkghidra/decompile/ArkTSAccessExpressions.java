@@ -461,6 +461,97 @@ public class ArkTSAccessExpressions {
         }
     }
 
+    // --- Switch expression ---
+
+    /**
+     * A switch expression: switch (x) { case 1: "one" case 2: "two" default: "other" }.
+     *
+     * <p>ArkTS supports switch expressions where each case body is an
+     * expression rather than a statement list.
+     */
+    public static class SwitchExpression extends ArkTSExpression {
+        private final ArkTSExpression discriminant;
+        private final List<SwitchExprCase> cases;
+        private final ArkTSExpression defaultValue;
+
+        /**
+         * A single case in a switch expression.
+         */
+        public static class SwitchExprCase {
+            private final List<ArkTSExpression> tests;
+            private final ArkTSExpression value;
+
+            public SwitchExprCase(ArkTSExpression test,
+                    ArkTSExpression value) {
+                this.tests = Collections.singletonList(test);
+                this.value = value;
+            }
+
+            public SwitchExprCase(List<ArkTSExpression> tests,
+                    ArkTSExpression value) {
+                this.tests = Collections.unmodifiableList(
+                        new ArrayList<>(tests));
+                this.value = value;
+            }
+
+            public List<ArkTSExpression> getTests() {
+                return tests;
+            }
+
+            public ArkTSExpression getValue() {
+                return value;
+            }
+        }
+
+        /**
+         * Constructs a switch expression.
+         *
+         * @param discriminant the expression being switched on
+         * @param cases the case clauses
+         * @param defaultValue the default value expression (may be null)
+         */
+        public SwitchExpression(ArkTSExpression discriminant,
+                List<SwitchExprCase> cases,
+                ArkTSExpression defaultValue) {
+            this.discriminant = discriminant;
+            this.cases = Collections.unmodifiableList(
+                    new ArrayList<>(cases));
+            this.defaultValue = defaultValue;
+        }
+
+        public ArkTSExpression getDiscriminant() {
+            return discriminant;
+        }
+
+        public List<SwitchExprCase> getCases() {
+            return cases;
+        }
+
+        public ArkTSExpression getDefaultValue() {
+            return defaultValue;
+        }
+
+        @Override
+        public String toArkTS() {
+            StringBuilder sb = new StringBuilder();
+            sb.append("switch (").append(discriminant.toArkTS())
+                    .append(") {");
+            for (SwitchExprCase c : cases) {
+                for (ArkTSExpression test : c.tests) {
+                    sb.append(" case ").append(test.toArkTS())
+                            .append(": ");
+                }
+                sb.append(c.value.toArkTS());
+            }
+            if (defaultValue != null) {
+                sb.append(" default: ")
+                        .append(defaultValue.toArkTS());
+            }
+            sb.append(" }");
+            return sb.toString();
+        }
+    }
+
     // --- Template literal ---
 
     /**

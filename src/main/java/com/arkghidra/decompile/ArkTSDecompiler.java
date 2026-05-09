@@ -171,9 +171,10 @@ public class ArkTSDecompiler {
                         startTimeNs);
             }
 
-            bodyStmts = mergeNestedIfConditions(
-                    ExpressionVisitor.inlineSingleUseVariables(
-                            applyConstOptimization(bodyStmts)));
+            bodyStmts = detectSwitchExpressions(
+                    mergeNestedIfConditions(
+                            ExpressionVisitor.inlineSingleUseVariables(
+                                    applyConstOptimization(bodyStmts))));
         } catch (Exception e) {
             List<ArkTSStatement> fallbackStmts = new ArrayList<>();
             fallbackStmts.add(new ArkTSStatement.ExpressionStatement(
@@ -225,6 +226,7 @@ public class ArkTSDecompiler {
             stmts = applyConstOptimization(stmts);
             stmts = ExpressionVisitor.inlineSingleUseVariables(stmts);
             stmts = mergeNestedIfConditions(stmts);
+            stmts = detectSwitchExpressions(stmts);
         } catch (Exception e) {
             return buildFallbackInstructionListing(instructions,
                     "statement generation failed: " + e);
@@ -464,9 +466,10 @@ public class ArkTSDecompiler {
                 return buildTimeoutBody(startTimeNs);
             }
 
-            return mergeNestedIfConditions(
-                    ExpressionVisitor.inlineSingleUseVariables(
-                            applyConstOptimization(stmts)));
+            return detectSwitchExpressions(
+                    mergeNestedIfConditions(
+                            ExpressionVisitor.inlineSingleUseVariables(
+                                    applyConstOptimization(stmts))));
         } catch (Exception e) {
             ctx.warnings.add("Statement generation failed: "
                     + e.getMessage());
@@ -520,6 +523,151 @@ public class ArkTSDecompiler {
 
 
     // --- Const vs let optimization ---
+
+    // --- Switch expression detection ---
+
+    /**
+     * Detects switch-in-assignment patterns and converts them to
+     * switch expressions.
+     *
+     * <p>Pattern: variable declaration without initializer followed
+     * by a switch statement where every case assigns the same variable.
+     * Transforms to:
+     * <pre>
+     * let result = switch (x) {
+     *   case 1: "one"
+     *   case 2: "two"
+     *   default: "other"
+     * }
+     * </pre>
+     *
+     * @param stmts the statement list to transform
+     * @return the transformed list
+     */
+    static List<ArkTSStatement> detectSwitchExpressions(
+            List<ArkTSStatement> stmts) {
+        if (stmts == null || stmts.size() < 2) {
+            return stmts;
+        }
+        for (int i = 0; i < stmts.size() - 1; i++) {
+            ArkTSStatement cur = stmts.get(i);
+            ArkTSStatement next = stmts.get(i + 1);
+
+            String varName = extractUninitVarDecl(cur);
+            if (varName == null) {
+                continue;
+            }
+            if (!(next instanceof ArkTSControlFlow.SwitchStatement)) {
+                continue;
+            }
+
+            ArkTSControlFlow.SwitchStatement switchStmt =
+                    (ArkTSControlFlow.SwitchStatement) next;
+            ArkTSAccessExpressions.SwitchExpression switchExpr =
+                    tryConvertToSwitchExpression(switchStmt, varName);
+            if (switchExpr != null) {
+                // Replace: var declaration gets switch expression as
+                // initializer, switch statement is removed
+                ArkTSStatement newDecl =
+                        new ArkTSStatement.VariableDeclaration(
+                                "let", varName, null, switchExpr);
+                List<ArkTSStatement> result =
+                        new ArrayList<>(stmts);
+                result.set(i, newDecl);
+                result.remove(i + 1);
+                return result;
+            }
+        }
+        return stmts;
+    }
+
+    private static String extractUninitVarDecl(ArkTSStatement stmt) {
+        if (!(stmt instanceof ArkTSStatement.VariableDeclaration)) {
+            return null;
+        }
+        ArkTSStatement.VariableDeclaration decl =
+                (ArkTSStatement.VariableDeclaration) stmt;
+        if (decl.getInitializer() != null) {
+            return null;
+        }
+        return decl.getName();
+    }
+
+    private static ArkTSAccessExpressions.SwitchExpression
+            tryConvertToSwitchExpression(
+                    ArkTSControlFlow.SwitchStatement switchStmt,
+                    String targetVar) {
+        List<ArkTSAccessExpressions.SwitchExpression.SwitchExprCase>
+                exprCases = new ArrayList<>();
+        ArkTSExpression defaultExpr = null;
+
+        for (ArkTSControlFlow.SwitchStatement.SwitchCase caze
+                : switchStmt.getCases()) {
+            ArkTSExpression caseValue =
+                    extractSingleAssignment(caze.getBody(), targetVar);
+            if (caseValue == null) {
+                return null;
+            }
+            exprCases.add(
+                    new ArkTSAccessExpressions.SwitchExpression
+                            .SwitchExprCase(caze.getTests(), caseValue));
+        }
+
+        if (switchStmt.getDefaultBlock() != null) {
+            List<ArkTSStatement> defaultBody =
+                    extractBodyList(switchStmt.getDefaultBlock());
+            defaultExpr = extractSingleAssignment(defaultBody, targetVar);
+            if (defaultExpr == null) {
+                return null;
+            }
+        }
+
+        return new ArkTSAccessExpressions.SwitchExpression(
+                switchStmt.getDiscriminant(), exprCases, defaultExpr);
+    }
+
+    /**
+     * Extracts the assigned value when the body is a single assignment
+     * to targetVar followed by optional break.
+     */
+    private static ArkTSExpression extractSingleAssignment(
+            List<ArkTSStatement> body, String targetVar) {
+        if (body == null || body.isEmpty()) {
+            return null;
+        }
+        // Filter out break statements
+        List<ArkTSStatement> nonBreak = new ArrayList<>();
+        for (ArkTSStatement s : body) {
+            if (!(s instanceof ArkTSStatement.BreakStatement)) {
+                nonBreak.add(s);
+            }
+        }
+        if (nonBreak.size() != 1) {
+            return null;
+        }
+        ArkTSStatement stmt = nonBreak.get(0);
+        if (!(stmt instanceof ArkTSStatement.ExpressionStatement)) {
+            return null;
+        }
+        ArkTSExpression expr =
+                ((ArkTSStatement.ExpressionStatement) stmt)
+                        .getExpression();
+        if (!(expr instanceof ArkTSExpression.AssignExpression)) {
+            return null;
+        }
+        ArkTSExpression.AssignExpression assign =
+                (ArkTSExpression.AssignExpression) expr;
+        if (!(assign.getTarget()
+                instanceof ArkTSExpression.VariableExpression)) {
+            return null;
+        }
+        String name = ((ArkTSExpression.VariableExpression) assign
+                .getTarget()).getName();
+        if (!name.equals(targetVar)) {
+            return null;
+        }
+        return assign.getValue();
+    }
 
     // --- Nested if-condition merging ---
 
