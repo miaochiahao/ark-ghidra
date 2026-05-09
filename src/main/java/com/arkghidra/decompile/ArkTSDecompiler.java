@@ -171,11 +171,12 @@ public class ArkTSDecompiler {
                         startTimeNs);
             }
 
-            bodyStmts = simplifyReturnIfTernary(
+            bodyStmts = convertIfElseChainToSwitch(
+                            simplifyReturnIfTernary(
                                     detectSwitchExpressions(
                                             mergeNestedIfConditions(
                                                     ExpressionVisitor.inlineSingleUseVariables(
-                                                            applyConstOptimization(bodyStmts)))));
+                                                            applyConstOptimization(bodyStmts))))));
         } catch (Exception e) {
             List<ArkTSStatement> fallbackStmts = new ArrayList<>();
             fallbackStmts.add(new ArkTSStatement.ExpressionStatement(
@@ -229,6 +230,7 @@ public class ArkTSDecompiler {
             stmts = mergeNestedIfConditions(stmts);
             stmts = detectSwitchExpressions(stmts);
             stmts = simplifyReturnIfTernary(stmts);
+            stmts = convertIfElseChainToSwitch(stmts);
             // stmts = removeUnusedVariables(stmts); // TODO: enable
         } catch (Exception e) {
             return buildFallbackInstructionListing(instructions,
@@ -469,11 +471,12 @@ public class ArkTSDecompiler {
                 return buildTimeoutBody(startTimeNs);
             }
 
-            return simplifyReturnIfTernary(
+            return convertIfElseChainToSwitch(
+                    simplifyReturnIfTernary(
                             detectSwitchExpressions(
                                     mergeNestedIfConditions(
                                             ExpressionVisitor.inlineSingleUseVariables(
-                                                    applyConstOptimization(stmts)))));
+                                                    applyConstOptimization(stmts))))));
         } catch (Exception e) {
             ctx.warnings.add("Statement generation failed: "
                     + e.getMessage());
@@ -717,6 +720,167 @@ public class ArkTSDecompiler {
         return body.get(0) instanceof ArkTSStatement.ThrowStatement
                 ? (ArkTSStatement.ThrowStatement) body.get(0)
                 : null;
+    }
+
+    // --- If-else chain to switch conversion ---
+
+    /**
+     * Converts consecutive if/else-if chains that compare the same variable
+     * against different constants into switch statements.
+     *
+     * <p>Transforms:
+     * <pre>
+     * if (x === 1) { ... } else if (x === 2) { ... } else { ... }
+     * </pre>
+     * Into:
+     * <pre>
+     * switch (x) { case 1: ... case 2: ... default: ... }
+     * </pre>
+     */
+    static List<ArkTSStatement> convertIfElseChainToSwitch(
+            List<ArkTSStatement> stmts) {
+        if (stmts == null || stmts.isEmpty()) {
+            return stmts;
+        }
+        List<ArkTSStatement> result = new ArrayList<>(stmts.size());
+        for (ArkTSStatement stmt : stmts) {
+            result.add(tryConvertIfElseChain(stmt));
+        }
+        return result;
+    }
+
+    private static ArkTSStatement tryConvertIfElseChain(
+            ArkTSStatement stmt) {
+        if (!(stmt instanceof ArkTSControlFlow.IfStatement)) {
+            return stmt;
+        }
+        ArkTSControlFlow.IfStatement ifStmt =
+                (ArkTSControlFlow.IfStatement) stmt;
+
+        // Collect chain: list of (condition, thenBlock) + optional default
+        List<ChainEntry> chain = new ArrayList<>();
+        ArkTSStatement defaultBlock = collectIfElseChain(ifStmt, chain);
+
+        // Need at least 3 branches to convert
+        if (chain.size() < 3) {
+            return stmt;
+        }
+
+        // Check if all conditions compare same variable with ===
+        String discriminantVar = null;
+        List<ArkTSControlFlow.SwitchStatement.SwitchCase> cases =
+                new ArrayList<>();
+        for (ChainEntry entry : chain) {
+            String[] match = extractStrictEqComparison(entry.condition);
+            if (match == null) {
+                return stmt; // not a strict equality comparison
+            }
+            String varName = match[0];
+            String constVal = match[1];
+            if (discriminantVar == null) {
+                discriminantVar = varName;
+            } else if (!discriminantVar.equals(varName)) {
+                return stmt; // different variables
+            }
+            ArkTSExpression testExpr =
+                    new ArkTSExpression.LiteralExpression(constVal,
+                            ArkTSExpression.LiteralExpression
+                                    .LiteralKind.NUMBER);
+            List<ArkTSStatement> body = extractBodyListOrSingleton(
+                    entry.thenBlock);
+            cases.add(new ArkTSControlFlow.SwitchStatement.SwitchCase(
+                    testExpr, body));
+        }
+
+        if (discriminantVar == null) {
+            return stmt;
+        }
+
+        ArkTSExpression discriminant =
+                new ArkTSExpression.VariableExpression(discriminantVar);
+        return new ArkTSControlFlow.SwitchStatement(
+                discriminant, cases, defaultBlock);
+    }
+
+    private static ArkTSStatement collectIfElseChain(
+            ArkTSControlFlow.IfStatement ifStmt,
+            List<ChainEntry> chain) {
+        chain.add(new ChainEntry(ifStmt.getCondition(),
+                ifStmt.getThenBlock()));
+        if (ifStmt.getElseBlock() == null) {
+            return null;
+        }
+        if (ifStmt.getElseBlock()
+                instanceof ArkTSControlFlow.IfStatement) {
+            return collectIfElseChain(
+                    (ArkTSControlFlow.IfStatement)
+                            ifStmt.getElseBlock(),
+                    chain);
+        }
+        return ifStmt.getElseBlock();
+    }
+
+    /**
+     * Extracts variable name and constant value from a strict equality
+     * comparison (x === const or const === x). Returns null if not
+     * a strict equality with a constant on one side.
+     */
+    private static String[] extractStrictEqComparison(
+            ArkTSExpression condition) {
+        if (!(condition instanceof ArkTSExpression.BinaryExpression)) {
+            return null;
+        }
+        ArkTSExpression.BinaryExpression bin =
+                (ArkTSExpression.BinaryExpression) condition;
+        if (!"===".equals(bin.getOperator())) {
+            return null;
+        }
+        // Check left is variable, right is constant
+        String leftVar = tryGetVariableName(bin.getLeft());
+        String rightConst = tryGetConstantValue(bin.getRight());
+        if (leftVar != null && rightConst != null) {
+            return new String[]{leftVar, rightConst};
+        }
+        // Check right is variable, left is constant
+        String rightVar = tryGetVariableName(bin.getRight());
+        String leftConst = tryGetConstantValue(bin.getLeft());
+        if (rightVar != null && leftConst != null) {
+            return new String[]{rightVar, leftConst};
+        }
+        return null;
+    }
+
+    private static String tryGetVariableName(ArkTSExpression expr) {
+        if (expr instanceof ArkTSExpression.VariableExpression) {
+            return ((ArkTSExpression.VariableExpression) expr).getName();
+        }
+        return null;
+    }
+
+    private static String tryGetConstantValue(ArkTSExpression expr) {
+        if (expr instanceof ArkTSExpression.LiteralExpression) {
+            return ((ArkTSExpression.LiteralExpression) expr).getValue();
+        }
+        return null;
+    }
+
+    private static List<ArkTSStatement> extractBodyListOrSingleton(
+            ArkTSStatement block) {
+        List<ArkTSStatement> body = extractBodyList(block);
+        if (body != null) {
+            return body;
+        }
+        return Collections.singletonList(block);
+    }
+
+    private static class ChainEntry {
+        final ArkTSExpression condition;
+        final ArkTSStatement thenBlock;
+
+        ChainEntry(ArkTSExpression condition, ArkTSStatement thenBlock) {
+            this.condition = condition;
+            this.thenBlock = thenBlock;
+        }
     }
 
     // --- Unused variable removal ---
