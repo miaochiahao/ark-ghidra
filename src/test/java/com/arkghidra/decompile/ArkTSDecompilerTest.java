@@ -12225,4 +12225,48 @@ class ArkTSDecompilerTest {
                 "Should have exactly one finally block, got: "
                         + outerResult);
     }
+
+    @Test
+    void testClassMethodDeclaration_override() {
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.LiteralExpression("42",
+                                ArkTSExpression.LiteralExpression.LiteralKind
+                                        .NUMBER))));
+        ArkTSDeclarations.ClassMethodDeclaration method =
+                new ArkTSDeclarations.ClassMethodDeclaration("getValue",
+                        Collections.emptyList(), "number", body,
+                        false, "public", false, true, false);
+        String result = method.toArkTS(0);
+        assertTrue(result.contains("public override"),
+                "Expected 'public override' in: " + result);
+        assertTrue(result.contains("getValue()"),
+                "Expected 'getValue()' in: " + result);
+    }
+
+    @Test
+    void testClassMethodDeclaration_abstractWithModifier() {
+        ArkTSDeclarations.ClassMethodDeclaration method =
+                new ArkTSDeclarations.ClassMethodDeclaration("process",
+                        Collections.emptyList(), "void",
+                        new ArkTSStatement.BlockStatement(Collections.emptyList()),
+                        false, "protected", false, false, true);
+        String result = method.toArkTS(0);
+        assertEquals("abstract protected process(): void;",
+                result, "Abstract method should render with semicolon");
+    }
+
+    @Test
+    void testClassMethodDeclaration_overrideAndAbstractMutuallyExclusive() {
+        ArkTSDeclarations.ClassMethodDeclaration method =
+                new ArkTSDeclarations.ClassMethodDeclaration("compute",
+                        Collections.emptyList(), "number",
+                        new ArkTSStatement.BlockStatement(Collections.emptyList()),
+                        false, null, false, false, true);
+        String result = method.toArkTS(0);
+        assertTrue(result.startsWith("abstract "),
+                "Abstract should come first: " + result);
+        assertTrue(result.endsWith(";"),
+                "Abstract method should end with semicolon: " + result);
+    }
 }

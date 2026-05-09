@@ -2,6 +2,7 @@ package com.arkghidra.decompile;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -18,7 +19,8 @@ import com.arkghidra.format.AbcProto;
  * Builds class, method, field, and constructor declarations from ABC metadata.
  *
  * <p>Handles decorator detection, access modifiers, super class resolution,
- * struct detection, and enum extraction.
+ * struct detection, enum extraction, override detection, parameter property
+ * detection, and getter/setter simplification.
  */
 class DeclarationBuilder {
 
@@ -58,6 +60,10 @@ class DeclarationBuilder {
                 (abcClass.getAccessFlags()
                         & AbcAccessFlags.ACC_ABSTRACT) != 0;
 
+        // Collect superclass method names for override detection
+        Set<String> superMethodNames =
+                collectSuperClassMethodNames(abcClass, abcFile);
+
         for (AbcField field : abcClass.getFields()) {
             ArkTSStatement fieldDecl = buildFieldDeclaration(
                     field, abcFile);
@@ -72,7 +78,8 @@ class DeclarationBuilder {
                         method, abcFile, className);
             } else {
                 ArkTSStatement methodDecl = buildMethodOrAccessor(
-                        method, abcFile, className, isAbstractClass);
+                        method, abcFile, className, isAbstractClass,
+                        superMethodNames);
                 if (methodDecl != null) {
                     methodDecls.add(methodDecl);
                 }
@@ -81,6 +88,10 @@ class DeclarationBuilder {
         if (constructorDecl != null) {
             members.add(constructorDecl);
         }
+
+        // Simplify getter/setter pairs into property declarations
+        methodDecls = simplifyGetterSetterPairs(methodDecls, members);
+
         members.addAll(methodDecls);
 
         List<ArkTSTypeDeclarations.TypeParameter> typeParams =
@@ -148,6 +159,22 @@ class DeclarationBuilder {
      */
     ArkTSStatement buildMethodDeclaration(AbcMethod method,
             AbcFile abcFile, String className) {
+        return buildMethodDeclaration(method, abcFile, className,
+                Collections.emptySet());
+    }
+
+    /**
+     * Builds a method declaration from an ABC method with override detection.
+     *
+     * @param method the ABC method
+     * @param abcFile the parent ABC file
+     * @param className the enclosing class name
+     * @param superMethodNames set of method names in the superclass
+     * @return the method declaration statement, or null
+     */
+    ArkTSStatement buildMethodDeclaration(AbcMethod method,
+            AbcFile abcFile, String className,
+            Set<String> superMethodNames) {
         AbcCode code = abcFile != null
                 ? abcFile.getCodeForMethod(method) : null;
         AbcProto proto = decompiler.resolveProto(method, abcFile);
@@ -185,14 +212,24 @@ class DeclarationBuilder {
                 method.getAccessFlags());
         boolean isAsync = code != null
                 && decompiler.detectAsyncMethod(code);
+        boolean isOverride = !isStatic
+                && superMethodNames.contains(method.getName());
+        boolean isAbstract = (method.getAccessFlags()
+                & AbcAccessFlags.ACC_ABSTRACT) != 0;
 
         return new ArkTSDeclarations.ClassMethodDeclaration(
                 method.getName(), params, returnType, body,
-                isStatic, accessModifier, isAsync);
+                isStatic, accessModifier, isAsync, isOverride,
+                isAbstract);
     }
 
     /**
      * Builds a constructor declaration from an ABC method.
+     *
+     * <p>Detects parameter properties when the constructor body assigns
+     * parameter values directly to {@code this.paramName}. Parameters that
+     * follow this pattern are rendered with access modifiers:
+     * {@code constructor(public name: string)}.
      *
      * @param method the ABC method (must be a constructor)
      * @param code the method's code section
@@ -200,7 +237,7 @@ class DeclarationBuilder {
      * @param proto the method prototype
      * @return the constructor declaration statement
      */
-    ArkTSDeclarations.ConstructorDeclaration buildConstructorDeclaration(
+    ArkTSStatement buildConstructorDeclaration(
             AbcMethod method, AbcCode code, AbcFile abcFile,
             AbcProto proto) {
         List<ArkTSStatement> bodyStmts = new ArrayList<>();
@@ -220,8 +257,41 @@ class DeclarationBuilder {
         List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
                 MethodSignatureBuilder.buildParamsWithDefaults(proto, code,
                         decompiler.getDebugParamNames(method, abcFile));
+
+        // Detect parameter properties: params assigned to this.paramName
+        List<ConstructorParamProperty> paramProps =
+                detectConstructorParamProperties(params, bodyStmts);
+
+        // Filter out property assignment statements from the body
+        List<ArkTSStatement> filteredBody =
+                filterPropertyAssignments(bodyStmts, paramProps);
+
         ArkTSStatement body =
-                new ArkTSStatement.BlockStatement(bodyStmts);
+                new ArkTSStatement.BlockStatement(filteredBody);
+
+        if (!paramProps.isEmpty()) {
+            List<ArkTSDeclarations.ConstructorWithPropertiesDeclaration
+                    .ConstructorParam> constructorParams =
+                    new ArrayList<>();
+            for (int i = 0; i < params.size(); i++) {
+                ArkTSDeclarations.FunctionDeclaration.FunctionParam p =
+                        params.get(i);
+                String modifier = null;
+                for (ConstructorParamProperty cpp : paramProps) {
+                    if (cpp.paramIndex == i) {
+                        modifier = "public";
+                        break;
+                    }
+                }
+                constructorParams.add(
+                        new ArkTSDeclarations.ConstructorWithPropertiesDeclaration
+                                .ConstructorParam(p.getName(),
+                                        p.getTypeName(), modifier));
+            }
+            return new ArkTSDeclarations.ConstructorWithPropertiesDeclaration(
+                    constructorParams, body);
+        }
+
         return new ArkTSDeclarations.ConstructorDeclaration(params, body);
     }
 
@@ -272,6 +342,23 @@ class DeclarationBuilder {
     ArkTSStatement buildMethodOrAccessor(AbcMethod method,
             AbcFile abcFile, String className,
             boolean isAbstractClass) {
+        return buildMethodOrAccessor(method, abcFile, className,
+                isAbstractClass, Collections.emptySet());
+    }
+
+    /**
+     * Builds a method declaration with override detection support.
+     *
+     * @param method the ABC method
+     * @param abcFile the parent ABC file
+     * @param className the enclosing class name
+     * @param isAbstractClass true if the enclosing class is abstract
+     * @param superMethodNames set of method names in the superclass
+     * @return the declaration statement, or null
+     */
+    ArkTSStatement buildMethodOrAccessor(AbcMethod method,
+            AbcFile abcFile, String className,
+            boolean isAbstractClass, Set<String> superMethodNames) {
         String methodName = method.getName();
 
         // Check for getter pattern: method name starts with "get_"
@@ -290,16 +377,19 @@ class DeclarationBuilder {
             return buildStaticBlockDeclaration(method, abcFile);
         }
 
-        // Check for abstract method
-        if (isAbstractClass
-                && (method.getAccessFlags()
-                        & AbcAccessFlags.ACC_NATIVE) != 0) {
+        // Check for abstract method: native in abstract class,
+        // or method with empty body in abstract class
+        boolean isAbstract = isAbstractClass
+                && ((method.getAccessFlags()
+                        & AbcAccessFlags.ACC_NATIVE) != 0
+                    || hasEmptyBody(method, abcFile));
+        if (isAbstract) {
             return buildAbstractMethodDeclaration(method, abcFile);
         }
 
         // Build the regular method
         ArkTSStatement methodDecl = buildMethodDeclaration(
-                method, abcFile, className);
+                method, abcFile, className, superMethodNames);
         if (methodDecl == null) {
             return null;
         }
@@ -694,5 +784,304 @@ class DeclarationBuilder {
             return accessorName.substring(4);
         }
         return accessorName;
+    }
+
+    // --- Override detection ---
+
+    /**
+     * Collects method names from the superclass chain for override detection.
+     *
+     * @param abcClass the current class
+     * @param abcFile the parent ABC file
+     * @return set of method names defined in superclasses
+     */
+    Set<String> collectSuperClassMethodNames(AbcClass abcClass,
+            AbcFile abcFile) {
+        Set<String> methodNames = new HashSet<>();
+        if (abcFile == null || abcClass.getSuperClassOff() == 0) {
+            return methodNames;
+        }
+
+        // Walk up the class hierarchy
+        Set<Long> visited = new HashSet<>();
+        long currentSuperOff = abcClass.getSuperClassOff();
+        while (currentSuperOff != 0
+                && !visited.contains(currentSuperOff)) {
+            visited.add(currentSuperOff);
+            AbcClass superClass = findClassByOffset(
+                    currentSuperOff, abcFile);
+            if (superClass == null) {
+                break;
+            }
+            for (AbcMethod m : superClass.getMethods()) {
+                String mName = m.getName();
+                if (mName != null && !"<init>".equals(mName)
+                        && !"<ctor>".equals(mName)
+                        && !isGetterMethod(mName)
+                        && !isSetterMethod(mName)
+                        && !isStaticInitMethod(mName)) {
+                    methodNames.add(mName);
+                }
+            }
+            currentSuperOff = superClass.getSuperClassOff();
+        }
+        return methodNames;
+    }
+
+    /**
+     * Finds a class in the ABC file by its byte offset.
+     *
+     * @param offset the class offset
+     * @param abcFile the ABC file
+     * @return the class, or null if not found
+     */
+    private AbcClass findClassByOffset(long offset, AbcFile abcFile) {
+        for (AbcClass cls : abcFile.getClasses()) {
+            if (cls.getOffset() == offset) {
+                return cls;
+            }
+        }
+        return null;
+    }
+
+    // --- Abstract method detection ---
+
+    /**
+     * Checks if a method has an empty body (no code or zero code size).
+     * Used to detect abstract methods in abstract classes.
+     *
+     * @param method the method to check
+     * @param abcFile the parent ABC file
+     * @return true if the method body is empty
+     */
+    private boolean hasEmptyBody(AbcMethod method, AbcFile abcFile) {
+        if (abcFile == null) {
+            return method.getCodeOff() == 0;
+        }
+        AbcCode code = abcFile.getCodeForMethod(method);
+        return code == null || code.getCodeSize() == 0;
+    }
+
+    // --- Constructor parameter property detection ---
+
+    /**
+     * Holds info about a constructor parameter that is a property.
+     */
+    private static class ConstructorParamProperty {
+        final int paramIndex;
+        final String paramName;
+
+        ConstructorParamProperty(int paramIndex, String paramName) {
+            this.paramIndex = paramIndex;
+            this.paramName = paramName;
+        }
+    }
+
+    /**
+     * Detects constructor parameter properties by analyzing the body
+     * for patterns like {@code this.paramName = param_N}.
+     *
+     * <p>A parameter is considered a property if the body contains
+     * an assignment of the form {@code this.paramName = param_N}
+     * where paramName matches or is similar to the parameter name.
+     *
+     * @param params the constructor parameters
+     * @param bodyStmts the constructor body statements
+     * @return the list of detected parameter properties
+     */
+    private List<ConstructorParamProperty> detectConstructorParamProperties(
+            List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params,
+            List<ArkTSStatement> bodyStmts) {
+        List<ConstructorParamProperty> result = new ArrayList<>();
+        if (params.isEmpty() || bodyStmts.isEmpty()) {
+            return result;
+        }
+
+        for (int i = 0; i < params.size(); i++) {
+            String paramName = params.get(i).getName();
+            String thisAccess = "this." + paramName;
+            for (ArkTSStatement stmt : bodyStmts) {
+                String stmtStr = stmt.toArkTS(0).trim();
+                // Match patterns like: this.name = name;
+                // or: this.param_0 = param_0;
+                if (stmtStr.startsWith(thisAccess + " = ")
+                        && stmtStr.endsWith(paramName + ";")) {
+                    result.add(new ConstructorParamProperty(i, paramName));
+                    break;
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Filters out property assignment statements from the constructor body,
+     * since those are now represented as parameter property modifiers.
+     *
+     * @param bodyStmts the original body statements
+     * @param paramProps the detected parameter properties
+     * @return the filtered body statements
+     */
+    private List<ArkTSStatement> filterPropertyAssignments(
+            List<ArkTSStatement> bodyStmts,
+            List<ConstructorParamProperty> paramProps) {
+        if (paramProps.isEmpty()) {
+            return bodyStmts;
+        }
+
+        Set<String> assignmentsToRemove = new HashSet<>();
+        for (ConstructorParamProperty cpp : paramProps) {
+            assignmentsToRemove.add(
+                    "this." + cpp.paramName + " = " + cpp.paramName + ";");
+        }
+
+        List<ArkTSStatement> filtered = new ArrayList<>();
+        for (ArkTSStatement stmt : bodyStmts) {
+            String stmtStr = stmt.toArkTS(0).trim();
+            if (!assignmentsToRemove.contains(stmtStr)) {
+                filtered.add(stmt);
+            }
+        }
+        return filtered;
+    }
+
+    // --- Getter/setter simplification ---
+
+    /**
+     * Simplifies matching getter/setter pairs into property declarations.
+     *
+     * <p>When a getter only returns a field and a setter only assigns it,
+     * the pair is replaced by a single property declaration.
+     *
+     * @param methodDecls the method declarations to simplify
+     * @param classMembers the existing class members (fields)
+     * @return the simplified list of declarations
+     */
+    private List<ArkTSStatement> simplifyGetterSetterPairs(
+            List<ArkTSStatement> methodDecls,
+            List<ArkTSStatement> classMembers) {
+        if (methodDecls.size() < 2) {
+            return methodDecls;
+        }
+
+        // Index getter and setter declarations by property name
+        List<ArkTSDeclarations.GetterDeclaration> getters =
+                new ArrayList<>();
+        List<ArkTSDeclarations.SetterDeclaration> setters =
+                new ArrayList<>();
+        List<ArkTSStatement> others = new ArrayList<>();
+
+        for (ArkTSStatement decl : methodDecls) {
+            if (decl instanceof ArkTSDeclarations.GetterDeclaration) {
+                getters.add(
+                        (ArkTSDeclarations.GetterDeclaration) decl);
+            } else if (decl
+                    instanceof ArkTSDeclarations.SetterDeclaration) {
+                setters.add(
+                        (ArkTSDeclarations.SetterDeclaration) decl);
+            } else {
+                others.add(decl);
+            }
+        }
+
+        // If no getters or setters, nothing to simplify
+        if (getters.isEmpty() || setters.isEmpty()) {
+            return methodDecls;
+        }
+
+        // Check for simplifiable pairs
+        List<ArkTSStatement> result = new ArrayList<>(others);
+        Set<String> matchedGetters = new HashSet<>();
+        Set<String> matchedSetters = new HashSet<>();
+
+        for (ArkTSDeclarations.GetterDeclaration getter : getters) {
+            for (ArkTSDeclarations.SetterDeclaration setter : setters) {
+                if (getter.getName().equals(setter.getName())
+                        && getter.isStatic() == setter.isStatic()
+                        && isSimpleGetter(getter)
+                        && isSimpleSetter(setter)) {
+                    // Replace with a property declaration
+                    String propName = getter.getName();
+                    String propType = getter.getReturnType();
+                    boolean isStatic = getter.isStatic();
+                    String access = getter.getAccessModifier();
+                    if (access == null
+                            && setter.getAccessModifier() != null) {
+                        access = setter.getAccessModifier();
+                    }
+                    result.add(new ArkTSDeclarations.ClassFieldDeclaration(
+                            propName, propType, null, isStatic, access));
+                    matchedGetters.add(getter.getName());
+                    matchedSetters.add(setter.getName());
+                    break;
+                }
+            }
+        }
+
+        // Add unmatched getters and setters
+        for (ArkTSDeclarations.GetterDeclaration getter : getters) {
+            if (!matchedGetters.contains(getter.getName())) {
+                result.add(getter);
+            }
+        }
+        for (ArkTSDeclarations.SetterDeclaration setter : setters) {
+            if (!matchedSetters.contains(setter.getName())) {
+                result.add(setter);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Checks if a getter body consists of only a single return statement.
+     *
+     * @param getter the getter to check
+     * @return true if the getter is simple
+     */
+    private boolean isSimpleGetter(
+            ArkTSDeclarations.GetterDeclaration getter) {
+        if (getter.getBody() instanceof ArkTSStatement.BlockStatement) {
+            List<ArkTSStatement> stmts =
+                    ((ArkTSStatement.BlockStatement) getter.getBody())
+                            .getBody();
+            if (stmts.size() == 1
+                    && stmts.get(0)
+                            instanceof ArkTSStatement.ReturnStatement) {
+                ArkTSExpression val =
+                        ((ArkTSStatement.ReturnStatement) stmts.get(0))
+                                .getValue();
+                if (val instanceof ArkTSExpression.VariableExpression) {
+                    String varName =
+                            ((ArkTSExpression.VariableExpression) val)
+                                    .getName();
+                    return varName.equals(getter.getName())
+                            || varName.equals("_" + getter.getName());
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Checks if a setter body consists of only a single assignment.
+     *
+     * @param setter the setter to check
+     * @return true if the setter is simple
+     */
+    private boolean isSimpleSetter(
+            ArkTSDeclarations.SetterDeclaration setter) {
+        if (setter.getBody() instanceof ArkTSStatement.BlockStatement) {
+            List<ArkTSStatement> stmts =
+                    ((ArkTSStatement.BlockStatement) setter.getBody())
+                            .getBody();
+            if (stmts.size() == 1) {
+                String stmtStr = stmts.get(0).toArkTS(0).trim();
+                // Match: this.prop = value;
+                return stmtStr.equals(
+                        "this." + setter.getName() + " = value;");
+            }
+        }
+        return false;
     }
 }

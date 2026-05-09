@@ -527,6 +527,8 @@ public class ArkTSDeclarations {
         private final boolean isStatic;
         private final String accessModifier;
         private final boolean isAsync;
+        private final boolean isOverride;
+        private final boolean isAbstract;
 
         /**
          * Constructs a class method declaration.
@@ -561,6 +563,28 @@ public class ArkTSDeclarations {
                 List<FunctionDeclaration.FunctionParam> params,
                 String returnType, ArkTSStatement body, boolean isStatic,
                 String accessModifier, boolean isAsync) {
+            this(name, params, returnType, body, isStatic,
+                    accessModifier, isAsync, false, false);
+        }
+
+        /**
+         * Constructs a class method declaration with all flags.
+         *
+         * @param name the method name
+         * @param params the parameters
+         * @param returnType the return type (may be null)
+         * @param body the method body
+         * @param isStatic true if static
+         * @param accessModifier the access modifier (may be null)
+         * @param isAsync true if this is an async method
+         * @param isOverride true if this method overrides a superclass method
+         * @param isAbstract true if this is an abstract method
+         */
+        public ClassMethodDeclaration(String name,
+                List<FunctionDeclaration.FunctionParam> params,
+                String returnType, ArkTSStatement body, boolean isStatic,
+                String accessModifier, boolean isAsync,
+                boolean isOverride, boolean isAbstract) {
             this.name = name;
             this.params = Collections.unmodifiableList(
                     new ArrayList<>(params));
@@ -569,6 +593,8 @@ public class ArkTSDeclarations {
             this.isStatic = isStatic;
             this.accessModifier = accessModifier;
             this.isAsync = isAsync;
+            this.isOverride = isOverride;
+            this.isAbstract = isAbstract;
         }
 
         public String getName() {
@@ -599,6 +625,14 @@ public class ArkTSDeclarations {
             return isAsync;
         }
 
+        public boolean isOverride() {
+            return isOverride;
+        }
+
+        public boolean isAbstractMethod() {
+            return isAbstract;
+        }
+
         @Override
         public String toArkTS(int indent) {
             StringBuilder sb = new StringBuilder();
@@ -606,8 +640,14 @@ public class ArkTSDeclarations {
             if (accessModifier != null) {
                 sb.append(accessModifier).append(" ");
             }
+            if (isAbstract) {
+                sb.append("abstract ");
+            }
             if (isStatic) {
                 sb.append("static ");
+            }
+            if (isOverride) {
+                sb.append("override ");
             }
             if (isAsync) {
                 sb.append("async ");
@@ -620,14 +660,18 @@ public class ArkTSDeclarations {
             if (returnType != null) {
                 sb.append(": ").append(returnType);
             }
-            sb.append(" ");
-            if (body instanceof ArkTSStatement.BlockStatement) {
-                sb.append(((ArkTSStatement.BlockStatement) body)
-                        .toArkTS(indent));
+            if (isAbstract) {
+                sb.append(";");
             } else {
-                sb.append("{\n");
-                sb.append(body.toArkTS(indent + 1)).append("\n");
-                sb.append(indent(indent)).append("}");
+                sb.append(" ");
+                if (body instanceof ArkTSStatement.BlockStatement) {
+                    sb.append(((ArkTSStatement.BlockStatement) body)
+                            .toArkTS(indent));
+                } else {
+                    sb.append("{\n");
+                    sb.append(body.toArkTS(indent + 1)).append("\n");
+                    sb.append(indent(indent)).append("}");
+                }
             }
             return sb.toString();
         }
