@@ -282,6 +282,7 @@ public class ArkTSDeclarations {
         private final List<ArkTSStatement> members;
         private final List<String> decorators;
         private final boolean isSendable;
+        private final boolean isAbstract;
 
         /**
          * A class member (field, constructor, or method).
@@ -372,7 +373,7 @@ public class ArkTSDeclarations {
         public ClassDeclaration(String name, String superClass,
                 List<ArkTSStatement> members, String rawName) {
             this(name, superClass, Collections.emptyList(), members, rawName,
-                    Collections.emptyList(), false);
+                    Collections.emptyList(), false, false);
         }
 
         /**
@@ -389,7 +390,7 @@ public class ArkTSDeclarations {
                 List<ArkTSStatement> members, String rawName,
                 List<String> decorators, boolean isSendable) {
             this(name, superClass, Collections.emptyList(), members, rawName,
-                    decorators, isSendable);
+                    decorators, isSendable, false);
         }
 
         /**
@@ -408,6 +409,26 @@ public class ArkTSDeclarations {
                 List<String> interfaces, List<ArkTSStatement> members,
                 String rawName, List<String> decorators,
                 boolean isSendable) {
+            this(name, superClass, interfaces, members, rawName,
+                    decorators, isSendable, false);
+        }
+
+        /**
+         * Constructs a class declaration with all flags.
+         *
+         * @param name the sanitized class name
+         * @param superClass the super class name (may be null)
+         * @param interfaces the implemented interface names (may be empty)
+         * @param members the class members
+         * @param rawName the original ABC class name
+         * @param decorators the decorator names (may be empty)
+         * @param isSendable true if this is a sendable class
+         * @param isAbstract true if this is an abstract class
+         */
+        public ClassDeclaration(String name, String superClass,
+                List<String> interfaces, List<ArkTSStatement> members,
+                String rawName, List<String> decorators,
+                boolean isSendable, boolean isAbstract) {
             this.name = name;
             this.rawName = rawName;
             this.superClass = superClass;
@@ -422,6 +443,7 @@ public class ArkTSDeclarations {
                             new ArrayList<>(decorators))
                     : Collections.emptyList();
             this.isSendable = isSendable;
+            this.isAbstract = isAbstract;
         }
 
         public String getName() {
@@ -457,6 +479,15 @@ public class ArkTSDeclarations {
             return isSendable;
         }
 
+        /**
+         * Returns true if this is an abstract class.
+         *
+         * @return true if abstract
+         */
+        public boolean isAbstractClass() {
+            return isAbstract;
+        }
+
         @Override
         public String toArkTS(int indent) {
             StringBuilder sb = new StringBuilder();
@@ -465,6 +496,9 @@ public class ArkTSDeclarations {
                         .append("\n");
             }
             sb.append(indent(indent));
+            if (isAbstract) {
+                sb.append("abstract ");
+            }
             if (isSendable) {
                 sb.append("sendable ");
             }

@@ -343,4 +343,255 @@ class ArkTSOutputQualityTest {
                     "Should use v3 for register 3: " + result);
         }
     }
+
+    @Nested
+    @DisplayName("Template literal reconstruction from concatenation")
+    class TemplateLiteralReconstructionTests {
+
+        private final ArkTSDecompiler decomp = new ArkTSDecompiler();
+
+        @Test
+        @DisplayName("Multi-segment: str1 + var1 + str2 + var2 + str3")
+        void testMultiSegmentTemplate() {
+            ArkTSExpression str1 = new ArkTSExpression.LiteralExpression("Hello ",
+                    ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+            ArkTSExpression var1 =
+                    new ArkTSExpression.VariableExpression("name");
+            ArkTSExpression str2 = new ArkTSExpression.LiteralExpression(", ",
+                    ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+            ArkTSExpression var2 =
+                    new ArkTSExpression.VariableExpression("age");
+            ArkTSExpression str3 = new ArkTSExpression.LiteralExpression(" years",
+                    ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+
+            // Build: str1 + var1 + str2 + var2 + str3
+            ArkTSExpression inner1 = new ArkTSExpression.BinaryExpression(
+                    str1, "+", var1);
+            ArkTSExpression inner2 = new ArkTSExpression.BinaryExpression(
+                    inner1, "+", str2);
+            ArkTSExpression inner3 = new ArkTSExpression.BinaryExpression(
+                    inner2, "+", var2);
+            ArkTSExpression outer = new ArkTSExpression.BinaryExpression(
+                    inner3, "+", str3);
+
+            ArkTSExpression result =
+                    decomp.tryReconstructTemplateLiteral(outer);
+            assertTrue(result instanceof ArkTSAccessExpressions
+                            .TemplateLiteralExpression,
+                    "Should produce TemplateLiteralExpression: "
+                            + result.toArkTS());
+            assertEquals("`Hello ${name}, ${age} years`",
+                    result.toArkTS());
+        }
+
+        @Test
+        @DisplayName("Simple str + var still works")
+        void testSimpleStringPlusVariable() {
+            ArkTSExpression str = new ArkTSExpression.LiteralExpression("Hello ",
+                    ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+            ArkTSExpression name =
+                    new ArkTSExpression.VariableExpression("name");
+            ArkTSExpression binary = new ArkTSExpression.BinaryExpression(
+                    str, "+", name);
+
+            ArkTSExpression result =
+                    decomp.tryReconstructTemplateLiteral(binary);
+            assertTrue(result instanceof ArkTSAccessExpressions
+                            .TemplateLiteralExpression,
+                    "Should produce TemplateLiteralExpression");
+            assertEquals("`Hello ${name}`", result.toArkTS());
+        }
+
+        @Test
+        @DisplayName("var + str (expression first)")
+        void testVariablePlusString() {
+            ArkTSExpression name =
+                    new ArkTSExpression.VariableExpression("name");
+            ArkTSExpression str = new ArkTSExpression.LiteralExpression("!",
+                    ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+            ArkTSExpression binary = new ArkTSExpression.BinaryExpression(
+                    name, "+", str);
+
+            ArkTSExpression result =
+                    decomp.tryReconstructTemplateLiteral(binary);
+            assertTrue(result instanceof ArkTSAccessExpressions
+                            .TemplateLiteralExpression,
+                    "Should produce TemplateLiteralExpression");
+            assertEquals("`${name}!`", result.toArkTS());
+        }
+
+        @Test
+        @DisplayName("var + var (no strings) stays as + expression")
+        void testNoStringsStaysAsBinary() {
+            ArkTSExpression x =
+                    new ArkTSExpression.VariableExpression("x");
+            ArkTSExpression y =
+                    new ArkTSExpression.VariableExpression("y");
+            ArkTSExpression binary = new ArkTSExpression.BinaryExpression(
+                    x, "+", y);
+
+            ArkTSExpression result =
+                    decomp.tryReconstructTemplateLiteral(binary);
+            assertFalse(result instanceof ArkTSAccessExpressions
+                            .TemplateLiteralExpression,
+                    "No strings should not produce template literal");
+        }
+
+        @Test
+        @DisplayName("number + number stays as + expression")
+        void testNumbersStayAsBinary() {
+            ArkTSExpression a = new ArkTSExpression.LiteralExpression("3",
+                    ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+            ArkTSExpression b = new ArkTSExpression.LiteralExpression("4",
+                    ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+            ArkTSExpression binary = new ArkTSExpression.BinaryExpression(
+                    a, "+", b);
+
+            ArkTSExpression result =
+                    decomp.tryReconstructTemplateLiteral(binary);
+            assertFalse(result instanceof ArkTSAccessExpressions
+                            .TemplateLiteralExpression,
+                    "Numbers should not produce template literal");
+        }
+
+        @Test
+        @DisplayName("Backtick in quasi is escaped")
+        void testBacktickEscapingInReconstruction() {
+            ArkTSExpression str = new ArkTSExpression.LiteralExpression(
+                    "it`",
+                    ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+            ArkTSExpression name =
+                    new ArkTSExpression.VariableExpression("x");
+            ArkTSExpression binary = new ArkTSExpression.BinaryExpression(
+                    str, "+", name);
+
+            ArkTSExpression result =
+                    decomp.tryReconstructTemplateLiteral(binary);
+            assertTrue(result instanceof ArkTSAccessExpressions
+                            .TemplateLiteralExpression);
+            assertEquals("`it\\`${x}`", result.toArkTS());
+        }
+
+        @Test
+        @DisplayName("Dollar-brace in quasi is escaped")
+        void testDollarBraceEscaping() {
+            ArkTSExpression str = new ArkTSExpression.LiteralExpression(
+                    "price ${",
+                    ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+            ArkTSExpression name =
+                    new ArkTSExpression.VariableExpression("x");
+            ArkTSExpression binary = new ArkTSExpression.BinaryExpression(
+                    str, "+", name);
+
+            ArkTSExpression result =
+                    decomp.tryReconstructTemplateLiteral(binary);
+            assertTrue(result instanceof ArkTSAccessExpressions
+                            .TemplateLiteralExpression);
+            assertEquals("`price \\${${x}`", result.toArkTS());
+        }
+
+        @Test
+        @DisplayName("Standalone dollar sign is NOT escaped")
+        void testStandaloneDollarNotEscaped() {
+            ArkTSExpression str = new ArkTSExpression.LiteralExpression(
+                    "$5 ",
+                    ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+            ArkTSExpression name =
+                    new ArkTSExpression.VariableExpression("x");
+            ArkTSExpression binary = new ArkTSExpression.BinaryExpression(
+                    str, "+", name);
+
+            ArkTSExpression result =
+                    decomp.tryReconstructTemplateLiteral(binary);
+            assertTrue(result instanceof ArkTSAccessExpressions
+                            .TemplateLiteralExpression);
+            assertEquals("`$5 ${x}`", result.toArkTS());
+        }
+
+        @Test
+        @DisplayName("Adjacent string segments are merged in quasis")
+        void testAdjacentStringsMerged() {
+            ArkTSExpression str1 = new ArkTSExpression.LiteralExpression("a",
+                    ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+            ArkTSExpression str2 = new ArkTSExpression.LiteralExpression("b",
+                    ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+            ArkTSExpression var =
+                    new ArkTSExpression.VariableExpression("x");
+
+            // str1 + str2 + var => "ab${x}"
+            ArkTSExpression inner = new ArkTSExpression.BinaryExpression(
+                    str1, "+", str2);
+            ArkTSExpression outer = new ArkTSExpression.BinaryExpression(
+                    inner, "+", var);
+
+            ArkTSExpression result =
+                    decomp.tryReconstructTemplateLiteral(outer);
+            assertTrue(result instanceof ArkTSAccessExpressions
+                            .TemplateLiteralExpression,
+                    "Should produce template literal: " + result.toArkTS());
+            assertEquals("`ab${x}`", result.toArkTS());
+        }
+
+        @Test
+        @DisplayName("var + var + str (two vars then string)")
+        void testTwoVarsThenString() {
+            ArkTSExpression v1 =
+                    new ArkTSExpression.VariableExpression("a");
+            ArkTSExpression v2 =
+                    new ArkTSExpression.VariableExpression("b");
+            ArkTSExpression str = new ArkTSExpression.LiteralExpression("!",
+                    ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+
+            ArkTSExpression inner = new ArkTSExpression.BinaryExpression(
+                    v1, "+", v2);
+            ArkTSExpression outer = new ArkTSExpression.BinaryExpression(
+                    inner, "+", str);
+
+            ArkTSExpression result =
+                    decomp.tryReconstructTemplateLiteral(outer);
+            assertTrue(result instanceof ArkTSAccessExpressions
+                            .TemplateLiteralExpression,
+                    "Should produce template literal: " + result.toArkTS());
+            assertEquals("${a}${b}!", result.toArkTS().substring(1,
+                    result.toArkTS().length() - 1));
+        }
+
+        @Test
+        @DisplayName("Null input returns null")
+        void testNullInput() {
+            ArkTSExpression result =
+                    decomp.tryReconstructTemplateLiteral(null);
+            assertTrue(result == null, "Null input should return null");
+        }
+
+        @Test
+        @DisplayName("TemplateLiteralExpression escapeDollarBraceOnly")
+        void testTemplateLiteralDollarBraceEscape() {
+            ArkTSAccessExpressions.TemplateLiteralExpression expr =
+                    new ArkTSAccessExpressions.TemplateLiteralExpression(
+                            List.of("expr${literal"),
+                            List.of());
+            assertEquals("`expr\\${literal`", expr.toArkTS());
+        }
+
+        @Test
+        @DisplayName("TemplateLiteralExpression dollar not followed by brace")
+        void testTemplateLiteralDollarAlone() {
+            ArkTSAccessExpressions.TemplateLiteralExpression expr =
+                    new ArkTSAccessExpressions.TemplateLiteralExpression(
+                            List.of("price $100"),
+                            List.of());
+            assertEquals("`price $100`", expr.toArkTS());
+        }
+
+        @Test
+        @DisplayName("TemplateLiteralExpression dollar at end of string")
+        void testTemplateLiteralDollarAtEnd() {
+            ArkTSAccessExpressions.TemplateLiteralExpression expr =
+                    new ArkTSAccessExpressions.TemplateLiteralExpression(
+                            List.of("price$"),
+                            List.of());
+            assertEquals("`price$`", expr.toArkTS());
+        }
+    }
 }

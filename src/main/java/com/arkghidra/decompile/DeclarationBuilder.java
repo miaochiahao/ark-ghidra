@@ -83,10 +83,11 @@ class DeclarationBuilder {
 
         ArkTSStatement constructorDecl = null;
         List<ArkTSStatement> methodDecls = new ArrayList<>();
+        List<AbcField> classFields = abcClass.getFields();
         for (AbcMethod method : abcClass.getMethods()) {
             if (isConstructorMethod(method, className)) {
-                constructorDecl = buildMethodDeclaration(
-                        method, abcFile, className);
+                constructorDecl = buildConstructorDeclaration(
+                        method, abcFile, classFields);
             } else {
                 ArkTSStatement methodDecl = buildMethodOrAccessor(
                         method, abcFile, className, isAbstractClass,
@@ -120,7 +121,8 @@ class DeclarationBuilder {
         }
         return new ArkTSDeclarations.ClassDeclaration(
                 className, superClassName, interfaceNames, members,
-                abcClass.getName(), decorators, isSendable);
+                abcClass.getName(), decorators, isSendable,
+                isAbstractClass);
     }
 
     /**
@@ -238,12 +240,32 @@ class DeclarationBuilder {
     }
 
     /**
+     * Builds a constructor declaration from an ABC method, with
+     * field-list-aware parameter property detection.
+     *
+     * @param method the constructor method
+     * @param abcFile the parent ABC file
+     * @param classFields the class fields (for access modifier lookup)
+     * @return the constructor declaration statement
+     */
+    ArkTSStatement buildConstructorDeclaration(
+            AbcMethod method, AbcFile abcFile,
+            List<AbcField> classFields) {
+        AbcCode code = abcFile != null
+                ? abcFile.getCodeForMethod(method) : null;
+        AbcProto proto = decompiler.resolveProto(method, abcFile);
+        return buildConstructorDeclaration(method, code, abcFile,
+                proto, classFields);
+    }
+
+    /**
      * Builds a constructor declaration from an ABC method.
      *
      * <p>Detects parameter properties when the constructor body assigns
-     * parameter values directly to {@code this.paramName}. Parameters that
-     * follow this pattern are rendered with access modifiers:
-     * {@code constructor(public name: string)}.
+     * parameter values directly to {@code this.paramName}. When ALL
+     * parameters follow this pattern, they are rendered with access
+     * modifiers resolved from matching class fields:
+     * {@code constructor(public name: string, private age: number)}.
      *
      * @param method the ABC method (must be a constructor)
      * @param code the method's code section
@@ -254,6 +276,28 @@ class DeclarationBuilder {
     ArkTSStatement buildConstructorDeclaration(
             AbcMethod method, AbcCode code, AbcFile abcFile,
             AbcProto proto) {
+        return buildConstructorDeclaration(method, code, abcFile,
+                proto, Collections.emptyList());
+    }
+
+    /**
+     * Builds a constructor declaration with field-aware parameter
+     * property detection.
+     *
+     * <p>Only uses the parameter property shorthand when ALL constructor
+     * parameters are assigned to {@code this.propName}. Access modifiers
+     * are resolved from matching class field declarations.
+     *
+     * @param method the ABC method (must be a constructor)
+     * @param code the method's code section
+     * @param abcFile the parent ABC file
+     * @param proto the method prototype
+     * @param classFields the class fields for access modifier lookup
+     * @return the constructor declaration statement
+     */
+    ArkTSStatement buildConstructorDeclaration(
+            AbcMethod method, AbcCode code, AbcFile abcFile,
+            AbcProto proto, List<AbcField> classFields) {
         List<ArkTSStatement> bodyStmts = new ArrayList<>();
         if (code != null && code.getCodeSize() > 0) {
             try {
@@ -276,6 +320,10 @@ class DeclarationBuilder {
         List<ConstructorParamProperty> paramProps =
                 detectConstructorParamProperties(params, bodyStmts);
 
+        // Only use shorthand when ALL parameters are property assignments
+        boolean allParamsAreProperties = !params.isEmpty()
+                && paramProps.size() == params.size();
+
         // Filter out property assignment statements from the body
         List<ArkTSStatement> filteredBody =
                 filterPropertyAssignments(bodyStmts, paramProps);
@@ -283,19 +331,19 @@ class DeclarationBuilder {
         ArkTSStatement body =
                 new ArkTSStatement.BlockStatement(filteredBody);
 
-        if (!paramProps.isEmpty()) {
+        if (allParamsAreProperties) {
             List<ArkTSDeclarations.ConstructorWithPropertiesDeclaration
                     .ConstructorParam> constructorParams =
                     new ArrayList<>();
             for (int i = 0; i < params.size(); i++) {
                 ArkTSDeclarations.FunctionDeclaration.FunctionParam p =
                         params.get(i);
-                String modifier = null;
-                for (ConstructorParamProperty cpp : paramProps) {
-                    if (cpp.paramIndex == i) {
-                        modifier = "public";
-                        break;
-                    }
+                ConstructorParamProperty cpp = findParamProperty(
+                        paramProps, i);
+                String modifier = "public";
+                if (cpp != null) {
+                    modifier = resolveFieldAccessModifier(
+                            cpp.paramName, classFields);
                 }
                 constructorParams.add(
                         new ArkTSDeclarations.ConstructorWithPropertiesDeclaration
@@ -307,6 +355,39 @@ class DeclarationBuilder {
         }
 
         return new ArkTSDeclarations.ConstructorDeclaration(params, body);
+    }
+
+    /**
+     * Finds a parameter property by index.
+     */
+    private ConstructorParamProperty findParamProperty(
+            List<ConstructorParamProperty> props, int index) {
+        for (ConstructorParamProperty cpp : props) {
+            if (cpp.paramIndex == index) {
+                return cpp;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Resolves the access modifier for a parameter property by looking
+     * up the matching class field's access flags.
+     *
+     * @param paramName the parameter/property name
+     * @param classFields the class fields
+     * @return the access modifier, defaulting to "public"
+     */
+    private String resolveFieldAccessModifier(String paramName,
+            List<AbcField> classFields) {
+        for (AbcField field : classFields) {
+            if (paramName.equals(field.getName())) {
+                String modifier = accessFlagsToModifier(
+                        field.getAccessFlags());
+                return modifier != null ? modifier : "public";
+            }
+        }
+        return "public";
     }
 
     /**

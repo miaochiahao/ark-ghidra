@@ -518,7 +518,12 @@ public class ArkTSAccessExpressions {
                         sb.append("\\`");
                         break;
                     case '$':
-                        sb.append("\\$");
+                        if (i + 1 < s.length() && s.charAt(i + 1) == '{') {
+                            sb.append("\\${");
+                            i++;
+                        } else {
+                            sb.append('$');
+                        }
                         break;
                     default:
                         sb.append(c);
@@ -598,7 +603,12 @@ public class ArkTSAccessExpressions {
                         sb.append("\\`");
                         break;
                     case '$':
-                        sb.append("\\$");
+                        if (i + 1 < s.length() && s.charAt(i + 1) == '{') {
+                            sb.append("\\${");
+                            i++;
+                        } else {
+                            sb.append('$');
+                        }
                         break;
                     default:
                         sb.append(c);

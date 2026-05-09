@@ -4884,7 +4884,7 @@ class ArkTSDecompilerTest {
         ArkTSAccessExpressions.TemplateLiteralExpression expr =
                 new ArkTSAccessExpressions.TemplateLiteralExpression(
                         List.of("cost: $5"), Collections.emptyList());
-        assertEquals("`cost: \\$5`", expr.toArkTS());
+        assertEquals("`cost: $5`", expr.toArkTS());
     }
 
     @Test
@@ -6966,6 +6966,221 @@ class ArkTSDecompilerTest {
         String result = constructor.toArkTS(0);
         assertTrue(result.contains("constructor(public name: string, age: number)"),
                 "Expected mixed parameter properties: " + result);
+    }
+
+    // ======== ABSTRACT CLASS TESTS (Issue #113) ========
+
+    @Test
+    void testClassDeclaration_isAbstract_rendersAbstractKeyword() {
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("Base", null,
+                        Collections.emptyList(), Collections.emptyList(),
+                        "LBase;", Collections.emptyList(), false, true);
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("abstract class Base"),
+                "Expected abstract class keyword: " + result);
+        assertFalse(result.contains("sendable"),
+                "Should not contain sendable: " + result);
+    }
+
+    @Test
+    void testClassDeclaration_notAbstract_rendersPlainClass() {
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("Concrete", null,
+                        Collections.emptyList(), Collections.emptyList(),
+                        "LConcrete;", Collections.emptyList(), false,
+                        false);
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("class Concrete"),
+                "Expected plain class keyword: " + result);
+        assertFalse(result.contains("abstract"),
+                "Should not contain abstract: " + result);
+    }
+
+    @Test
+    void testClassDeclaration_abstractWithSuperClass() {
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("Derived",
+                        "Base", Collections.emptyList(),
+                        Collections.emptyList(), "LDerived;",
+                        Collections.emptyList(), false, true);
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("abstract class Derived extends Base"),
+                "Expected abstract with extends: " + result);
+    }
+
+    @Test
+    void testClassDeclaration_abstractWithInterfaces() {
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("ServiceImpl",
+                        null, List.of("Runnable", "Serializable"),
+                        Collections.emptyList(), "LServiceImpl;",
+                        Collections.emptyList(), false, true);
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("abstract class ServiceImpl"),
+                "Expected abstract keyword: " + result);
+        assertTrue(result.contains("implements Runnable, Serializable"),
+                "Expected implements: " + result);
+    }
+
+    @Test
+    void testClassDeclaration_abstractWithDecorator() {
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("Comp",
+                        null, Collections.emptyList(),
+                        Collections.emptyList(), "LComp;",
+                        List.of("Component"), false, true);
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("@Component"),
+                "Expected decorator: " + result);
+        assertTrue(result.contains("abstract class Comp"),
+                "Expected abstract class: " + result);
+    }
+
+    // ======== CONSTRUCTOR PARAMETER PROPERTY TESTS (Issue #113) ========
+
+    @Test
+    void testConstructorParamProperties_allParamsStoredToThis() {
+        // Simulate body: this.param_0 = param_0; this.param_1 = param_1;
+        List<ArkTSStatement> bodyStmts = List.of(
+                new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.BinaryExpression(
+                                new ArkTSExpression.MemberExpression(
+                                        new ArkTSExpression
+                                                .VariableExpression("this"),
+                                        new ArkTSExpression
+                                                .VariableExpression(
+                                                        "param_0"),
+                                        false),
+                                "=",
+                                new ArkTSExpression.VariableExpression(
+                                        "param_0"))),
+                new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.BinaryExpression(
+                                new ArkTSExpression.MemberExpression(
+                                        new ArkTSExpression
+                                                .VariableExpression("this"),
+                                        new ArkTSExpression
+                                                .VariableExpression(
+                                                        "param_1"),
+                                        false),
+                                "=",
+                                new ArkTSExpression.VariableExpression(
+                                        "param_1")))
+        );
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                List.of(
+                        new ArkTSDeclarations.FunctionDeclaration
+                                .FunctionParam("param_0", "number"),
+                        new ArkTSDeclarations.FunctionDeclaration
+                                .FunctionParam("param_1", "number"));
+        ArkTSStatement body =
+                new ArkTSStatement.BlockStatement(bodyStmts);
+        ArkTSStatement constructor =
+                new ArkTSDeclarations.ConstructorDeclaration(params, body);
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("Point", null,
+                        List.of(constructor));
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("constructor"),
+                "Expected constructor: " + result);
+    }
+
+    @Test
+    void testConstructorWithProperties_allParamsRendered() {
+        // When all params are properties, they all get modifiers
+        List<ArkTSDeclarations.ConstructorWithPropertiesDeclaration
+                .ConstructorParam> params = List.of(
+                        new ArkTSDeclarations.ConstructorWithPropertiesDeclaration
+                                .ConstructorParam("x", "number", "public"),
+                        new ArkTSDeclarations.ConstructorWithPropertiesDeclaration
+                                .ConstructorParam("y", "number", "public"),
+                        new ArkTSDeclarations.ConstructorWithPropertiesDeclaration
+                                .ConstructorParam("label", "string", "public"));
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSStatement constructor =
+                new ArkTSDeclarations.ConstructorWithPropertiesDeclaration(
+                        params, body);
+        String result = constructor.toArkTS(0);
+        assertTrue(result.contains(
+                "constructor(public x: number, public y: number, "
+                        + "public label: string)"),
+                "Expected all params with public modifier: " + result);
+    }
+
+    @Test
+    void testConstructorWithProperties_privateAccessModifier() {
+        List<ArkTSDeclarations.ConstructorWithPropertiesDeclaration
+                .ConstructorParam> params = List.of(
+                        new ArkTSDeclarations.ConstructorWithPropertiesDeclaration
+                                .ConstructorParam("secret", "string",
+                                        "private"));
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSStatement constructor =
+                new ArkTSDeclarations.ConstructorWithPropertiesDeclaration(
+                        params, body);
+        String result = constructor.toArkTS(0);
+        assertTrue(result.contains("constructor(private secret: string)"),
+                "Expected private modifier: " + result);
+    }
+
+    @Test
+    void testConstructorWithProperties_protectedAccessModifier() {
+        List<ArkTSDeclarations.ConstructorWithPropertiesDeclaration
+                .ConstructorParam> params = List.of(
+                        new ArkTSDeclarations.ConstructorWithPropertiesDeclaration
+                                .ConstructorParam("data", "number",
+                                        "protected"));
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSStatement constructor =
+                new ArkTSDeclarations.ConstructorWithPropertiesDeclaration(
+                        params, body);
+        String result = constructor.toArkTS(0);
+        assertTrue(result.contains(
+                "constructor(protected data: number)"),
+                "Expected protected modifier: " + result);
+    }
+
+    @Test
+    void testConstructorDeclaration_regularNoParameterProperties() {
+        // Regular constructor without parameter properties
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                List.of(
+                        new ArkTSDeclarations.FunctionDeclaration
+                                .FunctionParam("name", "string"));
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(List.of(
+                new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression(
+                                "/* do something */"))));
+        ArkTSStatement constructor =
+                new ArkTSDeclarations.ConstructorDeclaration(params, body);
+        String result = constructor.toArkTS(0);
+        assertTrue(result.contains("constructor(name: string)"),
+                "Expected regular constructor: " + result);
+        assertFalse(result.contains("public"),
+                "Should not have access modifier: " + result);
+    }
+
+    @Test
+    void testAbstractClass_withAbstractMethods() {
+        ArkTSDeclarations.AbstractMethodDeclaration abstractMethod =
+                new ArkTSDeclarations.AbstractMethodDeclaration("doWork",
+                        List.of(new ArkTSDeclarations.FunctionDeclaration
+                                .FunctionParam("input", "string")),
+                        "void", "public");
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("AbstractWorker",
+                        null, Collections.emptyList(),
+                        List.of(abstractMethod), "LAbstractWorker;",
+                        Collections.emptyList(), false, true);
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("abstract class AbstractWorker"),
+                "Expected abstract class: " + result);
+        assertTrue(result.contains("abstract doWork(input: string): void"),
+                "Expected abstract method: " + result);
     }
 
     // ======== DESTRUCTURING INTEGRATION TESTS (Issue #44) ========
@@ -13441,7 +13656,7 @@ class ArkTSDecompilerTest {
                 new ArkTSAccessExpressions.TaggedTemplateExpression(
                         "tag", List.of("price: $5"),
                         Collections.emptyList());
-        assertEquals("tag`price: \\$5`", expr.toArkTS());
+        assertEquals("tag`price: $5`", expr.toArkTS());
     }
 
     // --- Closure and lambda decompilation tests ---
