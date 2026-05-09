@@ -1692,4 +1692,47 @@ class ArkTSOutputQualityTest {
                     "Should contain the stored value 42: " + result);
         }
     }
+
+    @Nested
+    @DisplayName("Boolean variable name inference")
+    class BooleanNameInferenceTests {
+        @Test
+        void testInferredName_booleanComparison_isNull() {
+            DecompilationContext ctx = new DecompilationContext(
+                    null, null, null, null, null, List.of());
+            // x === null should infer isNull
+            ArkTSExpression comp = new ArkTSExpression.BinaryExpression(
+                    new ArkTSExpression.VariableExpression("x"),
+                    "===",
+                    new ArkTSExpression.LiteralExpression("null",
+                            ArkTSExpression.LiteralExpression.LiteralKind.NULL));
+            // Store to register via inference
+            ctx.setInferredName(0, "isNull");
+            assertEquals("isNull", ctx.resolveRegisterName(0));
+        }
+
+        @Test
+        void testInferredName_debugNameOverridesInferred() {
+            DecompilationContext ctx = new DecompilationContext(
+                    null, null, null, null, null, List.of());
+            ctx.setInferredName(0, "isNull");
+            assertEquals("isNull", ctx.resolveRegisterName(0));
+            // Debug name wins
+            ctx.setRegisterName(0, "isValid");
+            assertEquals("isValid", ctx.resolveRegisterName(0));
+        }
+
+        @Test
+        void testInferredName_noConflictWithDebugNames() {
+            DecompilationContext ctx = new DecompilationContext(
+                    null, null, null, null, null, List.of());
+            // v0 with no names → v0
+            assertEquals("v0", ctx.resolveRegisterName(0));
+            // Set inferred → use inferred
+            ctx.setInferredName(0, "result");
+            assertEquals("result", ctx.resolveRegisterName(0));
+            // v1 still uses default
+            assertEquals("v1", ctx.resolveRegisterName(1));
+        }
+    }
 }

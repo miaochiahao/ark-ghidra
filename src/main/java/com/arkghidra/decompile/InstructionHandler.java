@@ -610,6 +610,73 @@ class InstructionHandler {
                 return decapitalize(className);
             }
         }
+        // Binary comparison: use is/has prefix for boolean results
+        if (expr instanceof ArkTSExpression.BinaryExpression) {
+            ArkTSExpression.BinaryExpression bin =
+                    (ArkTSExpression.BinaryExpression) expr;
+            String op = bin.getOperator();
+            if ("===".equals(op) || "==" .equals(op)
+                    || "!==" .equals(op) || "!=" .equals(op)
+                    || ">" .equals(op) || "<" .equals(op)
+                    || ">=" .equals(op) || "<=" .equals(op)) {
+                return inferBooleanName(bin.getRight());
+            }
+        }
+        // Unary not: !expr → isNot + operand name
+        if (expr instanceof ArkTSExpression.UnaryExpression) {
+            ArkTSExpression.UnaryExpression unary =
+                    (ArkTSExpression.UnaryExpression) expr;
+            if ("!".equals(unary.getOperator())) {
+                String inner = inferBooleanName(unary.getOperand());
+                if (inner != null) {
+                    return "isNot" + Character.toUpperCase(inner.charAt(0))
+                            + inner.substring(1);
+                }
+            }
+        }
+        // Typeof comparison: typeof x === "string" → isString
+        if (expr instanceof ArkTSExpression.BinaryExpression) {
+            ArkTSExpression.BinaryExpression bin =
+                    (ArkTSExpression.BinaryExpression) expr;
+            ArkTSExpression right = bin.getRight();
+            if (right instanceof ArkTSExpression.LiteralExpression) {
+                String val = ((ArkTSExpression.LiteralExpression) right)
+                        .getValue();
+                if ("string".equals(val) || "number".equals(val)
+                        || "boolean".equals(val)
+                        || "function".equals(val)
+                        || "object".equals(val)) {
+                    return "is" + Character.toUpperCase(val.charAt(0))
+                            + val.substring(1);
+                }
+            }
+        }
+        return null;
+    }
+
+    private static String inferBooleanName(ArkTSExpression expr) {
+        if (expr instanceof ArkTSExpression.LiteralExpression) {
+            String val = ((ArkTSExpression.LiteralExpression) expr)
+                    .getValue();
+            if ("null".equals(val)) {
+                return "isNull";
+            }
+            if ("undefined".equals(val)) {
+                return "isUndefined";
+            }
+            if ("NaN".equals(val)) {
+                return "isNaN";
+            }
+        }
+        if (expr instanceof ArkTSExpression.VariableExpression) {
+            String name = ((ArkTSExpression.VariableExpression) expr)
+                    .getName();
+            if (name != null && !name.startsWith("v")
+                    && !name.equals("acc")) {
+                return "has" + Character.toUpperCase(name.charAt(0))
+                        + name.substring(1);
+            }
+        }
         return null;
     }
 
