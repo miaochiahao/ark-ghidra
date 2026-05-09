@@ -149,7 +149,8 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 62. ~~Expression type naming — arrays, objects, templates, arrow functions (#150)~~ DONE
 63. ~~Const optimization — LabeledStatement, SwitchStatement coverage (#151)~~ DONE
 64. ~~Expression visitor — replaceVariable coverage for all types (#152)~~ DONE
-65. ~~Source line number comments from debug info (#128)~~ DONE
+65. ~~Type inference for property load opcodes (#153)~~ DONE
+66. ~~Source line number comments from debug info (#128)~~ DONE
 66. ~~Variable name inference from usage context (#133)~~ DONE
 64. ~~Comprehensive opcode decompilation tests (#134)~~ DONE
 65. ~~decompileFile() integration tests (#135)~~ DONE
@@ -360,6 +361,9 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Expression type naming:** `inferNameFromExpression()` handles ArrayLiteral→items, ObjectLiteral→config, TemplateLiteral→template, ArrowFunction (delegates to body), AwaitExpression/YieldExpression (delegates to argument). `sanitizeName()` strips get/set/is/has/can/will/should prefixes.
 - **Const optimization completeness:** `collectVarUsageFromStmt()` and `rewriteLetToConstInStmt()` now handle LabeledStatement (unwrap inner statement). SwitchStatement was already covered. All non-leaf statement types are handled.
 - **replaceVariable completeness:** `ExpressionVisitor.replaceVariable()` handles ALL 35+ expression types across ArkTSExpression, ArkTSAccessExpressions, and ArkTSPropertyExpressions. Recursive replacement in all child expressions.
+- **Property load type inference:** `TypeInference.inferPropertyLoadType()` resolves known property names via `PROPERTY_TYPE_MAP` (length→number, size→number, name→string, message→string, constructor→Function, prototype→object, etc.). Uses `ctx.resolveString(stringIdx)` from operand[1].
+- **Agent stability — source modifications:** Agents making source changes can break API compatibility with existing tests. Always `git checkout HEAD -- .` and verify clean build before agent changes. Prefer agents for NEW files only. Reset and re-implement manually if agents break builds.
+- **Map.of() limit (recurring):** Java `Map.of()` max 10 entries (20 args). Always use `Map.ofEntries(Map.entry(...))` for 11+ entries. Checkstyle catches unused imports but NOT this at compile time.
 <!-- LINT_RULES_END -->
 
 ---
