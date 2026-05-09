@@ -632,9 +632,11 @@ class ObjectCreationHandler {
                 || falseValue == null) {
             return null;
         }
-        if (isNullEqualityCheck(condition)) {
+        // Pattern 1: x === null ? y : x  (equality check)
+        //   condition = x === null, trueValue = y, falseValue = x
+        if (isNullOrUndefinedEqualityCheck(condition)) {
             ArkTSExpression checkedValue =
-                    getNullCheckTarget(condition);
+                    getNullOrUndefinedCheckTarget(condition);
             if (checkedValue != null && expressionsMatch(checkedValue,
                     falseValue)) {
                 return new ArkTSPropertyExpressions
@@ -642,20 +644,51 @@ class ObjectCreationHandler {
                         falseValue, trueValue);
             }
         }
+        // Pattern 2: x !== null ? x : y  (inequality check)
+        //   condition = x !== null, trueValue = x, falseValue = y
+        if (isNullOrUndefinedInequalityCheck(condition)) {
+            ArkTSExpression checkedValue =
+                    getNullOrUndefinedCheckTarget(condition);
+            if (checkedValue != null && expressionsMatch(checkedValue,
+                    trueValue)) {
+                return new ArkTSPropertyExpressions
+                        .NullishCoalescingExpression(
+                        trueValue, falseValue);
+            }
+        }
         return null;
     }
 
-    private boolean isNullEqualityCheck(ArkTSExpression expr) {
+    private boolean isNullOrUndefinedEqualityCheck(ArkTSExpression expr) {
         if (expr instanceof ArkTSExpression.BinaryExpression) {
             ArkTSExpression.BinaryExpression bin =
                     (ArkTSExpression.BinaryExpression) expr;
-            return "===".equals(bin.getOperator())
-                    || "==".equals(bin.getOperator());
+            String op = bin.getOperator();
+            if (!("===".equals(op) || "==".equals(op))) {
+                return false;
+            }
+            return isNullOrUndefinedLiteral(bin.getLeft())
+                    || isNullOrUndefinedLiteral(bin.getRight());
         }
         return false;
     }
 
-    private ArkTSExpression getNullCheckTarget(
+    private boolean isNullOrUndefinedInequalityCheck(
+            ArkTSExpression expr) {
+        if (expr instanceof ArkTSExpression.BinaryExpression) {
+            ArkTSExpression.BinaryExpression bin =
+                    (ArkTSExpression.BinaryExpression) expr;
+            String op = bin.getOperator();
+            if (!("!==".equals(op) || "!=".equals(op))) {
+                return false;
+            }
+            return isNullOrUndefinedLiteral(bin.getLeft())
+                    || isNullOrUndefinedLiteral(bin.getRight());
+        }
+        return false;
+    }
+
+    private ArkTSExpression getNullOrUndefinedCheckTarget(
             ArkTSExpression condition) {
         if (!(condition instanceof ArkTSExpression.BinaryExpression)) {
             return null;
@@ -664,19 +697,23 @@ class ObjectCreationHandler {
                 (ArkTSExpression.BinaryExpression) condition;
         ArkTSExpression left = bin.getLeft();
         ArkTSExpression right = bin.getRight();
-        if (isNullLiteralExpr(right)) {
+        if (isNullOrUndefinedLiteral(right)) {
             return left;
         }
-        if (isNullLiteralExpr(left)) {
+        if (isNullOrUndefinedLiteral(left)) {
             return right;
         }
         return null;
     }
 
-    private boolean isNullLiteralExpr(ArkTSExpression expr) {
+    private boolean isNullOrUndefinedLiteral(ArkTSExpression expr) {
         if (expr instanceof ArkTSExpression.LiteralExpression) {
-            return ((ArkTSExpression.LiteralExpression) expr).getKind()
-                    == ArkTSExpression.LiteralExpression.LiteralKind.NULL;
+            ArkTSExpression.LiteralExpression.LiteralKind kind =
+                    ((ArkTSExpression.LiteralExpression) expr).getKind();
+            return kind == ArkTSExpression.LiteralExpression
+                    .LiteralKind.NULL
+                    || kind == ArkTSExpression.LiteralExpression
+                            .LiteralKind.UNDEFINED;
         }
         return false;
     }

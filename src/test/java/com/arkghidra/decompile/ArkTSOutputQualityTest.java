@@ -118,6 +118,90 @@ class ArkTSOutputQualityTest {
         }
 
         @Test
+        void testBooleanComparison_loose_xEqTrue() {
+            ArkTSExpression expr =
+                    new ArkTSExpression.BinaryExpression(
+                            new ArkTSExpression.VariableExpression("x"),
+                            "==",
+                            new ArkTSExpression.LiteralExpression("true",
+                                    ArkTSExpression.LiteralExpression
+                                            .LiteralKind.BOOLEAN));
+            assertEquals("x",
+                    OperatorHandler.simplifyBooleanComparison(expr)
+                            .toArkTS());
+        }
+
+        @Test
+        void testBooleanComparison_loose_xEqFalse() {
+            ArkTSExpression expr =
+                    new ArkTSExpression.BinaryExpression(
+                            new ArkTSExpression.VariableExpression("x"),
+                            "==",
+                            new ArkTSExpression.LiteralExpression("false",
+                                    ArkTSExpression.LiteralExpression
+                                            .LiteralKind.BOOLEAN));
+            assertEquals("!x",
+                    OperatorHandler.simplifyBooleanComparison(expr)
+                            .toArkTS());
+        }
+
+        @Test
+        void testBooleanComparison_loose_xNeqTrue() {
+            ArkTSExpression expr =
+                    new ArkTSExpression.BinaryExpression(
+                            new ArkTSExpression.VariableExpression("x"),
+                            "!=",
+                            new ArkTSExpression.LiteralExpression("true",
+                                    ArkTSExpression.LiteralExpression
+                                            .LiteralKind.BOOLEAN));
+            assertEquals("!x",
+                    OperatorHandler.simplifyBooleanComparison(expr)
+                            .toArkTS());
+        }
+
+        @Test
+        void testBooleanComparison_loose_xNeqFalse() {
+            ArkTSExpression expr =
+                    new ArkTSExpression.BinaryExpression(
+                            new ArkTSExpression.VariableExpression("x"),
+                            "!=",
+                            new ArkTSExpression.LiteralExpression("false",
+                                    ArkTSExpression.LiteralExpression
+                                            .LiteralKind.BOOLEAN));
+            assertEquals("x",
+                    OperatorHandler.simplifyBooleanComparison(expr)
+                            .toArkTS());
+        }
+
+        @Test
+        void testBooleanComparison_loose_falseEqX_commutative() {
+            ArkTSExpression expr =
+                    new ArkTSExpression.BinaryExpression(
+                            new ArkTSExpression.LiteralExpression("false",
+                                    ArkTSExpression.LiteralExpression
+                                            .LiteralKind.BOOLEAN),
+                            "==",
+                            new ArkTSExpression.VariableExpression("x"));
+            assertEquals("!x",
+                    OperatorHandler.simplifyBooleanComparison(expr)
+                            .toArkTS());
+        }
+
+        @Test
+        void testBooleanComparison_loose_trueNeqX_commutative() {
+            ArkTSExpression expr =
+                    new ArkTSExpression.BinaryExpression(
+                            new ArkTSExpression.LiteralExpression("true",
+                                    ArkTSExpression.LiteralExpression
+                                            .LiteralKind.BOOLEAN),
+                            "!=",
+                            new ArkTSExpression.VariableExpression("x"));
+            assertEquals("!x",
+                    OperatorHandler.simplifyBooleanComparison(expr)
+                            .toArkTS());
+        }
+
+        @Test
         void testConstantFolding() {
             ArkTSExpression three =
                     new ArkTSExpression.LiteralExpression("3",
@@ -592,6 +676,153 @@ class ArkTSOutputQualityTest {
                             List.of("price$"),
                             List.of());
             assertEquals("`price$`", expr.toArkTS());
+        }
+    }
+
+    @Nested
+    @DisplayName("Nullish coalescing detection")
+    class NullishCoalescingDetectionTests {
+        private final ArkTSDecompiler decomp = new ArkTSDecompiler();
+
+        @Test
+        @DisplayName("x === null ? default : x  ->  x ?? default")
+        void testStrictEqNull() {
+            ArkTSExpression x =
+                    new ArkTSExpression.VariableExpression("x");
+            ArkTSExpression condition =
+                    new ArkTSExpression.BinaryExpression(x, "===",
+                            new ArkTSExpression.LiteralExpression("null",
+                                    ArkTSExpression.LiteralExpression
+                                            .LiteralKind.NULL));
+            ArkTSExpression fallback =
+                    new ArkTSExpression.LiteralExpression("default",
+                            ArkTSExpression.LiteralExpression
+                                    .LiteralKind.STRING);
+            ArkTSExpression result =
+                    decomp.tryDetectNullishCoalescing(
+                            condition, fallback, x);
+            assertTrue(result instanceof ArkTSPropertyExpressions
+                            .NullishCoalescingExpression,
+                    "Should detect nullish coalescing");
+            assertEquals("x ?? \"default\"", result.toArkTS());
+        }
+
+        @Test
+        @DisplayName("x !== null ? x : default  ->  x ?? default")
+        void testStrictNeqNull() {
+            ArkTSExpression x =
+                    new ArkTSExpression.VariableExpression("x");
+            ArkTSExpression condition =
+                    new ArkTSExpression.BinaryExpression(x, "!==",
+                            new ArkTSExpression.LiteralExpression("null",
+                                    ArkTSExpression.LiteralExpression
+                                            .LiteralKind.NULL));
+            ArkTSExpression fallback =
+                    new ArkTSExpression.LiteralExpression("default",
+                            ArkTSExpression.LiteralExpression
+                                    .LiteralKind.STRING);
+            ArkTSExpression result =
+                    decomp.tryDetectNullishCoalescing(
+                            condition, x, fallback);
+            assertTrue(result instanceof ArkTSPropertyExpressions
+                            .NullishCoalescingExpression,
+                    "Should detect nullish coalescing from !== null");
+            assertEquals("x ?? \"default\"", result.toArkTS());
+        }
+
+        @Test
+        @DisplayName("x != null ? x : default  ->  x ?? default")
+        void testLooseNeqNull() {
+            ArkTSExpression x =
+                    new ArkTSExpression.VariableExpression("x");
+            ArkTSExpression condition =
+                    new ArkTSExpression.BinaryExpression(x, "!=",
+                            new ArkTSExpression.LiteralExpression("null",
+                                    ArkTSExpression.LiteralExpression
+                                            .LiteralKind.NULL));
+            ArkTSExpression fallback =
+                    new ArkTSExpression.LiteralExpression("default",
+                            ArkTSExpression.LiteralExpression
+                                    .LiteralKind.STRING);
+            ArkTSExpression result =
+                    decomp.tryDetectNullishCoalescing(
+                            condition, x, fallback);
+            assertTrue(result instanceof ArkTSPropertyExpressions
+                            .NullishCoalescingExpression,
+                    "Should detect nullish coalescing from != null");
+            assertEquals("x ?? \"default\"", result.toArkTS());
+        }
+
+        @Test
+        @DisplayName("x === undefined ? default : x  ->  x ?? default")
+        void testStrictEqUndefined() {
+            ArkTSExpression x =
+                    new ArkTSExpression.VariableExpression("x");
+            ArkTSExpression condition =
+                    new ArkTSExpression.BinaryExpression(x, "===",
+                            new ArkTSExpression.LiteralExpression(
+                                    "undefined",
+                                    ArkTSExpression.LiteralExpression
+                                            .LiteralKind.UNDEFINED));
+            ArkTSExpression fallback =
+                    new ArkTSExpression.LiteralExpression("0",
+                            ArkTSExpression.LiteralExpression
+                                    .LiteralKind.NUMBER);
+            ArkTSExpression result =
+                    decomp.tryDetectNullishCoalescing(
+                            condition, fallback, x);
+            assertTrue(result instanceof ArkTSPropertyExpressions
+                            .NullishCoalescingExpression,
+                    "Should detect nullish coalescing with undefined");
+            assertEquals("x ?? 0", result.toArkTS());
+        }
+
+        @Test
+        @DisplayName("x !== undefined ? x : default  ->  x ?? default")
+        void testStrictNeqUndefined() {
+            ArkTSExpression x =
+                    new ArkTSExpression.VariableExpression("x");
+            ArkTSExpression condition =
+                    new ArkTSExpression.BinaryExpression(x, "!==",
+                            new ArkTSExpression.LiteralExpression(
+                                    "undefined",
+                                    ArkTSExpression.LiteralExpression
+                                            .LiteralKind.UNDEFINED));
+            ArkTSExpression fallback =
+                    new ArkTSExpression.LiteralExpression("0",
+                            ArkTSExpression.LiteralExpression
+                                    .LiteralKind.NUMBER);
+            ArkTSExpression result =
+                    decomp.tryDetectNullishCoalescing(
+                            condition, x, fallback);
+            assertTrue(result instanceof ArkTSPropertyExpressions
+                            .NullishCoalescingExpression,
+                    "Should detect nullish coalescing from !== undefined");
+            assertEquals("x ?? 0", result.toArkTS());
+        }
+
+        @Test
+        @DisplayName("null === x ? default : x  ->  x ?? default (commutative)")
+        void testStrictEqNull_commutative() {
+            ArkTSExpression x =
+                    new ArkTSExpression.VariableExpression("x");
+            ArkTSExpression condition =
+                    new ArkTSExpression.BinaryExpression(
+                            new ArkTSExpression.LiteralExpression("null",
+                                    ArkTSExpression.LiteralExpression
+                                            .LiteralKind.NULL),
+                            "===", x);
+            ArkTSExpression fallback =
+                    new ArkTSExpression.LiteralExpression("fallback",
+                            ArkTSExpression.LiteralExpression
+                                    .LiteralKind.STRING);
+            ArkTSExpression result =
+                    decomp.tryDetectNullishCoalescing(
+                            condition, fallback, x);
+            assertTrue(result instanceof ArkTSPropertyExpressions
+                            .NullishCoalescingExpression,
+                    "Should detect nullish coalescing (commutative)");
+            assertEquals("x ?? \"fallback\"", result.toArkTS());
         }
     }
 }

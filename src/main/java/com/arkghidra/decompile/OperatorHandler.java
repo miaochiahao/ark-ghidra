@@ -383,14 +383,20 @@ class OperatorHandler {
     /**
      * Simplifies comparisons against boolean literals.
      *
-     * <p>Patterns recognized:
+     * <p>Patterns recognized (both strict and loose equality):
      * <ul>
-     *   <li>{@code x === true} -> {@code x}</li>
-     *   <li>{@code x === false} -> {@code !x}</li>
-     *   <li>{@code x !== true} -> {@code !x}</li>
-     *   <li>{@code x !== false} -> {@code x}</li>
-     *   <li>{@code true === x} -> {@code x}</li>
-     *   <li>{@code false === x} -> {@code !x}</li>
+     *   <li>{@code x === true} -> {@code x}, {@code x == true} ->
+     *       {@code x}</li>
+     *   <li>{@code x === false} -> {@code !x}, {@code x == false}
+     *       -> {@code !x}</li>
+     *   <li>{@code x !== true} -> {@code !x}, {@code x != true} ->
+     *       {@code !x}</li>
+     *   <li>{@code x !== false} -> {@code x}, {@code x != false}
+     *       -> {@code x}</li>
+     *   <li>{@code true === x} -> {@code x}, {@code true == x} ->
+     *       {@code x}</li>
+     *   <li>{@code false === x} -> {@code !x}, {@code false == x}
+     *       -> {@code !x}</li>
      * </ul>
      *
      * @param expr the expression to simplify
@@ -404,7 +410,9 @@ class OperatorHandler {
         ArkTSExpression.BinaryExpression bin =
                 (ArkTSExpression.BinaryExpression) expr;
         String op = bin.getOperator();
-        if (!"===".equals(op) && !"!==".equals(op)) {
+        boolean isEquality = "===" .equals(op) || "==".equals(op);
+        boolean isInequality = "!==".equals(op) || "!=".equals(op);
+        if (!isEquality && !isInequality) {
             return expr;
         }
         Boolean leftBool = extractBooleanValue(bin.getLeft());
@@ -412,7 +420,7 @@ class OperatorHandler {
         if (leftBool == null && rightBool == null) {
             return expr;
         }
-        boolean negate = "!==".equals(op);
+        boolean negate = isInequality;
         if (rightBool != null) {
             ArkTSExpression operand = bin.getLeft();
             if (rightBool == negate) {
