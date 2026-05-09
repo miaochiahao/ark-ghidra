@@ -165,11 +165,14 @@ public class AbcFile {
         List<AbcLiteralArray> literalArrays = new ArrayList<>();
         for (long laOff : literalArrayIndex) {
             if (laOff < 0 || laOff >= r.capacity()) {
-                throw new AbcFormatException(
-                        "Literal array offset " + laOff + " out of range [0, " + r.capacity() + ")");
+                continue;
             }
-            r.position((int) laOff);
-            literalArrays.add(parseLiteralArray(r));
+            try {
+                r.position((int) laOff);
+                literalArrays.add(parseLiteralArray(r));
+            } catch (Exception e) {
+                // Skip malformed literal arrays (format version differences)
+            }
         }
 
         AbcFile abcFile = new AbcFile(header, regionHeaders, classes, protos, literalArrays,
@@ -236,23 +239,27 @@ public class AbcFile {
         if (off <= 0 || off >= rawData.length) {
             return null;
         }
-        AbcReader r = new AbcReader(rawData);
-        r.position((int) off);
-        int typeIdx = (int) r.readU32();
-        int retention = r.readU8() & 0xFF;
-        long numElements = r.readUleb128();
+        try {
+            AbcReader r = new AbcReader(rawData);
+            r.position((int) off);
+            int typeIdx = (int) r.readU32();
+            int retention = r.readU8() & 0xFF;
+            long numElements = r.readUleb128();
 
-        String typeName = readStringAtCached(r, typeIdx);
-        List<AbcAnnotationElement> elements =
-                new ArrayList<>((int) numElements);
-        for (int i = 0; i < (int) numElements; i++) {
-            AbcAnnotationElement elem = parseAnnotationElement(r);
-            if (elem != null) {
-                elements.add(elem);
+            String typeName = readStringAtCached(r, typeIdx);
+            List<AbcAnnotationElement> elements =
+                    new ArrayList<>((int) Math.min(numElements, 64));
+            for (int i = 0; i < (int) numElements; i++) {
+                AbcAnnotationElement elem = parseAnnotationElement(r);
+                if (elem != null) {
+                    elements.add(elem);
+                }
             }
-        }
 
         return new AbcAnnotation(typeIdx, typeName, elements, off);
+        } catch (Exception | OutOfMemoryError e) {
+            return null;
+        }
     }
 
     private AbcAnnotationElement parseAnnotationElement(AbcReader r) {
@@ -291,16 +298,16 @@ public class AbcFile {
      * @throws AbcFormatException if any offset is out of range
      */
     private static void validateHeaderOffsets(AbcHeader header, int dataLength) {
-        if (header.getNumClasses() > 0) {
+        if (header.getNumClasses() > 0 && header.getNumClasses() != UNUSED) {
             checkOffset("classIdxOff", header.getClassIdxOff(), dataLength);
         }
-        if (header.getNumLnps() > 0) {
+        if (header.getNumLnps() > 0 && header.getNumLnps() != UNUSED) {
             checkOffset("lnpIdxOff", header.getLnpIdxOff(), dataLength);
         }
-        if (header.getNumLiteralArrays() > 0) {
+        if (header.getNumLiteralArrays() > 0 && header.getNumLiteralArrays() != UNUSED) {
             checkOffset("literalArrayIdxOff", header.getLiteralArrayIdxOff(), dataLength);
         }
-        if (header.getNumIndexRegions() > 0) {
+        if (header.getNumIndexRegions() > 0 && header.getNumIndexRegions() != UNUSED) {
             checkOffset("indexSectionOff", header.getIndexSectionOff(), dataLength);
         }
     }
@@ -332,8 +339,10 @@ public class AbcFile {
                 literalArrayIdxOff, numIndexRegions, indexSectionOff);
     }
 
+    private static final long UNUSED = 0xFFFFFFFFL;
+
     private static List<Long> parseIndexArray(AbcReader r, long off, long count) {
-        if (count == 0) {
+        if (count == 0 || count == UNUSED || off == UNUSED) {
             return Collections.emptyList();
         }
         r.position((int) off);
@@ -591,12 +600,19 @@ public class AbcFile {
         if (rh.getProtoIdxSize() == 0) {
             return;
         }
-        r.position((int) rh.getProtoIdxOff());
+        long idxOff = rh.getProtoIdxOff();
+        if (idxOff == 0 || idxOff >= r.capacity()) {
+            return;
+        }
+        r.position((int) idxOff);
         List<Long> protoOffsets = new ArrayList<>((int) rh.getProtoIdxSize());
         for (int i = 0; i < (int) rh.getProtoIdxSize(); i++) {
             protoOffsets.add(r.readU32());
         }
         for (long protoOff : protoOffsets) {
+            if (protoOff == 0 || protoOff >= r.capacity()) {
+                continue;
+            }
             r.position((int) protoOff);
             r.align(2);
             protos.add(parseProto(r));
@@ -694,6 +710,9 @@ public class AbcFile {
      * @return the decoded string
      */
     private String readStringAtCached(AbcReader r, int off) {
+        if (off < 0 || off >= rawData.length) {
+            return "";
+        }
         String cached = stringCache.get(off);
         if (cached != null) {
             return cached;

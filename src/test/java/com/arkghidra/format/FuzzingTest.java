@@ -270,16 +270,20 @@ class FuzzingTest {
     }
 
     @Test
-    void testParse_literalArrayOffsetPastEnd_throwsAbcFormatException() {
+    void testParse_literalArrayOffsetPastEnd_skipsGracefully() {
         int size = 256;
         int laIdxOff = 100;
         byte[] data = new byte[size];
         ByteBuffer bb = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);
         writeHeader(bb, size, 0, 0, 0, 0, 1, laIdxOff, 0, 0);
-        // Literal array index points to offset 9999
+        // Literal array index points to offset 9999 (out of range)
         bb.position(laIdxOff);
         bb.putInt(9999);
-        assertThrows(AbcFormatException.class, () -> AbcFile.parse(data));
+        // Real ABC files may have out-of-range literal array offsets;
+        // the parser should skip them gracefully instead of throwing
+        AbcFile abc = AbcFile.parse(data);
+        assertNotNull(abc);
+        assertTrue(abc.getLiteralArrays().isEmpty());
     }
 
     @Test

@@ -155,7 +155,7 @@ public class AbcReader {
     public String readMutf8() {
         long header = readUleb128();
         int utf16Len = (int) (header >>> 1);
-        if (utf16Len < 0) {
+        if (utf16Len < 0 || utf16Len > remaining()) {
             throw new AbcFormatException("MUTF-8 string length overflow: " + header);
         }
         boolean isAscii = (header & 1) != 0;
