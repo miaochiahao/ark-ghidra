@@ -54,7 +54,8 @@ class ControlFlowReconstructor {
         LINEAR, IF_ONLY, IF_ELSE, WHILE_LOOP, FOR_LOOP,
         FOR_OF_LOOP, FOR_IN_LOOP, FOR_AWAIT_OF_LOOP, DO_WHILE, BREAK,
         CONTINUE, TERNARY, SHORT_CIRCUIT_AND,
-        SHORT_CIRCUIT_OR, SWITCH, UNKNOWN
+        SHORT_CIRCUIT_OR, SWITCH, OPTIONAL_CHAIN,
+        GUARD_CLAUSE, UNKNOWN
     }
 
     static class ControlFlowPattern {
@@ -285,6 +286,16 @@ class ControlFlowReconstructor {
                     visited.add(block);
                     stmts.addAll(switchProcessor.processSwitch(block,
                             pattern, ctx, cfg, visited));
+                    break;
+                case OPTIONAL_CHAIN:
+                    visited.add(block);
+                    stmts.addAll(branchProcessor.processOptionalChain(
+                            block, pattern, ctx, cfg, visited));
+                    break;
+                case GUARD_CLAUSE:
+                    visited.add(block);
+                    stmts.addAll(branchProcessor.detectGuardClause(
+                            block, pattern, ctx, cfg, visited));
                     break;
                 default:
                     visited.add(block);

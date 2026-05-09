@@ -1078,4 +1078,67 @@ public class ArkTSAccessExpressions {
             return "/* runtime: " + runtimeName + "(" + joiner + ") */";
         }
     }
+
+    // --- Optional chain call ---
+
+    /**
+     * An optional chain call expression: obj?.method(args).
+     *
+     * <p>Detected when a property load is followed by a null check and
+     * then a method call on the result. Emits the {@code ?.} syntax.
+     */
+    public static class OptionalChainCallExpression extends ArkTSExpression {
+        private final ArkTSExpression object;
+        private final ArkTSExpression property;
+        private final boolean computed;
+        private final List<ArkTSExpression> arguments;
+
+        /**
+         * Constructs an optional chain call expression.
+         *
+         * @param object the object expression
+         * @param property the property (method) expression
+         * @param computed true if bracket notation
+         * @param arguments the call arguments
+         */
+        public OptionalChainCallExpression(ArkTSExpression object,
+                ArkTSExpression property, boolean computed,
+                List<ArkTSExpression> arguments) {
+            this.object = object;
+            this.property = property;
+            this.computed = computed;
+            this.arguments = Collections.unmodifiableList(
+                    new ArrayList<>(arguments));
+        }
+
+        public ArkTSExpression getObject() {
+            return object;
+        }
+
+        public ArkTSExpression getProperty() {
+            return property;
+        }
+
+        public boolean isComputed() {
+            return computed;
+        }
+
+        public List<ArkTSExpression> getArguments() {
+            return arguments;
+        }
+
+        @Override
+        public String toArkTS() {
+            StringJoiner joiner = new StringJoiner(", ");
+            for (ArkTSExpression arg : arguments) {
+                joiner.add(arg.toArkTS());
+            }
+            if (computed) {
+                return object.toArkTS() + "?.["
+                        + property.toArkTS() + "](" + joiner + ")";
+            }
+            return object.toArkTS() + "?."
+                    + property.toArkTS() + "(" + joiner + ")";
+        }
+    }
 }

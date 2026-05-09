@@ -5,14 +5,19 @@ import java.util.List;
 import java.util.Set;
 
 import com.arkghidra.disasm.ArkInstruction;
+import com.arkghidra.disasm.ArkOperand;
 
 /**
  * Processes branch-related control flow patterns: if/else, if-only,
- * ternary expressions, and short-circuit (&&/||) evaluation.
+ * ternary expressions, short-circuit (&&/||) evaluation, optional
+ * chaining, non-null assertions, and guard clauses.
  *
  * <p>Called from {@link ControlFlowReconstructor} for
  * {@code IF_ELSE}, {@code IF_ONLY}, {@code TERNARY},
  * {@code SHORT_CIRCUIT_AND}, and {@code SHORT_CIRCUIT_OR} patterns.
+ *
+ * <p>Also provides detection for optional chaining patterns
+ * ({@code obj?.prop}) and non-null assertions ({@code expr!}).
  */
 class BranchProcessor {
 
@@ -484,5 +489,427 @@ class BranchProcessor {
         stmts.add(new ArkTSStatement.ExpressionStatement(combined));
 
         return stmts;
+    }
+
+    // --- Optional chaining detection ---
+
+    /**
+     * Detects an optional chaining pattern in an IF_ONLY branch.
+     *
+     * <p>Pattern: a property load (ldobjbyname, etc.) is followed by
+     * jeqnull/jstricteqnull. The null-check branch jumps to a block
+     * that assigns null/undefined, while the fall-through continues
+     * using the result. This indicates {@code obj?.prop}.
+     *
+     * <p>If detected, returns an IF_ONLY pattern where the branch
+     * block's instructions are rewritten to use an
+     * OptionalChainExpression instead of the plain property load.
+     *
+     * @param condBlock the condition block
+     * @param pattern the detected IF_ONLY pattern
+     * @param ctx the decompilation context
+     * @param cfg the control flow graph
+     * @return statements with optional chaining, or null if not detected
+     */
+    List<ArkTSStatement> processOptionalChain(BasicBlock condBlock,
+            ControlFlowReconstructor.ControlFlowPattern pattern,
+            DecompilationContext ctx, ControlFlowGraph cfg,
+            Set<BasicBlock> visited) {
+
+        ArkInstruction lastInsn = condBlock.getLastInstruction();
+        if (lastInsn == null) {
+            return null;
+        }
+        int opcode = lastInsn.getOpcode();
+
+        // Only trigger on null-check branches (jeqnull, jstricteqnull)
+        if (!isNullCheckBranch(opcode)) {
+            return null;
+        }
+
+        // Check the accumulator value — must be a member expression
+        // (from a property load like ldobjbyname)
+        ArkTSExpression accValue = ctx.currentAccValue;
+        if (accValue == null) {
+            return null;
+        }
+
+        ArkTSExpression optionalExpr =
+                tryConvertToOptionalChain(accValue);
+        if (optionalExpr == null) {
+            return null;
+        }
+
+        List<ArkTSStatement> stmts = new ArrayList<>();
+
+        // Process pre-branch instructions in condition block
+        List<ArkTSStatement> preStmts =
+                reconstructor.processBlockInstructionsExcluding(
+                        condBlock, ctx, lastInsn);
+        stmts.addAll(preStmts);
+
+        // The branch block (null path) — typically assigns null/undefined
+        // The fall-through block (non-null path) — continues with result
+        int lastBranchOpcode = lastInsn.getOpcode();
+        BasicBlock nullPathBlock;
+        BasicBlock nonNullPathBlock;
+
+        if (reconstructor.isBranchOnFalse(lastBranchOpcode)) {
+            // jeqnull jumps when null -> nullPath is trueBlock
+            nullPathBlock = pattern.trueBlock;
+            nonNullPathBlock = pattern.falseBlock;
+        } else {
+            nullPathBlock = pattern.falseBlock;
+            nonNullPathBlock = pattern.trueBlock;
+        }
+
+        visited.add(nullPathBlock);
+        visited.add(nonNullPathBlock);
+
+        // The non-null path should use the optional chain expression
+        // Replace the accumulator value temporarily
+        ArkTSExpression savedAcc = ctx.currentAccValue;
+        ctx.currentAccValue = optionalExpr;
+
+        // Process the non-null path (the one that uses the result)
+        List<ArkTSStatement> nonNullStmts =
+                reconstructor.processBlockInstructions(
+                        nonNullPathBlock, ctx);
+
+        // Check if non-null path stores to a variable — then we need
+        // to also handle the null path storing null to same variable
+        String targetVar = findStaTarget(nonNullStmts);
+
+        if (targetVar != null && isSimpleNullAssignment(nullPathBlock, ctx)) {
+            // Emit: let result = obj?.prop;
+            // The optional expression is already captured
+            stmts.add(new ArkTSStatement.VariableDeclaration(
+                    "let", targetVar, null, optionalExpr));
+
+            // Process remaining statements after the sta in nonNull block
+            for (ArkTSStatement s : nonNullStmts) {
+                if (!(s instanceof ArkTSStatement.VariableDeclaration)) {
+                    stmts.add(s);
+                }
+            }
+        } else {
+            // Emit the optional chain as an expression statement
+            stmts.add(new ArkTSStatement.ExpressionStatement(optionalExpr));
+            stmts.addAll(nonNullStmts);
+        }
+
+        ctx.currentAccValue = savedAcc;
+        return stmts;
+    }
+
+    /**
+     * Returns true if the opcode is a null-check branch.
+     */
+    private static boolean isNullCheckBranch(int opcode) {
+        return opcode == ArkOpcodesCompat.JEQNULL_IMM8
+                || opcode == ArkOpcodesCompat.JEQNULL_IMM16
+                || opcode == ArkOpcodesCompat.JNENULL_IMM8
+                || opcode == ArkOpcodesCompat.JNENULL_IMM16
+                || opcode == ArkOpcodesCompat.JSTRICTEQNULL_IMM8
+                || opcode == ArkOpcodesCompat.JSTRICTEQNULL_IMM16
+                || opcode == ArkOpcodesCompat.JNSTRICTEQNULL_IMM8
+                || opcode == ArkOpcodesCompat.JNSTRICTEQNULL_IMM16;
+    }
+
+    /**
+     * Tries to convert a MemberExpression to an OptionalChainExpression.
+     *
+     * @param expr the expression to convert
+     * @return an OptionalChainExpression, or null if not applicable
+     */
+    private static ArkTSExpression tryConvertToOptionalChain(
+            ArkTSExpression expr) {
+        if (expr instanceof ArkTSExpression.MemberExpression) {
+            ArkTSExpression.MemberExpression member =
+                    (ArkTSExpression.MemberExpression) expr;
+            return new ArkTSAccessExpressions.OptionalChainExpression(
+                    member.getObject(), member.getProperty(),
+                    member.isComputed());
+        }
+        if (expr instanceof ArkTSExpression.CallExpression) {
+            ArkTSExpression.CallExpression call =
+                    (ArkTSExpression.CallExpression) expr;
+            if (call.getCallee()
+                    instanceof ArkTSExpression.MemberExpression) {
+                ArkTSExpression.MemberExpression member =
+                        (ArkTSExpression.MemberExpression) call.getCallee();
+                return new ArkTSAccessExpressions
+                        .OptionalChainCallExpression(
+                        member.getObject(), member.getProperty(),
+                        member.isComputed(), call.getArguments());
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Finds the target variable of the first VariableDeclaration or
+     * assignment in a statement list.
+     */
+    private static String findStaTarget(List<ArkTSStatement> stmts) {
+        for (ArkTSStatement stmt : stmts) {
+            if (stmt instanceof ArkTSStatement.VariableDeclaration) {
+                return ((ArkTSStatement.VariableDeclaration) stmt)
+                        .getName();
+            }
+            if (stmt instanceof ArkTSStatement.ExpressionStatement) {
+                ArkTSExpression expr =
+                        ((ArkTSStatement.ExpressionStatement) stmt)
+                                .getExpression();
+                if (expr instanceof ArkTSExpression.AssignExpression) {
+                    ArkTSExpression target =
+                            ((ArkTSExpression.AssignExpression) expr)
+                                    .getTarget();
+                    if (target
+                            instanceof ArkTSExpression.VariableExpression) {
+                        return ((ArkTSExpression.VariableExpression) target)
+                                .getName();
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Checks if a block simply assigns null/undefined to a variable.
+     */
+    private boolean isSimpleNullAssignment(BasicBlock block,
+            DecompilationContext ctx) {
+        List<ArkInstruction> insns = block.getInstructions();
+        if (insns.isEmpty()) {
+            return false;
+        }
+        // Check for: ldnull; sta vN or ldundefined; sta vN
+        for (ArkInstruction insn : insns) {
+            int op = insn.getOpcode();
+            if (op == ArkOpcodesCompat.LDNULL
+                    || op == ArkOpcodesCompat.LDUNDEFINED) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // --- Non-null assertion detection ---
+
+    /**
+     * Processes a non-null assertion pattern.
+     *
+     * <p>Pattern: {@code jnenull} (jump if not null) where the non-null
+     * path continues with the value and the null path throws/returns.
+     * This emits the {@code expr!} syntax.
+     *
+     * @param expr the expression to assert non-null
+     * @return a NonNullExpression wrapping the input, or the input
+     *         unchanged if the assertion is not applicable
+     */
+    static ArkTSExpression applyNonNullAssertion(
+            ArkTSExpression expr) {
+        if (expr == null) {
+            return null;
+        }
+        // If the expression is already an optional chain, don't add !
+        if (expr instanceof ArkTSAccessExpressions.OptionalChainExpression
+                || expr instanceof ArkTSAccessExpressions
+                        .OptionalChainCallExpression) {
+            return expr;
+        }
+        return new ArkTSAccessExpressions.NonNullExpression(expr);
+    }
+
+    // --- Guard clause detection ---
+
+    /**
+     * Detects a guard clause pattern in an IF_ONLY branch.
+     *
+     * <p>Pattern: {@code if (!condition) { return defaultValue }}
+     * This is detected when the branch block (taken when the condition
+     * is falsy) contains only a return statement, and the fall-through
+     * continues with the main logic.
+     *
+     * <p>When detected, emits the guard clause as an early return rather
+     * than wrapping the rest of the code in an else block.
+     *
+     * @param condBlock the condition block
+     * @param pattern the detected IF_ONLY pattern
+     * @param ctx the decompilation context
+     * @param cfg the control flow graph
+     * @return statements with guard clause, or null if not a guard
+     */
+    List<ArkTSStatement> detectGuardClause(BasicBlock condBlock,
+            ControlFlowReconstructor.ControlFlowPattern pattern,
+            DecompilationContext ctx, ControlFlowGraph cfg,
+            Set<BasicBlock> visited) {
+
+        // The branch block (taken on the branch condition) must contain
+        // only a return statement (guard clause body)
+        int lastOpcode = condBlock.getLastInstruction().getOpcode();
+        BasicBlock branchBlock;
+        if (reconstructor.isBranchOnFalse(lastOpcode)) {
+            branchBlock = pattern.trueBlock;
+        } else {
+            branchBlock = pattern.falseBlock;
+        }
+
+        // Check if the branch block is a simple return (guard body)
+        if (!isGuardReturnBlock(branchBlock)) {
+            return null;
+        }
+
+        // This IS a guard clause: emit early return
+        List<ArkTSStatement> stmts = new ArrayList<>();
+
+        List<ArkTSStatement> preStmts =
+                reconstructor.processBlockInstructionsExcluding(
+                        condBlock, ctx, condBlock.getLastInstruction());
+        stmts.addAll(preStmts);
+
+        ArkTSExpression condition =
+                reconstructor.getConditionExpression(
+                        condBlock.getLastInstruction(), ctx);
+        if (condition == null) {
+            condition = new ArkTSExpression.VariableExpression(
+                    ControlFlowReconstructor.ACC);
+        }
+
+        // Negate the condition for guard clause: "if (!cond) return"
+        ArkTSExpression guardCondition;
+        if (reconstructor.isBranchOnFalse(lastOpcode)) {
+            // Branch taken when false -> condition is already negated
+            guardCondition = condition;
+        } else {
+            guardCondition =
+                    new ArkTSExpression.UnaryExpression("!", condition, true);
+        }
+
+        visited.add(branchBlock);
+
+        List<ArkTSStatement> guardStmts =
+                reconstructor.processBlockInstructions(
+                        branchBlock, ctx);
+        ArkTSStatement guardBody =
+                new ArkTSStatement.BlockStatement(guardStmts);
+
+        stmts.add(new ArkTSControlFlow.IfStatement(
+                guardCondition, guardBody, null));
+
+        return stmts;
+    }
+
+    /**
+     * Returns true if a block contains only a return statement
+     * (with or without a value), making it suitable as a guard body.
+     */
+    private boolean isGuardReturnBlock(BasicBlock block) {
+        List<ArkInstruction> insns = block.getInstructions();
+        if (insns.isEmpty()) {
+            return false;
+        }
+        // The block should end with return or returnundefined
+        // and have at most one load + one return
+        boolean hasReturn = false;
+        int nonNopCount = 0;
+        for (ArkInstruction insn : insns) {
+            int op = insn.getOpcode();
+            if (op == ArkOpcodesCompat.RETURN
+                    || op == ArkOpcodesCompat.RETURNUNDEFINED) {
+                hasReturn = true;
+            }
+            if (op != ArkOpcodesCompat.NOP) {
+                nonNopCount++;
+            }
+        }
+        // Guard body: 1-3 instructions (load value + return, or just
+        // return)
+        return hasReturn && nonNopCount <= 3;
+    }
+
+    // --- Optional chaining with property load ---
+
+    /**
+     * Attempts to detect optional chaining from a sequence of
+     * instructions within a condition block.
+     *
+     * <p>Looks for: property load (ldobjbyname etc.) followed by
+     * jnenull (branch if not null). When the null path assigns
+     * null/undefined and the non-null path continues, this indicates
+     * optional chaining.
+     *
+     * @param condBlock the condition block ending with a branch
+     * @param ctx the decompilation context
+     * @return an optional chain expression, or null
+     */
+    static ArkTSExpression tryDetectOptionalChainFromBlock(
+            BasicBlock condBlock, DecompilationContext ctx) {
+        List<ArkInstruction> insns = condBlock.getInstructions();
+        if (insns.size() < 2) {
+            return null;
+        }
+
+        ArkInstruction lastInsn = condBlock.getLastInstruction();
+        if (lastInsn == null) {
+            return null;
+        }
+        int branchOp = lastInsn.getOpcode();
+
+        // Check for jnenull (0x55) or jnstrecteqnull
+        boolean isJumpIfNotNull =
+                branchOp == ArkOpcodesCompat.JNENULL_IMM8
+                || branchOp == ArkOpcodesCompat.JNENULL_IMM16
+                || branchOp == ArkOpcodesCompat.JNSTRICTEQNULL_IMM8
+                || branchOp == ArkOpcodesCompat.JNSTRICTEQNULL_IMM16;
+
+        // Check for jeqnull (0x54) or jstricteqnull
+        boolean isJumpIfNull =
+                branchOp == ArkOpcodesCompat.JEQNULL_IMM8
+                || branchOp == ArkOpcodesCompat.JEQNULL_IMM16
+                || branchOp == ArkOpcodesCompat.JSTRICTEQNULL_IMM8
+                || branchOp == ArkOpcodesCompat.JSTRICTEQNULL_IMM16;
+
+        if (!isJumpIfNotNull && !isJumpIfNull) {
+            return null;
+        }
+
+        // The accumulator should hold the result of a property load
+        ArkTSExpression accValue = ctx.currentAccValue;
+        if (accValue == null) {
+            return null;
+        }
+
+        return tryConvertToOptionalChain(accValue);
+    }
+
+    // --- Helper: extract property name from ldobjbyname instruction ---
+
+    /**
+     * Extracts the property name from a property load instruction if
+     * it is a name-based access (ldobjbyname, ldthisbyname, etc.).
+     *
+     * @param insn the instruction
+     * @param ctx the decompilation context
+     * @return the property name, or null if not a name-based load
+     */
+    static String extractPropertyName(ArkInstruction insn,
+            DecompilationContext ctx) {
+        if (insn == null) {
+            return null;
+        }
+        int opcode = ArkOpcodesCompat.getNormalizedOpcode(insn);
+        if (opcode == ArkOpcodesCompat.LDOBJBYNAME
+                || opcode == ArkOpcodesCompat.LDTHISBYNAME
+                || opcode == ArkOpcodesCompat.LDSUPERBYNAME) {
+            List<ArkOperand> operands = insn.getOperands();
+            if (operands.size() >= 2) {
+                return ctx.resolveString(
+                        (int) operands.get(1).getValue());
+            }
+        }
+        return null;
     }
 }

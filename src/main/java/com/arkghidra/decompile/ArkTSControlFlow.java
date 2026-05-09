@@ -55,6 +55,13 @@ public class ArkTSControlFlow {
 
         @Override
         public String toArkTS(int indent) {
+            // Compact form: if (cond) simpleStmt; (no else, single simple stmt)
+            if (elseBlock == null
+                    && isCompactEligible(thenBlock)) {
+                return indent(indent) + "if ("
+                        + condition.toArkTS() + ") "
+                        + thenBlock.toArkTS(0);
+            }
             StringBuilder sb = new StringBuilder();
             sb.append(indent(indent)).append("if (")
                     .append(condition.toArkTS()).append(") {\n");
@@ -72,6 +79,19 @@ public class ArkTSControlFlow {
                 }
             }
             return sb.toString();
+        }
+
+        private static boolean isCompactEligible(ArkTSStatement stmt) {
+            if (stmt instanceof ArkTSStatement.ReturnStatement) {
+                return true;
+            }
+            if (stmt instanceof ArkTSStatement.BreakStatement) {
+                return true;
+            }
+            if (stmt instanceof ArkTSStatement.ContinueStatement) {
+                return true;
+            }
+            return false;
         }
     }
 
