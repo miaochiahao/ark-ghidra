@@ -367,6 +367,16 @@ public class TypeInference {
                     java.util.Map.entry("toString", "string"),
                     java.util.Map.entry("valueOf", "object"));
 
+    /**
+     * Looks up the inferred type for a well-known property name.
+     *
+     * @param propName the property name
+     * @return the inferred type, or null if unknown
+     */
+    public static String lookupPropertyType(String propName) {
+        return PROPERTY_TYPE_MAP.get(propName);
+    }
+
     private String inferPropertyLoadType(ArkInstruction insn,
             DecompilationContext ctx) {
         if (ctx == null) {

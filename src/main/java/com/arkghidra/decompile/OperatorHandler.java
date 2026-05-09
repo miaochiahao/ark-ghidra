@@ -1066,6 +1066,18 @@ class OperatorHandler {
             }
             return null;
         }
+        if (expr instanceof ArkTSExpression.MemberExpression) {
+            ArkTSExpression.MemberExpression member =
+                    (ArkTSExpression.MemberExpression) expr;
+            if (!member.isComputed()
+                    && member.getProperty()
+                            instanceof ArkTSExpression.LiteralExpression) {
+                String propName =
+                        ((ArkTSExpression.LiteralExpression) member
+                                .getProperty()).getValue();
+                return TypeInference.lookupPropertyType(propName);
+            }
+        }
         if (expr instanceof ArkTSAccessExpressions
                 .TemplateLiteralExpression) {
             return "string";
