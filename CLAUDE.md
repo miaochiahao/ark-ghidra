@@ -137,8 +137,10 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 50. ~~Abstract class detection, constructor parameter properties (#113)~~ DONE
 51. ~~Loose boolean comparison simplification, nullish coalescing (#114)~~ DONE
 52. ~~Logical compound assignments, typeof+null simplification, nullable types (#115)~~ DONE
-53. feat: test with real HarmonyOS .abc files from Ark compiler #25
-54. Performance: large file handling and incremental decompilation
+53. ~~Single-use variable inlining, newobjrange class name resolution (#117)~~ DONE
+54. ~~Cascading single-use inlining, throw support (#118)~~ DONE
+55. feat: test with real HarmonyOS .abc files from Ark compiler #25
+56. Performance: large file handling and incremental decompilation
 
 ### Rules for the loop
 
@@ -219,7 +221,7 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Try/catch decompilation:** Use `AbcCode.getTryBlocks()` → `AbcTryBlock.getCatchBlocks()` → `AbcCatchBlock` to reconstruct exception handling. Map try start/end PC ranges to CFG block addresses. Catch-all blocks (typeIdx=0) map to `finally`.
 - **Jump offset calculation:** `jmp +0` at offset 0 with instruction length 2 gives target = 0+2+0 = 2 (not 0). For infinite loop (jmp to self), need negative offset = -instruction_length (e.g., `0xFE` for 2-byte jmp).
 - **Parameter naming convention:** Use `param_0`, `param_1` etc. (not `p0`/`p1`) for better readability. Falls back to untyped when no proto info available.
-- **Test count tracking:** 1499 tests across 24 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
+- **Test count tracking:** 1502 tests across 24 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
 - **AST node immutability:** `BlockStatement.body`, `SwitchCase.body`, `VariableDeclaration` fields use `Collections.unmodifiableList` or `final`. Don't use `List.set()` to modify — use mutable fields (`setKind()`) or rebuild nodes. `VariableDeclaration.kind` is now mutable via `setKind()` for const/let optimization.
 - **Post-processing pattern:** `applyConstOptimization()` in ArkTSDecompiler traverses all AST statement types recursively. When adding new AST node types, add them to both `collectVarUsage` and `rewriteLetToConst`. Must handle `IfStatement.getThenBlock()`/`getElseBlock()` (returns `ArkTSStatement`, not List) — use `extractBodyList()` helper.
 - **Opcode values for tests:** STA=0x61, LDA=0x60, LDAI=0x62, RETURN=0x64, RETURNUNDEFINED=0x65. Always verify against `ArkOpcodes` constants — NOT 0x06 for STA.
@@ -315,6 +317,9 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Nullable type inference:** `TypeInference.inferNullableType()` builds `T | null` / `T | undefined` union types. `inferTypeFromNullAssignment()` widens type on null/undefined assignment. `DeclarationBuilder.analyzeFieldNullability()` scans constructors for `this.field = null` patterns.
 - **Agent duplicate method injection:** When agents add methods to BranchProcessor (or similar files), they may add duplicate copies AFTER the class closing `}`. Always check for code after the final `}` and remove it. Use `head -n` with caution — verify the exact line count matches expectations.
 - **LiteralExpression test values:** String literal values in tests should NOT include surrounding quotes. `LiteralExpression("hello", STRING)` renders as `"hello"` — the `toArkTS()` method adds quotes. Test assertions should use the already-quoted form in expected strings.
+- **Single-use variable inlining:** `inlineSingleUseVariables()` runs after `applyConstOptimization()` in all three entry points. Cascades up to 3 passes. Handles return, throw, and expression statements. When adding new inline targets, update tests that check for `const vN = expr; return vN` patterns — they now produce `return expr` instead.
+- **Dead store elimination is too aggressive:** Attempting to remove unused variable declarations broke 25+ tests because many patterns legitimately declare variables that aren't directly returned (e.g., setup for side effects, debugging). Only inline into terminal statements (return/throw) and expression statements with exactly one usage.
+- **newobjrange class name resolution:** `defineclasswithbuffer` stores resolved class expression via `ctx.setRegisterExpression()`. When `newobjrange` uses a register reference as callee, `resolveCallee()` in InstructionHandler looks up the stored expression for the real class name.
 <!-- LINT_RULES_END -->
 
 ---
