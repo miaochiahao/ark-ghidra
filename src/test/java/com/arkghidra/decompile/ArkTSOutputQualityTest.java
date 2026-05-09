@@ -1168,4 +1168,51 @@ class ArkTSOutputQualityTest {
                     "v0 should be kept (multi-use): " + result);
         }
     }
+
+    @Nested
+    @DisplayName("Property and method chain inlining")
+    class PropertyInliningTests {
+        private final ArkTSDecompiler decompiler = new ArkTSDecompiler();
+
+        @Test
+        void testAssignmentTargetInline() {
+            // Build AST directly: const v0 = 42; this.field = v0
+            // This tests that replaceVariable handles AssignExpression
+            ArkTSExpression target = new ArkTSExpression.MemberExpression(
+                    new ArkTSExpression.ThisExpression(),
+                    new ArkTSExpression.VariableExpression("field"),
+                    false);
+            ArkTSExpression value =
+                    new ArkTSExpression.VariableExpression("v0");
+            ArkTSExpression assign =
+                    new ArkTSExpression.AssignExpression(target, value);
+            ArkTSExpression replaced =
+                    ArkTSDecompiler.replaceVariablePublic(assign,
+                            "v0",
+                            new ArkTSExpression.LiteralExpression("42",
+                                    ArkTSExpression.LiteralExpression
+                                            .LiteralKind.NUMBER));
+            assertTrue(replaced.toArkTS().contains("this.field = 42"),
+                    "Should inline into assignment: "
+                            + replaced.toArkTS());
+        }
+
+        @Test
+        void testCallArgumentInline() {
+            // const v0 = 42; foo(v0) → foo(42)
+            ArkTSExpression callee =
+                    new ArkTSExpression.VariableExpression("foo");
+            ArkTSExpression arg =
+                    new ArkTSExpression.VariableExpression("v0");
+            ArkTSExpression call = new ArkTSExpression.CallExpression(
+                    callee, List.of(arg));
+            ArkTSExpression replaced =
+                    ArkTSDecompiler.replaceVariablePublic(call,
+                            "v0",
+                            new ArkTSExpression.LiteralExpression("42",
+                                    ArkTSExpression.LiteralExpression
+                                            .LiteralKind.NUMBER));
+            assertEquals("foo(42)", replaced.toArkTS());
+        }
+    }
 }

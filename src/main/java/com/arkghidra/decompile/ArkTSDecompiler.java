@@ -568,7 +568,13 @@ public class ArkTSDecompiler {
     /**
      * Replaces all occurrences of a variable with an expression.
      * Returns null if replacement is not safe for the expression type.
+     * Package-private for testing.
      */
+    static ArkTSExpression replaceVariablePublic(ArkTSExpression expr,
+            String varName, ArkTSExpression replacement) {
+        return replaceVariable(expr, varName, replacement);
+    }
+
     private static ArkTSExpression replaceVariable(ArkTSExpression expr,
             String varName, ArkTSExpression replacement) {
         if (expr instanceof ArkTSExpression.VariableExpression) {
@@ -635,14 +641,23 @@ public class ArkTSDecompiler {
         if (expr instanceof ArkTSExpression.AssignExpression) {
             ArkTSExpression.AssignExpression assign =
                     (ArkTSExpression.AssignExpression) expr;
-            ArkTSExpression target =
-                    replaceVariable(assign.getTarget(), varName, replacement);
+            // Don't replace in the assignment target (left-hand side)
+            if (isSingleVarRef(assign.getTarget(), varName)) {
+                return null;
+            }
+            ArkTSExpression target = replaceVariable(
+                    assign.getTarget(), varName, replacement);
             ArkTSExpression value =
                     replaceVariable(assign.getValue(), varName, replacement);
             if (target == null || value == null) {
                 return null;
             }
             return new ArkTSExpression.AssignExpression(target, value);
+        }
+        // Leaf expressions that never contain variables — return as-is
+        if (expr instanceof ArkTSExpression.LiteralExpression
+                || expr instanceof ArkTSExpression.ThisExpression) {
+            return expr;
         }
         // For unknown expression types, don't attempt replacement
         return null;
