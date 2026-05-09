@@ -91,6 +91,9 @@ public class ArkTSDecompiler {
      */
     public String decompileMethod(AbcMethod method, AbcCode code,
             AbcFile abcFile) {
+        if (method == null) {
+            return "/* unknown method */";
+        }
         if (code == null || code.getInstructions() == null
                 || code.getCodeSize() == 0) {
             return buildEmptyMethod(method, null);
