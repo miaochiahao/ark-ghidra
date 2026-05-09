@@ -1261,7 +1261,9 @@ public class ArkTSDeclarations {
     // --- Import statement ---
 
     /**
-     * An import statement: import { X, Y } from 'module'.
+     * An import statement: import { X, Y } from 'module',
+     * import * as ns from 'module', import 'module' (side-effect),
+     * or import default, { X } from 'module'.
      */
     public static class ImportStatement extends ArkTSStatement {
         private final List<String> imports;
@@ -1298,6 +1300,25 @@ public class ArkTSDeclarations {
             return modulePath;
         }
 
+        public String getDefaultImport() {
+            return defaultImport;
+        }
+
+        public String getNamespaceImport() {
+            return namespaceImport;
+        }
+
+        /**
+         * Returns true if this is a side-effect-only import (no bindings).
+         *
+         * @return true if this import has no named, default, or namespace bindings
+         */
+        public boolean isSideEffectImport() {
+            return defaultImport == null
+                    && namespaceImport == null
+                    && imports.isEmpty();
+        }
+
         @Override
         public String toArkTS(int indent) {
             StringBuilder sb = new StringBuilder();
@@ -1317,7 +1338,12 @@ public class ArkTSDeclarations {
                 }
                 sb.append("{ ").append(joiner).append(" }");
             }
-            sb.append(" from '").append(modulePath).append("';");
+            if (isSideEffectImport()) {
+                // Side-effect import: import 'module';
+                sb.append("'").append(modulePath).append("';");
+            } else {
+                sb.append(" from '").append(modulePath).append("';");
+            }
             return sb.toString();
         }
     }

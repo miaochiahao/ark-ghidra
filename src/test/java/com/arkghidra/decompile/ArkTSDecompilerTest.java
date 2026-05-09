@@ -12817,10 +12817,10 @@ class ArkTSDecompilerTest {
     @Test
     void testStringLiteralMerge_twoStrings() {
         ArkTSExpression left = new ArkTSExpression.LiteralExpression(
-                "\"hello\"",
+                "hello",
                 ArkTSExpression.LiteralExpression.LiteralKind.STRING);
         ArkTSExpression right = new ArkTSExpression.LiteralExpression(
-                "\" world\"",
+                " world",
                 ArkTSExpression.LiteralExpression.LiteralKind.STRING);
         ArkTSExpression result =
                 OperatorHandler.tryMergeStringLiterals(left, "+", right);
@@ -12832,7 +12832,7 @@ class ArkTSDecompilerTest {
         ArkTSExpression left = new ArkTSExpression.LiteralExpression("1",
                 ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
         ArkTSExpression right = new ArkTSExpression.LiteralExpression(
-                "\"hello\"",
+                "hello",
                 ArkTSExpression.LiteralExpression.LiteralKind.STRING);
         ArkTSExpression result =
                 OperatorHandler.tryMergeStringLiterals(left, "+", right);
@@ -12843,10 +12843,10 @@ class ArkTSDecompilerTest {
     @Test
     void testStringLiteralMerge_nonPlusOperator() {
         ArkTSExpression left = new ArkTSExpression.LiteralExpression(
-                "\"hello\"",
+                "hello",
                 ArkTSExpression.LiteralExpression.LiteralKind.STRING);
         ArkTSExpression right = new ArkTSExpression.LiteralExpression(
-                "\" world\"",
+                " world",
                 ArkTSExpression.LiteralExpression.LiteralKind.STRING);
         ArkTSExpression result =
                 OperatorHandler.tryMergeStringLiterals(left, "-", right);
@@ -12872,5 +12872,285 @@ class ArkTSDecompilerTest {
         ArkTSStatement.BreakStatement breakStmt =
                 new ArkTSStatement.BreakStatement();
         assertEquals("break;", breakStmt.toArkTS(0));
+    }
+
+    // --- Output quality: boolean simplify, parens, precedence ---
+
+    @Test
+    void testBooleanSimplify_strictEqTrue() {
+        // x === true -> x
+        ArkTSExpression left =
+                new ArkTSExpression.VariableExpression("x");
+        ArkTSExpression right =
+                new ArkTSExpression.LiteralExpression("true",
+                        ArkTSExpression.LiteralExpression.LiteralKind.BOOLEAN);
+        ArkTSExpression binExpr =
+                new ArkTSExpression.BinaryExpression(left, "===", right);
+        ArkTSExpression result =
+                OperatorHandler.simplifyBooleanComparison(binExpr);
+        String rendered = result.toArkTS();
+        assertEquals("x", rendered,
+                "x === true should simplify to x: " + rendered);
+    }
+
+    @Test
+    void testBooleanSimplify_strictEqFalse() {
+        // x === false -> !x
+        ArkTSExpression left =
+                new ArkTSExpression.VariableExpression("x");
+        ArkTSExpression right =
+                new ArkTSExpression.LiteralExpression("false",
+                        ArkTSExpression.LiteralExpression.LiteralKind.BOOLEAN);
+        ArkTSExpression binExpr =
+                new ArkTSExpression.BinaryExpression(left, "===", right);
+        ArkTSExpression result =
+                OperatorHandler.simplifyBooleanComparison(binExpr);
+        String rendered = result.toArkTS();
+        assertEquals("!x", rendered,
+                "x === false should simplify to !x: " + rendered);
+    }
+
+    @Test
+    void testBooleanSimplify_strictNotEqTrue() {
+        // x !== true -> !x
+        ArkTSExpression left =
+                new ArkTSExpression.VariableExpression("x");
+        ArkTSExpression right =
+                new ArkTSExpression.LiteralExpression("true",
+                        ArkTSExpression.LiteralExpression.LiteralKind.BOOLEAN);
+        ArkTSExpression binExpr =
+                new ArkTSExpression.BinaryExpression(left, "!==", right);
+        ArkTSExpression result =
+                OperatorHandler.simplifyBooleanComparison(binExpr);
+        String rendered = result.toArkTS();
+        assertEquals("!x", rendered,
+                "x !== true should simplify to !x: " + rendered);
+    }
+
+    @Test
+    void testBooleanSimplify_strictNotEqFalse() {
+        // x !== false -> x
+        ArkTSExpression left =
+                new ArkTSExpression.VariableExpression("x");
+        ArkTSExpression right =
+                new ArkTSExpression.LiteralExpression("false",
+                        ArkTSExpression.LiteralExpression.LiteralKind.BOOLEAN);
+        ArkTSExpression binExpr =
+                new ArkTSExpression.BinaryExpression(left, "!==", right);
+        ArkTSExpression result =
+                OperatorHandler.simplifyBooleanComparison(binExpr);
+        String rendered = result.toArkTS();
+        assertEquals("x", rendered,
+                "x !== false should simplify to x: " + rendered);
+    }
+
+    @Test
+    void testBooleanSimplify_nonBooleanOperand_unchanged() {
+        // x === y (both variables) should stay unchanged
+        ArkTSExpression left =
+                new ArkTSExpression.VariableExpression("x");
+        ArkTSExpression right =
+                new ArkTSExpression.VariableExpression("y");
+        ArkTSExpression binExpr =
+                new ArkTSExpression.BinaryExpression(left, "===", right);
+        ArkTSExpression result =
+                OperatorHandler.simplifyBooleanComparison(binExpr);
+        String rendered = result.toArkTS();
+        assertEquals("x === y", rendered,
+                "Non-boolean comparison should stay unchanged: " + rendered);
+    }
+
+    @Test
+    void testRedundantParens_binaryInBinary() {
+        // (a + b) * c should render without double parens
+        ArkTSExpression a = new ArkTSExpression.VariableExpression("a");
+        ArkTSExpression b = new ArkTSExpression.VariableExpression("b");
+        ArkTSExpression c = new ArkTSExpression.VariableExpression("c");
+        ArkTSExpression add =
+                new ArkTSExpression.BinaryExpression(a, "+", b);
+        ArkTSExpression mul =
+                new ArkTSExpression.BinaryExpression(add, "*", c);
+        String rendered = mul.toArkTS();
+        assertEquals("(a + b) * c", rendered,
+                "Should not have double parentheses: " + rendered);
+    }
+
+    @Test
+    void testOperatorPrecedence_addMul_noParens() {
+        // a + b * c should not add parens (mul has higher precedence)
+        ArkTSExpression a = new ArkTSExpression.VariableExpression("a");
+        ArkTSExpression b = new ArkTSExpression.VariableExpression("b");
+        ArkTSExpression c = new ArkTSExpression.VariableExpression("c");
+        ArkTSExpression mul =
+                new ArkTSExpression.BinaryExpression(b, "*", c);
+        ArkTSExpression add =
+                new ArkTSExpression.BinaryExpression(a, "+", mul);
+        String rendered = add.toArkTS();
+        assertEquals("a + b * c", rendered,
+                "Mul should not get parens when child of add: " + rendered);
+    }
+
+    @Test
+    void testOperatorPrecedence_comparisonInTernary() {
+        // a === b should not get parens inside a comparison context
+        ArkTSExpression a = new ArkTSExpression.VariableExpression("a");
+        ArkTSExpression b = new ArkTSExpression.VariableExpression("b");
+        ArkTSExpression cmp =
+                new ArkTSExpression.BinaryExpression(a, "===", b);
+        // cmp * c would need parens since === has lower precedence than *
+        ArkTSExpression c =
+                new ArkTSExpression.VariableExpression("c");
+        ArkTSExpression mul =
+                new ArkTSExpression.BinaryExpression(cmp, "*", c);
+        String rendered = mul.toArkTS();
+        assertEquals("(a === b) * c", rendered,
+                "Comparison in mul context needs parens: " + rendered);
+    }
+
+    // --- Module system decompilation: namespace import ---
+
+    @Test
+    void testModuleImport_namespaceImport_rendering() {
+        // import * as ns from 'module'
+        ArkTSDeclarations.ImportStatement stmt =
+                new ArkTSDeclarations.ImportStatement(
+                        Collections.emptyList(), "@ohos/lib",
+                        false, null, "lib");
+        String output = stmt.toArkTS(0);
+        assertEquals("import * as lib from '@ohos/lib';", output,
+                "Namespace import should render correctly: " + output);
+    }
+
+    // --- Module system decompilation: side-effect import ---
+
+    @Test
+    void testModuleImport_sideEffectImport_rendering() {
+        // import 'module' (no bindings)
+        ArkTSDeclarations.ImportStatement stmt =
+                new ArkTSDeclarations.ImportStatement(
+                        Collections.emptyList(), "./polyfill",
+                        false, null, null);
+        String output = stmt.toArkTS(0);
+        assertEquals("import './polyfill';", output,
+                "Side-effect import should render without 'from': "
+                        + output);
+    }
+
+    @Test
+    void testModuleImport_sideEffectImport_isSideEffect() {
+        // Verify isSideEffectImport() returns true for side-effect imports
+        ArkTSDeclarations.ImportStatement stmt =
+                new ArkTSDeclarations.ImportStatement(
+                        Collections.emptyList(), "./setup",
+                        false, null, null);
+        assertTrue(stmt.isSideEffectImport(),
+                "Empty import should be a side-effect import");
+    }
+
+    @Test
+    void testModuleImport_namedImport_isNotSideEffect() {
+        // Verify isSideEffectImport() returns false for named imports
+        ArkTSDeclarations.ImportStatement stmt =
+                new ArkTSDeclarations.ImportStatement(
+                        List.of("foo"), "./mod",
+                        false, null, null);
+        assertFalse(stmt.isSideEffectImport(),
+                "Named import should not be a side-effect import");
+    }
+
+    // --- Module system decompilation: re-export all ---
+
+    @Test
+    void testModuleExport_starExport_rendering() {
+        // export * from 'module'
+        ArkTSDeclarations.ExportStatement stmt =
+                new ArkTSDeclarations.ExportStatement(
+                        Collections.emptyList(), null, false,
+                        "@ohos/core", true);
+        String output = stmt.toArkTS(0);
+        assertEquals("export * from '@ohos/core';", output,
+                "Star export should render correctly: " + output);
+    }
+
+    // --- Module system decompilation: dynamic import expression ---
+
+    @Test
+    void testModuleDynamicImport_expressionWithStringLiteral() {
+        // import('./module')
+        ArkTSExpression specifier =
+                new ArkTSExpression.LiteralExpression("./module",
+                        ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        ArkTSAccessExpressions.DynamicImportExpression expr =
+                new ArkTSAccessExpressions.DynamicImportExpression(specifier);
+        String output = expr.toArkTS();
+        assertEquals("import(\"./module\")", output,
+                "Dynamic import should render as import(\"...\"): "
+                        + output);
+    }
+
+    @Test
+    void testModuleDynamicImport_expressionWithVariable() {
+        // import(moduleName)
+        ArkTSExpression specifier =
+                new ArkTSExpression.VariableExpression("moduleName");
+        ArkTSAccessExpressions.DynamicImportExpression expr =
+                new ArkTSAccessExpressions.DynamicImportExpression(specifier);
+        String output = expr.toArkTS();
+        assertEquals("import(moduleName)", output,
+                "Dynamic import with variable should render correctly: "
+                        + output);
+    }
+
+    @Test
+    void testModuleDynamicImport_awaitDynamicImport() {
+        // await import('./module')
+        ArkTSExpression specifier =
+                new ArkTSExpression.LiteralExpression("./module",
+                        ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        ArkTSAccessExpressions.DynamicImportExpression dynImport =
+                new ArkTSAccessExpressions.DynamicImportExpression(specifier);
+        ArkTSAccessExpressions.AwaitExpression awaitExpr =
+                new ArkTSAccessExpressions.AwaitExpression(dynImport);
+        String output = awaitExpr.toArkTS();
+        assertEquals("await import(\"./module\")", output,
+                "await import(\"...\") should render correctly: "
+                        + output);
+    }
+
+    // --- Module system decompilation: named re-export ---
+
+    @Test
+    void testModuleExport_namedReExport_rendering() {
+        // export { foo, bar } from 'module'
+        ArkTSDeclarations.ExportStatement stmt =
+                new ArkTSDeclarations.ExportStatement(
+                        List.of("foo", "bar"), null, false,
+                        "@ohos/util");
+        String output = stmt.toArkTS(0);
+        assertEquals("export { foo, bar } from '@ohos/util';", output,
+                "Named re-export should render correctly: " + output);
+    }
+
+    @Test
+    void testModuleDynamicImport_withDynamicSpecifierExpression() {
+        // import('module_' + version)
+        ArkTSExpression left =
+                new ArkTSExpression.LiteralExpression("module_",
+                        ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        ArkTSExpression right =
+                new ArkTSExpression.VariableExpression("version");
+        ArkTSExpression concat =
+                new ArkTSExpression.BinaryExpression(left, "+", right);
+        ArkTSAccessExpressions.DynamicImportExpression expr =
+                new ArkTSAccessExpressions.DynamicImportExpression(concat);
+        String output = expr.toArkTS();
+        assertTrue(output.startsWith("import("),
+                "Should start with import(: " + output);
+        assertTrue(output.contains("module_"),
+                "Should contain module path: " + output);
+        assertTrue(output.contains("version"),
+                "Should contain variable: " + output);
+        assertTrue(output.endsWith(")"),
+                "Should end with ): " + output);
     }
 }

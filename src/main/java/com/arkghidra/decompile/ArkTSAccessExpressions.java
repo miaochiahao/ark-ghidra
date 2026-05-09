@@ -918,6 +918,51 @@ public class ArkTSAccessExpressions {
         }
     }
 
+    // --- IIFE (Immediately Invoked Function Expression) ---
+
+    /**
+     * An immediately invoked function expression (IIFE):
+     * {@code (() => { ... })()} or {@code (function() { ... })()}.
+     *
+     * <p>Detected when a definefunc is stored to a register and then
+     * immediately called via a call opcode on that same register.
+     */
+    public static class IifeExpression extends ArkTSExpression {
+        private final ArkTSExpression functionExpression;
+        private final List<ArkTSExpression> arguments;
+
+        /**
+         * Constructs an IIFE expression.
+         *
+         * @param functionExpression the function being immediately invoked
+         *        (arrow or anonymous function expression)
+         * @param arguments the call arguments (may be empty)
+         */
+        public IifeExpression(ArkTSExpression functionExpression,
+                List<ArkTSExpression> arguments) {
+            this.functionExpression = functionExpression;
+            this.arguments = Collections.unmodifiableList(
+                    new ArrayList<>(arguments));
+        }
+
+        public ArkTSExpression getFunctionExpression() {
+            return functionExpression;
+        }
+
+        public List<ArkTSExpression> getArguments() {
+            return arguments;
+        }
+
+        @Override
+        public String toArkTS() {
+            StringJoiner joiner = new StringJoiner(", ");
+            for (ArkTSExpression arg : arguments) {
+                joiner.add(arg.toArkTS());
+            }
+            return "(" + functionExpression.toArkTS() + ")(" + joiner + ")";
+        }
+    }
+
     // --- RegExp literal ---
 
     /**
@@ -1076,6 +1121,37 @@ public class ArkTSAccessExpressions {
                 joiner.add(arg.toArkTS());
             }
             return "/* runtime: " + runtimeName + "(" + joiner + ") */";
+        }
+    }
+
+    // --- Dynamic import ---
+
+    /**
+     * A dynamic import expression: import('modulePath').
+     *
+     * <p>Represents a dynamic {@code import()} call, which returns a Promise
+     * that resolves to the module's namespace object. Triggered by the
+     * DYNAMICIMPORT (0xBD) opcode in Ark bytecode.
+     */
+    public static class DynamicImportExpression extends ArkTSExpression {
+        private final ArkTSExpression specifier;
+
+        /**
+         * Constructs a dynamic import expression.
+         *
+         * @param specifier the module specifier expression (string or variable)
+         */
+        public DynamicImportExpression(ArkTSExpression specifier) {
+            this.specifier = specifier;
+        }
+
+        public ArkTSExpression getSpecifier() {
+            return specifier;
+        }
+
+        @Override
+        public String toArkTS() {
+            return "import(" + specifier.toArkTS() + ")";
         }
     }
 

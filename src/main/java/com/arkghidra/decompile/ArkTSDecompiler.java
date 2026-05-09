@@ -193,6 +193,13 @@ public class ArkTSDecompiler {
             return "";
         }
 
+        String sourceFileName = null;
+        if (!abcFile.getClasses().isEmpty()) {
+            sourceFileName = abcFile.getSourceFileForClass(
+                    abcFile.getClasses().get(0));
+        }
+        int classCount = abcFile.getClasses().size();
+
         List<ArkTSStatement> imports = new ArrayList<>();
         List<ArkTSStatement> declarations = new ArrayList<>();
         List<ArkTSStatement> exports = new ArrayList<>();
@@ -355,7 +362,8 @@ public class ArkTSDecompiler {
                 declBuilder.detectEnumsFromLiteralArrays(abcFile);
         declarations.addAll(enumDecls);
 
-        return buildFileOutput(imports, declarations, exports);
+        return buildFileOutput(imports, declarations, exports,
+                sourceFileName, classCount);
     }
 
     // --- Internal: method body decompilation ---
@@ -495,8 +503,19 @@ public class ArkTSDecompiler {
 
     private String buildFileOutput(List<ArkTSStatement> imports,
             List<ArkTSStatement> declarations,
-            List<ArkTSStatement> exports) {
+            List<ArkTSStatement> exports,
+            String sourceFileName, int classCount) {
         StringBuilder sb = new StringBuilder();
+        // File header comment
+        if (sourceFileName != null && !sourceFileName.isEmpty()) {
+            sb.append("// Decompiled from: ")
+                    .append(sourceFileName);
+            sb.append(" (").append(classCount).append(" class");
+            if (classCount != 1) {
+                sb.append("es");
+            }
+            sb.append(")\n\n");
+        }
         for (ArkTSStatement imp : imports) {
             sb.append(imp.toArkTS(0)).append("\n");
         }

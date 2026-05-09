@@ -636,6 +636,114 @@ public class ArkTSPropertyExpressions {
         }
     }
 
+    // --- Type predicate expression ---
+
+    /**
+     * A type predicate expression: expr is Type.
+     *
+     * <p>Used in type guard functions to narrow types at compile time.
+     * For example: {@code function isString(x: unknown): x is string}.
+     */
+    public static class TypePredicateExpression extends ArkTSExpression {
+        private final ArkTSExpression expression;
+        private final String typeName;
+
+        /**
+         * Constructs a type predicate expression.
+         *
+         * @param expression the expression being tested
+         * @param typeName the target type name
+         */
+        public TypePredicateExpression(ArkTSExpression expression,
+                String typeName) {
+            this.expression = expression;
+            this.typeName = typeName;
+        }
+
+        public ArkTSExpression getExpression() {
+            return expression;
+        }
+
+        public String getTypeName() {
+            return typeName;
+        }
+
+        @Override
+        public String toArkTS() {
+            return expression.toArkTS() + " is " + typeName;
+        }
+    }
+
+    // --- Const assertion expression ---
+
+    /**
+     * A const assertion expression: expr as const.
+     *
+     * <p>Marks a literal or array as deeply readonly, inferring the
+     * narrowest possible type. For example:
+     * {@code const arr = [1, 2, 3] as const;}
+     */
+    public static class ConstAssertionExpression extends ArkTSExpression {
+        private final ArkTSExpression expression;
+
+        /**
+         * Constructs a const assertion expression.
+         *
+         * @param expression the expression being asserted as const
+         */
+        public ConstAssertionExpression(ArkTSExpression expression) {
+            this.expression = expression;
+        }
+
+        public ArkTSExpression getExpression() {
+            return expression;
+        }
+
+        @Override
+        public String toArkTS() {
+            return expression.toArkTS() + " as const";
+        }
+    }
+
+    // --- Satisfies expression ---
+
+    /**
+     * A satisfies expression: expr satisfies Type.
+     *
+     * <p>Validates that an expression matches a type without widening
+     * or changing the inferred type. For example:
+     * {@code const config = { color: "blue" } satisfies Config;}
+     */
+    public static class SatisfiesExpression extends ArkTSExpression {
+        private final ArkTSExpression expression;
+        private final String typeName;
+
+        /**
+         * Constructs a satisfies expression.
+         *
+         * @param expression the expression being validated
+         * @param typeName the type to satisfy
+         */
+        public SatisfiesExpression(ArkTSExpression expression,
+                String typeName) {
+            this.expression = expression;
+            this.typeName = typeName;
+        }
+
+        public ArkTSExpression getExpression() {
+            return expression;
+        }
+
+        public String getTypeName() {
+            return typeName;
+        }
+
+        @Override
+        public String toArkTS() {
+            return expression.toArkTS() + " satisfies " + typeName;
+        }
+    }
+
     // --- Static field expression ---
 
     /**

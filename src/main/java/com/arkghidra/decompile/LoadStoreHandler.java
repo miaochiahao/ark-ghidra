@@ -148,9 +148,8 @@ class LoadStoreHandler {
                     ? accValue
                     : new ArkTSExpression.VariableExpression(ACC);
             ArkTSExpression callExpr =
-                    new ArkTSExpression.CallExpression(
-                            new ArkTSExpression.VariableExpression("import"),
-                            List.of(specifier));
+                    new ArkTSAccessExpressions.DynamicImportExpression(
+                            specifier);
             return new InstructionHandler.StatementResult(null, callExpr);
         }
 
