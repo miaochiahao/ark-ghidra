@@ -406,6 +406,7 @@ class PropertyAccessHandler {
                         .AnonymousFunctionExpression
                 || expr instanceof ArkTSAccessExpressions
                         .GeneratorFunctionExpression
+                || expr instanceof ArkTSAccessExpressions.IifeExpression
                 || InstructionHandler.isDefineFuncExpression(expr);
     }
 }

@@ -74,7 +74,16 @@ public abstract class ArkTSExpression {
             }
         }
 
-        private static String escapeString(String s) {
+        /**
+         * Escapes a string value for embedding in double-quoted ArkTS source.
+         *
+         * <p>Handles: backslash, double quotes, newlines, carriage returns,
+         * tabs, backspace, form feeds, null, and other control characters.
+         *
+         * @param s the raw string value
+         * @return the escaped string (without surrounding quotes)
+         */
+        public static String escapeString(String s) {
             StringBuilder sb = new StringBuilder(s.length());
             for (int i = 0; i < s.length(); i++) {
                 char c = s.charAt(i);

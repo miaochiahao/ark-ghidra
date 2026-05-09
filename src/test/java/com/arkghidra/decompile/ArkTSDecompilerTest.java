@@ -13153,4 +13153,123 @@ class ArkTSDecompilerTest {
         assertTrue(output.endsWith(")"),
                 "Should end with ): " + output);
     }
+
+    // --- TypePredicateExpression tests ---
+
+    @Test
+    void testTypePredicateExpression_valueIsString() {
+        ArkTSExpression value =
+                new ArkTSExpression.VariableExpression("value");
+        ArkTSPropertyExpressions.TypePredicateExpression expr =
+                new ArkTSPropertyExpressions.TypePredicateExpression(
+                        value, "string");
+        assertEquals("value is string", expr.toArkTS());
+    }
+
+    @Test
+    void testTypePredicateExpression_parameterIsNumber() {
+        ArkTSExpression param =
+                new ArkTSExpression.VariableExpression("x");
+        ArkTSPropertyExpressions.TypePredicateExpression expr =
+                new ArkTSPropertyExpressions.TypePredicateExpression(
+                        param, "number");
+        assertEquals("x is number", expr.toArkTS());
+    }
+
+    // --- ConstAssertionExpression tests ---
+
+    @Test
+    void testConstAssertionExpression_arrayLiteral() {
+        ArkTSExpression arr =
+                new ArkTSExpression.NewExpression(
+                        new ArkTSExpression.VariableExpression("Array"),
+                        List.of(
+                                new ArkTSExpression.LiteralExpression("1",
+                                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER),
+                                new ArkTSExpression.LiteralExpression("2",
+                                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER),
+                                new ArkTSExpression.LiteralExpression("3",
+                                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER)));
+        ArkTSPropertyExpressions.ConstAssertionExpression expr =
+                new ArkTSPropertyExpressions.ConstAssertionExpression(arr);
+        assertEquals("new Array(1, 2, 3) as const", expr.toArkTS());
+    }
+
+    @Test
+    void testConstAssertionExpression_objectLiteral() {
+        ArkTSExpression obj =
+                new ArkTSExpression.VariableExpression("palette");
+        ArkTSPropertyExpressions.ConstAssertionExpression expr =
+                new ArkTSPropertyExpressions.ConstAssertionExpression(obj);
+        assertEquals("palette as const", expr.toArkTS());
+    }
+
+    // --- SatisfiesExpression tests ---
+
+    @Test
+    void testSatisfiesExpression_configSatisfiesType() {
+        ArkTSExpression config =
+                new ArkTSExpression.VariableExpression("config");
+        ArkTSPropertyExpressions.SatisfiesExpression expr =
+                new ArkTSPropertyExpressions.SatisfiesExpression(
+                        config, "Config");
+        assertEquals("config satisfies Config", expr.toArkTS());
+    }
+
+    @Test
+    void testSatisfiesExpression_objectLiteralSatisfiesRecord() {
+        ArkTSExpression obj =
+                new ArkTSExpression.VariableExpression("options");
+        ArkTSPropertyExpressions.SatisfiesExpression expr =
+                new ArkTSPropertyExpressions.SatisfiesExpression(
+                        obj, "Record<string, number>");
+        assertEquals("options satisfies Record<string, number>",
+                expr.toArkTS());
+    }
+
+    // --- Type predicate in function return type ---
+
+    @Test
+    void testFunctionDeclaration_withTypePredicateReturnType() {
+        ArkTSStatement returnStmt =
+                new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.BinaryExpression(
+                                new ArkTSExpression.UnaryExpression("typeof",
+                                        new ArkTSExpression.VariableExpression(
+                                                "x"),
+                                        true),
+                                "===",
+                                new ArkTSExpression.LiteralExpression(
+                                        "string",
+                                        ArkTSExpression.LiteralExpression
+                                                .LiteralKind.STRING)));
+        ArkTSDeclarations.FunctionDeclaration func =
+                new ArkTSDeclarations.FunctionDeclaration(
+                        "isString",
+                        List.of(new ArkTSDeclarations.FunctionDeclaration
+                                .FunctionParam("x", "unknown")),
+                        "x is string",
+                        new ArkTSStatement.BlockStatement(
+                                List.of(returnStmt)));
+        String result = func.toArkTS(0);
+        assertTrue(result.contains(
+                "function isString(x: unknown): x is string"),
+                "Function with type predicate return type: " + result);
+        assertTrue(result.contains("typeof x === \"string\""),
+                "Function body contains typeof check: " + result);
+    }
+
+    // --- Const assertion on member expression ---
+
+    @Test
+    void testConstAssertionExpression_withMemberExpression() {
+        ArkTSExpression member =
+                new ArkTSExpression.MemberExpression(
+                        new ArkTSExpression.VariableExpression("data"),
+                        new ArkTSExpression.VariableExpression("items"),
+                        false);
+        ArkTSPropertyExpressions.ConstAssertionExpression expr =
+                new ArkTSPropertyExpressions.ConstAssertionExpression(member);
+        assertEquals("data.items as const", expr.toArkTS());
+    }
 }

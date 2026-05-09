@@ -955,7 +955,8 @@ class InstructionHandler {
 
     /**
      * Checks if a function expression references lexical variables
-     * and wraps it as a ClosureExpression if so.
+     * and wraps it as a ClosureExpression if so. Also tracks captured
+     * registers in the decompilation context.
      */
     private ArkTSExpression tryWrapAsClosure(
             ArkTSExpression funcExpr,
@@ -966,6 +967,17 @@ class InstructionHandler {
         List<String> captured = new ArrayList<>();
         collectLexicalReferences(funcExpr, captured);
         if (!captured.isEmpty()) {
+            // Track captured registers in context for downstream use
+            for (String varName : captured) {
+                if (varName.startsWith("v")) {
+                    try {
+                        int reg = Integer.parseInt(varName.substring(1));
+                        ctx.addCapturedRegister(reg);
+                    } catch (NumberFormatException e) {
+                        // Not a register reference, skip
+                    }
+                }
+            }
             return new ArkTSAccessExpressions.ClosureExpression(
                     funcExpr, captured);
         }

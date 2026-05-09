@@ -1,9 +1,12 @@
 package com.arkghidra.decompile;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import com.arkghidra.disasm.ArkInstruction;
 import com.arkghidra.format.AbcCode;
@@ -50,6 +53,13 @@ public class DecompilationContext {
      */
     private final Map<Integer, ArkTSExpression> registerExpressions =
             new HashMap<>();
+
+    /**
+     * Set of register numbers that are captured by closures (inner functions).
+     * When an inner function references variables from the outer scope via
+     * lexical access, the corresponding registers are tracked here.
+     */
+    private final Set<Integer> capturedRegisters = new HashSet<>();
 
     /**
      * Stack of loop contexts for break/continue detection.
@@ -224,5 +234,33 @@ public class DecompilationContext {
      */
     public ArkTSExpression getRegisterExpression(int reg) {
         return registerExpressions.get(reg);
+    }
+
+    /**
+     * Marks a register as captured by a closure (inner function).
+     *
+     * @param reg the register number captured by an inner function
+     */
+    public void addCapturedRegister(int reg) {
+        capturedRegisters.add(reg);
+    }
+
+    /**
+     * Returns whether a register is captured by any inner function.
+     *
+     * @param reg the register number
+     * @return true if the register is captured
+     */
+    public boolean isRegisterCaptured(int reg) {
+        return capturedRegisters.contains(reg);
+    }
+
+    /**
+     * Returns an unmodifiable view of all captured register numbers.
+     *
+     * @return the set of captured register numbers
+     */
+    public Set<Integer> getCapturedRegisters() {
+        return Collections.unmodifiableSet(capturedRegisters);
     }
 }

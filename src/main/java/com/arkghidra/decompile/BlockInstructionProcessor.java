@@ -105,6 +105,22 @@ class BlockInstructionProcessor {
                 }
             }
 
+            // Try to detect IIFE pattern: definefunc -> sta vN -> lda vN ->
+            // call*. When detected, the function expression and call are
+            // collapsed into a single IIFE expression.
+            if (ArkOpcodesCompat.getNormalizedOpcode(insn)
+                    == ArkOpcodesCompat.DEFINEFUNC) {
+                IifeDetectionResult iifeResult =
+                        tryDetectIife(instructions, idx, ctx,
+                                declaredVars, typeInf);
+                if (iifeResult != null) {
+                    stmts.add(iifeResult.statement);
+                    accValue = iifeResult.accValue;
+                    idx += iifeResult.instructionsConsumed - 1;
+                    continue;
+                }
+            }
+
             InstructionHandler.StatementResult result;
             try {
                 result = instrHandler.processInstruction(
@@ -214,6 +230,22 @@ class BlockInstructionProcessor {
                     stmts.add(destrResult.statement);
                     accValue = null;
                     idx += destrResult.instructionsConsumed - 1;
+                    continue;
+                }
+            }
+
+            // Try to detect IIFE pattern: definefunc -> sta vN -> lda vN ->
+            // call*. When detected, the function expression and call are
+            // collapsed into a single IIFE expression.
+            if (ArkOpcodesCompat.getNormalizedOpcode(insn)
+                    == ArkOpcodesCompat.DEFINEFUNC) {
+                IifeDetectionResult iifeResult =
+                        tryDetectIife(instructions, idx, ctx,
+                                declaredVars, typeInf);
+                if (iifeResult != null) {
+                    stmts.add(iifeResult.statement);
+                    accValue = iifeResult.accValue;
+                    idx += iifeResult.instructionsConsumed - 1;
                     continue;
                 }
             }
@@ -354,5 +386,124 @@ class BlockInstructionProcessor {
         int loopEnd = loopCtx[1];
         int target = ControlFlowGraph.getJumpTargetPublic(insn);
         return target == loopHeader && target < loopEnd;
+    }
+
+    /**
+     * Result holder for IIFE pattern detection.
+     */
+    static class IifeDetectionResult {
+        final ArkTSStatement statement;
+        final ArkTSExpression accValue;
+        final int instructionsConsumed;
+
+        IifeDetectionResult(ArkTSStatement statement,
+                ArkTSExpression accValue, int instructionsConsumed) {
+            this.statement = statement;
+            this.accValue = accValue;
+            this.instructionsConsumed = instructionsConsumed;
+        }
+    }
+
+    /**
+     * Attempts to detect an IIFE (Immediately Invoked Function Expression)
+     * pattern starting at the given instruction index.
+     *
+     * <p>The pattern is: definefunc -> sta vN -> lda vN -> call*
+     * This translates to: (() => { ... })() in ArkTS.
+     *
+     * @param instructions the instruction list for the block
+     * @param idx the current index (pointing at the definefunc)
+     * @param ctx the decompilation context
+     * @param declaredVars the set of already-declared variables
+     * @param typeInf the type inference engine
+     * @return an IifeDetectionResult if pattern matched, null otherwise
+     */
+    private IifeDetectionResult tryDetectIife(
+            List<ArkInstruction> instructions, int idx,
+            DecompilationContext ctx, Set<String> declaredVars,
+            TypeInference typeInf) {
+
+        // Need at least 3 more instructions: sta, lda, call
+        if (idx + 3 >= instructions.size()) {
+            return null;
+        }
+
+        ArkInstruction defineInsn = instructions.get(idx);
+        ArkInstruction staInsn = instructions.get(idx + 1);
+        ArkInstruction ldaInsn = instructions.get(idx + 2);
+        ArkInstruction callInsn = instructions.get(idx + 3);
+
+        // Verify: sta vN
+        int staOpcode = ArkOpcodesCompat.getNormalizedOpcode(staInsn);
+        if (staOpcode != ArkOpcodesCompat.STA) {
+            return null;
+        }
+        int storeReg = (int) staInsn.getOperands().get(0).getValue();
+
+        // Verify: lda vN (same register as sta)
+        int ldaOpcode = ArkOpcodesCompat.getNormalizedOpcode(ldaInsn);
+        if (ldaOpcode != ArkOpcodesCompat.LDA) {
+            return null;
+        }
+        int loadReg = (int) ldaInsn.getOperands().get(0).getValue();
+        if (loadReg != storeReg) {
+            return null;
+        }
+
+        // Verify: call* opcode
+        int callOpcode = ArkOpcodesCompat.getNormalizedOpcode(callInsn);
+        if (!OperatorHandler.isCallOpcode(callOpcode)) {
+            return null;
+        }
+
+        // Process definefunc to get the function expression
+        InstructionHandler.StatementResult defResult;
+        try {
+            defResult = instrHandler.processInstruction(
+                    defineInsn, ctx, null, declaredVars, typeInf);
+        } catch (Exception e) {
+            return null;
+        }
+        if (defResult == null || defResult.newAccValue == null) {
+            return null;
+        }
+
+        ArkTSExpression funcExpr = defResult.newAccValue;
+
+        // If it's a raw DefineFuncExpression, convert it via
+        // handleDefineFuncStore logic
+        if (funcExpr instanceof DefineFuncExpression) {
+            // Process the STA to trigger handleDefineFuncStore which
+            // converts DefineFuncExpression into ArrowFunctionExpression
+            // or AnonymousFunctionExpression
+            InstructionHandler.StatementResult staResult;
+            try {
+                staResult = instrHandler.processInstruction(
+                        staInsn, ctx, funcExpr, declaredVars, typeInf);
+            } catch (Exception e) {
+                return null;
+            }
+            if (staResult == null || staResult.newAccValue == null) {
+                return null;
+            }
+            funcExpr = staResult.newAccValue;
+        }
+
+        // Only wrap arrow and anonymous function expressions as IIFE
+        if (!(funcExpr
+                instanceof ArkTSAccessExpressions.ArrowFunctionExpression)
+                && !(funcExpr
+                instanceof ArkTSAccessExpressions.AnonymousFunctionExpression)) {
+            return null;
+        }
+
+        // Build the call arguments from the call instruction
+        List<ArkTSExpression> callArgs = new ArrayList<>();
+        ArkTSExpression iifeExpr =
+                new ArkTSAccessExpressions.IifeExpression(funcExpr, callArgs);
+        ArkTSStatement stmt =
+                new ArkTSStatement.ExpressionStatement(iifeExpr);
+
+        return new IifeDetectionResult(stmt, iifeExpr, 4);
     }
 }

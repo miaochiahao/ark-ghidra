@@ -490,6 +490,86 @@ public class ArkTSAccessExpressions {
         }
     }
 
+    // --- Tagged template literal ---
+
+    /**
+     * A tagged template literal expression: tag`template ${expr} rest`.
+     *
+     * <p>Tagged templates invoke a function with the template quasis and
+     * interpolated expressions as arguments. Commonly used for DSLs
+     * like styled-components, gql tags, html templates, etc.
+     */
+    public static class TaggedTemplateExpression extends ArkTSExpression {
+        private final String tag;
+        private final List<String> quasis;
+        private final List<ArkTSExpression> expressions;
+
+        /**
+         * Constructs a tagged template literal expression.
+         *
+         * @param tag the tag function name
+         * @param quasis the string parts (one more than expressions)
+         * @param expressions the interpolated expressions
+         */
+        public TaggedTemplateExpression(String tag, List<String> quasis,
+                List<ArkTSExpression> expressions) {
+            this.tag = tag;
+            this.quasis = Collections.unmodifiableList(new ArrayList<>(quasis));
+            this.expressions = Collections.unmodifiableList(
+                    new ArrayList<>(expressions));
+        }
+
+        public String getTag() {
+            return tag;
+        }
+
+        public List<String> getQuasis() {
+            return quasis;
+        }
+
+        public List<ArkTSExpression> getExpressions() {
+            return expressions;
+        }
+
+        @Override
+        public String toArkTS() {
+            StringBuilder sb = new StringBuilder();
+            sb.append(tag);
+            sb.append("`");
+            for (int i = 0; i < quasis.size(); i++) {
+                sb.append(escapeTemplateQuasi(quasis.get(i)));
+                if (i < expressions.size()) {
+                    sb.append("${").append(expressions.get(i).toArkTS())
+                            .append("}");
+                }
+            }
+            sb.append("`");
+            return sb.toString();
+        }
+
+        private static String escapeTemplateQuasi(String s) {
+            StringBuilder sb = new StringBuilder(s.length());
+            for (int i = 0; i < s.length(); i++) {
+                char c = s.charAt(i);
+                switch (c) {
+                    case '\\':
+                        sb.append("\\\\");
+                        break;
+                    case '`':
+                        sb.append("\\`");
+                        break;
+                    case '$':
+                        sb.append("\\$");
+                        break;
+                    default:
+                        sb.append(c);
+                        break;
+                }
+            }
+            return sb.toString();
+        }
+    }
+
     // --- Await ---
 
     /**
