@@ -503,6 +503,8 @@ class BranchProcessor {
             ArkTSExpression ternaryExpr =
                     new ArkTSAccessExpressions.ConditionalExpression(
                             effectiveCondition, trueValue, falseValue);
+            ternaryExpr =
+                    OperatorHandler.simplifyRedundantTernary(ternaryExpr);
             String targetVar = pattern.ternaryTargetVar;
             ArkTSStatement decl =
                     new ArkTSStatement.VariableDeclaration(

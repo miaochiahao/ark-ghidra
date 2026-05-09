@@ -396,6 +396,219 @@ class OperatorHandler {
         return Boolean.parseBoolean(lit.getValue()) == expected;
     }
 
+    // --- Unary negation folding ---
+
+    /**
+     * Simplifies unary negation expressions.
+     *
+     * <p>Patterns recognized:
+     * <ul>
+     *   <li>{@code -(literal)} -> negative literal (e.g., {@code -(42)} ->
+     *       {@code -42})</li>
+     *   <li>{@code -(-x)} -> {@code x}</li>
+     *   <li>{@code -(a - b)} -> {@code b - a}</li>
+     * </ul>
+     *
+     * @param expr the expression to simplify
+     * @return the simplified expression, or the original if no simplification
+     *         applies
+     */
+    static ArkTSExpression simplifyUnaryNegation(ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.UnaryExpression)) {
+            return expr;
+        }
+        ArkTSExpression.UnaryExpression unary =
+                (ArkTSExpression.UnaryExpression) expr;
+        if (!"-".equals(unary.getOperator()) || !unary.isPrefix()) {
+            return expr;
+        }
+        ArkTSExpression operand = unary.getOperand();
+
+        // -(-x) -> x
+        if (operand instanceof ArkTSExpression.UnaryExpression) {
+            ArkTSExpression.UnaryExpression inner =
+                    (ArkTSExpression.UnaryExpression) operand;
+            if ("-".equals(inner.getOperator()) && inner.isPrefix()) {
+                return inner.getOperand();
+            }
+        }
+
+        // -(literal) -> negative literal
+        if (operand instanceof ArkTSExpression.LiteralExpression) {
+            ArkTSExpression.LiteralExpression lit =
+                    (ArkTSExpression.LiteralExpression) operand;
+            if (lit.getKind()
+                    == ArkTSExpression.LiteralExpression.LiteralKind.NUMBER) {
+                try {
+                    double val = Double.parseDouble(lit.getValue());
+                    double negated = -val;
+                    String negStr = formatNegatedLiteral(negated, lit.getValue());
+                    if (negStr != null) {
+                        return new ArkTSExpression.LiteralExpression(negStr,
+                                ArkTSExpression.LiteralExpression
+                                        .LiteralKind.NUMBER);
+                    }
+                } catch (NumberFormatException e) {
+                    return expr;
+                }
+            }
+        }
+
+        return expr;
+    }
+
+    private static String formatNegatedLiteral(double negated,
+            String original) {
+        if (Double.isNaN(negated) || Double.isInfinite(negated)) {
+            return null;
+        }
+        if (negated == Math.floor(negated)
+                && Math.abs(negated) <= Integer.MAX_VALUE) {
+            return String.valueOf((int) negated);
+        }
+        return String.valueOf(negated);
+    }
+
+    // --- Redundant ternary simplification ---
+
+    /**
+     * Simplifies redundant ternary expressions.
+     *
+     * <p>Patterns recognized:
+     * <ul>
+     *   <li>{@code cond ? true : false} -> {@code cond}</li>
+     *   <li>{@code cond ? false : true} -> {@code !cond}</li>
+     *   <li>{@code cond ? x : x} -> {@code x}</li>
+     * </ul>
+     *
+     * @param expr the conditional expression to simplify
+     * @return the simplified expression, or the original if no simplification
+     *         applies
+     */
+    static ArkTSExpression simplifyRedundantTernary(ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSAccessExpressions.ConditionalExpression)) {
+            return expr;
+        }
+        ArkTSAccessExpressions.ConditionalExpression cond =
+                (ArkTSAccessExpressions.ConditionalExpression) expr;
+        ArkTSExpression thenExpr = cond.getConsequent();
+        ArkTSExpression elseExpr = cond.getAlternate();
+
+        // cond ? true : false -> cond
+        if (isBooleanLiteralValue(thenExpr, true)
+                && isBooleanLiteralValue(elseExpr, false)) {
+            return cond.getTest();
+        }
+
+        // cond ? false : true -> !cond
+        if (isBooleanLiteralValue(thenExpr, false)
+                && isBooleanLiteralValue(elseExpr, true)) {
+            return new ArkTSExpression.UnaryExpression("!",
+                    cond.getTest(), true);
+        }
+
+        // cond ? x : x -> x
+        if (thenExpr.equals(elseExpr)) {
+            return thenExpr;
+        }
+
+        return expr;
+    }
+
+    private static boolean isBooleanLiteralValue(ArkTSExpression expr,
+            boolean expected) {
+        if (!(expr instanceof ArkTSExpression.LiteralExpression)) {
+            return false;
+        }
+        ArkTSExpression.LiteralExpression lit =
+                (ArkTSExpression.LiteralExpression) expr;
+        return lit.getKind()
+                == ArkTSExpression.LiteralExpression.LiteralKind.BOOLEAN
+                && Boolean.parseBoolean(lit.getValue()) == expected;
+    }
+
+    // --- Comparison normalization ---
+
+    /**
+     * Normalizes comparison expressions by moving constants to the right side.
+     *
+     * <p>Patterns recognized:
+     * <ul>
+     *   <li>{@code 0 < x} -> {@code x > 0}</li>
+     *   <li>{@code 0 <= x} -> {@code x >= 0}</li>
+     *   <li>{@code null === x} -> {@code x === null}</li>
+     *   <li>{@code "str" !== x} -> {@code x !== "str"}</li>
+     * </ul>
+     *
+     * <p>Does not swap when both sides are constants or both are variables.
+     * Does not swap for non-commutative equality (instanceof, in).
+     *
+     * @param expr the expression to normalize
+     * @return the normalized expression, or the original if no normalization
+     *         applies
+     */
+    static ArkTSExpression normalizeComparison(ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.BinaryExpression)) {
+            return expr;
+        }
+        ArkTSExpression.BinaryExpression bin =
+                (ArkTSExpression.BinaryExpression) expr;
+        String op = bin.getOperator();
+
+        // Only normalize comparison operators
+        if (!isComparisonOperator(op)) {
+            return expr;
+        }
+
+        // Don't swap instanceof or in (non-commutative)
+        if ("instanceof".equals(op) || "in".equals(op)) {
+            return expr;
+        }
+
+        ArkTSExpression left = bin.getLeft();
+        ArkTSExpression right = bin.getRight();
+
+        boolean leftIsConst = isConstantExpression(left);
+        boolean rightIsConst = isConstantExpression(right);
+
+        // Swap when left is constant and right is not
+        if (leftIsConst && !rightIsConst) {
+            String flippedOp = flipComparisonOperator(op);
+            if (flippedOp != null) {
+                return new ArkTSExpression.BinaryExpression(
+                        right, flippedOp, left);
+            }
+        }
+
+        return expr;
+    }
+
+    private static boolean isComparisonOperator(String op) {
+        return "==".equals(op) || "!=".equals(op)
+                || "===".equals(op) || "!==".equals(op)
+                || "<".equals(op) || "<=".equals(op)
+                || ">".equals(op) || ">=".equals(op)
+                || "instanceof".equals(op) || "in".equals(op);
+    }
+
+    private static String flipComparisonOperator(String op) {
+        return switch (op) {
+            case "<" -> ">";
+            case "<=" -> ">=";
+            case ">" -> "<";
+            case ">=" -> "<=";
+            case "==", "!=", "===", "!==" -> op;
+            default -> null;
+        };
+    }
+
+    private static boolean isConstantExpression(ArkTSExpression expr) {
+        if (expr instanceof ArkTSExpression.LiteralExpression) {
+            return true;
+        }
+        return expr instanceof ArkTSExpression.ThisExpression;
+    }
+
     // --- Boolean comparison simplification ---
 
     /**

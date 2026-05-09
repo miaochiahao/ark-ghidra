@@ -412,6 +412,8 @@ class InstructionHandler {
             }
             // Simplify boolean comparisons: x === true -> x
             result = OperatorHandler.simplifyBooleanComparison(result);
+            // Normalize comparisons: 0 < x -> x > 0
+            result = OperatorHandler.normalizeComparison(result);
             // Simplify redundant typeof/undefined/null patterns
             result =
                     OperatorHandler.simplifyRedundantTypeofNull(result);
@@ -442,6 +444,7 @@ class InstructionHandler {
             ArkTSExpression result =
                     new ArkTSExpression.UnaryExpression(op, operand, true);
             result = OperatorHandler.simplifyDoubleNegation(result);
+            result = OperatorHandler.simplifyUnaryNegation(result);
             return new StatementResult(null, result);
         }
 
