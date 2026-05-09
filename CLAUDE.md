@@ -143,15 +143,18 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 56. ~~Performance: shared file-level string cache (#144)~~ DONE
 57. ~~Literal array resolution for createarraywithbuffer/createobjectwithbuffer (#145)~~ DONE
 58. ~~Module variable name resolution from import/export records (#146)~~ DONE
-59. ~~Source line number comments from debug info (#128)~~ DONE
-58. ~~Variable name inference from usage context (#133)~~ DONE
-59. ~~Comprehensive opcode decompilation tests (#134)~~ DONE
-60. ~~decompileFile() integration tests (#135)~~ DONE
-61. ~~Field initializers, readonly detection, type inference improvements (#136)~~ DONE
-62. ~~Improved variable name inference for boolean/comparison patterns (#138)~~ DONE
-63. ~~String annotations in ArkBytecodeAnalyzer (#139)~~ DONE
-64. ~~Performance: string cache pre-population, method timeout (#140)~~ DONE
-65. ~~Decompiler robustness — null-safety, edge case tests (#142)~~ DONE
+59. ~~Variable name inference — constructors, static calls, well-known names (#147)~~ DONE
+60. ~~Object key resolution from string table in literal arrays (#148)~~ DONE
+61. ~~CFG pattern detection optimization — mergeBlockCache (#149)~~ DONE
+62. ~~Source line number comments from debug info (#128)~~ DONE
+63. ~~Variable name inference from usage context (#133)~~ DONE
+64. ~~Comprehensive opcode decompilation tests (#134)~~ DONE
+65. ~~decompileFile() integration tests (#135)~~ DONE
+66. ~~Field initializers, readonly detection, type inference improvements (#136)~~ DONE
+67. ~~Improved variable name inference for boolean/comparison patterns (#138)~~ DONE
+68. ~~String annotations in ArkBytecodeAnalyzer (#139)~~ DONE
+69. ~~Performance: string cache pre-population, method timeout (#140)~~ DONE
+70. ~~Decompiler robustness — null-safety, edge case tests (#142)~~ DONE
 
 ### Rules for the loop
 
@@ -347,6 +350,10 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Null method guard:** `decompileMethod(null, null, null)` returns `"/* unknown method */"` instead of NPE. Always null-check method parameter before accessing method.getName().
 - **Disassembler truncated instruction rejection:** `ArkDisassembler` throws `DisassemblyException` for truncated instructions (e.g., LDAI with only 2 bytes instead of 5). Tests should catch this or use try/catch patterns.
 - **Robustness test patterns:** For edge case tests, prefer try/catch with assertions on exception message content, or relaxed assertions (assertNotNull only) rather than asserting specific output format.
+- **Map.of() size limit:** Java's `Map.of()` supports max 10 key-value pairs (20 args). For larger maps, use `Map.ofEntries(Map.entry(...), ...)` instead. Applies to `BUILTIN_CLASS_VAR_NAMES` (15 entries) and `STATIC_CALL_RESULT_NAMES` (12 entries) in InstructionHandler.
+- **Variable name inference maps:** `BUILTIN_CLASS_VAR_NAMES` maps class names to variable names (Error→error, Map→map, Array→arr). `STATIC_CALL_RESULT_NAMES` maps static calls to result names (JSON.parse→parsed, Object.keys→keys). Both in InstructionHandler.
+- **Object key resolution:** `parseLiteralToString()` in LoadStoreHandler accepts `DecompilationContext` to resolve string table offsets. Key tags 0x02/0x03 contain int32 string table index, resolved via `ctx.resolveString()`.
+- **CFG merge block cache:** `ControlFlowReconstructor.mergeBlockCache` maps `"offsetA:offsetB"` to merge block offset. Cleared per CFG in `reconstructControlFlow()`. Stores `-1` sentinel for "no merge found".
 <!-- LINT_RULES_END -->
 
 ---
