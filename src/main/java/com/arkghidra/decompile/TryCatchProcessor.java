@@ -13,7 +13,8 @@ import com.arkghidra.format.AbcTryBlock;
  * <p>Builds try/catch regions from ABC exception table data,
  * finds blocks belonging to try bodies and catch handlers,
  * and generates structured try/catch statements including
- * support for nested regions.
+ * support for nested regions, finally blocks, typed catch
+ * parameters, and throw expressions.
  *
  * <p>Called from {@link ControlFlowReconstructor} when
  * try/catch regions are detected.
@@ -41,7 +42,7 @@ class TryCatchProcessor {
         for (AbcTryBlock tryBlock : ctx.code.getTryBlocks()) {
             int startPc = (int) tryBlock.getStartPc();
             int endPc = startPc + (int) tryBlock.getLength();
-            List<ControlFlowReconstructor.CatchHandler> handlers =
+            List<ControlFlowReconstructor.CatchHandler> typedHandlers =
                     new ArrayList<>();
             ControlFlowReconstructor.CatchHandler finallyHandler = null;
             for (AbcCatchBlock catchBlock :
@@ -58,19 +59,28 @@ class TryCatchProcessor {
                                     typeName,
                                     (int) catchBlock.getHandlerPc());
                 } else {
-                    handlers.add(
+                    typedHandlers.add(
                             new ControlFlowReconstructor.CatchHandler(
                                     typeName,
                                     (int) catchBlock.getHandlerPc()));
                 }
             }
-            if (finallyHandler != null && handlers.isEmpty()) {
-                handlers.add(finallyHandler);
+
+            // Build region with both typed and finally handlers
+            List<ControlFlowReconstructor.CatchHandler> allHandlers =
+                    new ArrayList<>(typedHandlers);
+            // Track finally handler separately for try/finally support
+            ControlFlowReconstructor.TryCatchRegion region =
+                    new ControlFlowReconstructor.TryCatchRegion(
+                            startPc, endPc, allHandlers);
+            region.setFinallyHandler(finallyHandler);
+            // If only catch-all exists (no typed catches), treat it as a
+            // catch handler for try/finally pattern
+            if (finallyHandler != null && typedHandlers.isEmpty()) {
+                allHandlers.add(finallyHandler);
+                region.setFinallyOnly(true);
             }
-            if (!handlers.isEmpty()) {
-                ControlFlowReconstructor.TryCatchRegion region =
-                        new ControlFlowReconstructor.TryCatchRegion(
-                                startPc, endPc, handlers);
+            if (!allHandlers.isEmpty()) {
                 regions.add(region);
             }
         }
@@ -102,6 +112,7 @@ class TryCatchProcessor {
         List<ControlFlowReconstructor.TryCatchRegion> allRegions =
                 buildTryCatchRegions(ctx, cfg);
 
+        // Build try body from blocks within the try range
         List<ArkTSStatement> tryBodyStmts = new ArrayList<>();
         for (BasicBlock block : cfg.getBlocks()) {
             if (block.getStartOffset() >= tcr.startPc
@@ -130,13 +141,15 @@ class TryCatchProcessor {
         ArkTSStatement tryBody =
                 new ArkTSStatement.BlockStatement(tryBodyStmts);
 
+        // Build catch body from handler blocks
         ArkTSStatement catchBody = null;
         String catchParam = "e";
+        String catchParamType = null;
         if (!tcr.handlers.isEmpty()) {
             ControlFlowReconstructor.CatchHandler firstHandler =
                     tcr.handlers.get(0);
             if (firstHandler.typeName != null) {
-                catchParam = "e";
+                catchParamType = firstHandler.typeName;
             }
             List<ArkTSStatement> catchBodyStmts = new ArrayList<>();
             BasicBlock handlerBlock =
@@ -148,15 +161,51 @@ class TryCatchProcessor {
                         reconstructor.processBlockInstructions(
                                 handlerBlock, ctx));
             }
+            // Process additional handler blocks for multi-catch
+            for (int i = 1; i < tcr.handlers.size(); i++) {
+                ControlFlowReconstructor.CatchHandler handler =
+                        tcr.handlers.get(i);
+                BasicBlock extraBlock =
+                        cfg.getBlockAt(handler.handlerPc);
+                if (extraBlock != null
+                        && !visited.contains(extraBlock)) {
+                    visited.add(extraBlock);
+                    catchBodyStmts.addAll(
+                            reconstructor.processBlockInstructions(
+                                    extraBlock, ctx));
+                }
+            }
             if (!catchBodyStmts.isEmpty()) {
                 catchBody = new ArkTSStatement.BlockStatement(
                         catchBodyStmts);
             }
         }
 
+        // Build finally body from catch-all handler if present
+        ArkTSStatement finallyBody = null;
+        ControlFlowReconstructor.CatchHandler finallyHandler =
+                tcr.getFinallyHandler();
+        if (finallyHandler != null && !tcr.isFinallyOnly()) {
+            List<ArkTSStatement> finallyBodyStmts = new ArrayList<>();
+            BasicBlock finallyBlock =
+                    cfg.getBlockAt(finallyHandler.handlerPc);
+            if (finallyBlock != null
+                    && !visited.contains(finallyBlock)) {
+                visited.add(finallyBlock);
+                finallyBodyStmts.addAll(
+                        reconstructor.processBlockInstructions(
+                                finallyBlock, ctx));
+            }
+            if (!finallyBodyStmts.isEmpty()) {
+                finallyBody = new ArkTSStatement.BlockStatement(
+                        finallyBodyStmts);
+            }
+        }
+
         ArkTSControlFlow.TryCatchStatement tryCatch =
                 new ArkTSControlFlow.TryCatchStatement(
-                        tryBody, catchParam, catchBody, null);
+                        tryBody, catchParam, catchParamType,
+                        catchBody, finallyBody);
         stmts.add(tryCatch);
         return stmts;
     }

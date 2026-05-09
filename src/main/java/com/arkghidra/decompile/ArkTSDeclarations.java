@@ -30,6 +30,8 @@ public class ArkTSDeclarations {
         private final List<FunctionParam> params;
         private final String returnType;
         private final ArkTSStatement body;
+        private final boolean isAsync;
+        private final List<ArkTSTypeDeclarations.TypeParameter> typeParams;
 
         /**
          * A function parameter.
@@ -105,11 +107,49 @@ public class ArkTSDeclarations {
         public FunctionDeclaration(String name,
                 List<FunctionParam> params, String returnType,
                 ArkTSStatement body) {
+            this(name, params, returnType, body, false);
+        }
+
+        /**
+         * Constructs a function declaration with async flag.
+         *
+         * @param name the function name
+         * @param params the parameters
+         * @param returnType the return type (may be null)
+         * @param body the function body (typically a BlockStatement)
+         * @param isAsync true if this is an async function
+         */
+        public FunctionDeclaration(String name,
+                List<FunctionParam> params, String returnType,
+                ArkTSStatement body, boolean isAsync) {
+            this(name, params, returnType, body, isAsync,
+                    Collections.emptyList());
+        }
+
+        /**
+         * Constructs a function declaration with async flag and type parameters.
+         *
+         * @param name the function name
+         * @param params the parameters
+         * @param returnType the return type (may be null)
+         * @param body the function body (typically a BlockStatement)
+         * @param isAsync true if this is an async function
+         * @param typeParams the type parameters for generic functions
+         */
+        public FunctionDeclaration(String name,
+                List<FunctionParam> params, String returnType,
+                ArkTSStatement body, boolean isAsync,
+                List<ArkTSTypeDeclarations.TypeParameter> typeParams) {
             this.name = name;
             this.params = Collections.unmodifiableList(
                     new ArrayList<>(params));
             this.returnType = returnType;
             this.body = body;
+            this.isAsync = isAsync;
+            this.typeParams = typeParams != null
+                    ? Collections.unmodifiableList(
+                            new ArrayList<>(typeParams))
+                    : Collections.emptyList();
         }
 
         public String getName() {
@@ -128,6 +168,19 @@ public class ArkTSDeclarations {
             return body;
         }
 
+        public boolean isAsync() {
+            return isAsync;
+        }
+
+        /**
+         * Returns the type parameters for this function, if generic.
+         *
+         * @return the type parameters (empty list for non-generic functions)
+         */
+        public List<ArkTSTypeDeclarations.TypeParameter> getTypeParams() {
+            return typeParams;
+        }
+
         @Override
         public String toArkTS(int indent) {
             StringJoiner paramJoiner = new StringJoiner(", ");
@@ -135,8 +188,20 @@ public class ArkTSDeclarations {
                 paramJoiner.add(p.toString());
             }
             StringBuilder sb = new StringBuilder();
-            sb.append(indent(indent)).append("function ")
-                    .append(name).append("(")
+            sb.append(indent(indent));
+            if (isAsync) {
+                sb.append("async ");
+            }
+            sb.append("function ")
+                    .append(name);
+            if (typeParams != null && !typeParams.isEmpty()) {
+                StringJoiner tpJoiner = new StringJoiner(", ");
+                for (ArkTSTypeDeclarations.TypeParameter tp : typeParams) {
+                    tpJoiner.add(tp.toString());
+                }
+                sb.append("<").append(tpJoiner).append(">");
+            }
+            sb.append("(")
                     .append(paramJoiner).append(")");
             if (returnType != null) {
                 sb.append(": ").append(returnType);
@@ -392,6 +457,7 @@ public class ArkTSDeclarations {
         private final ArkTSStatement body;
         private final boolean isStatic;
         private final String accessModifier;
+        private final boolean isAsync;
 
         /**
          * Constructs a class method declaration.
@@ -407,6 +473,25 @@ public class ArkTSDeclarations {
                 List<FunctionDeclaration.FunctionParam> params,
                 String returnType, ArkTSStatement body, boolean isStatic,
                 String accessModifier) {
+            this(name, params, returnType, body, isStatic,
+                    accessModifier, false);
+        }
+
+        /**
+         * Constructs a class method declaration with async flag.
+         *
+         * @param name the method name
+         * @param params the parameters
+         * @param returnType the return type (may be null)
+         * @param body the method body
+         * @param isStatic true if static
+         * @param accessModifier the access modifier (may be null)
+         * @param isAsync true if this is an async method
+         */
+        public ClassMethodDeclaration(String name,
+                List<FunctionDeclaration.FunctionParam> params,
+                String returnType, ArkTSStatement body, boolean isStatic,
+                String accessModifier, boolean isAsync) {
             this.name = name;
             this.params = Collections.unmodifiableList(
                     new ArrayList<>(params));
@@ -414,6 +499,7 @@ public class ArkTSDeclarations {
             this.body = body;
             this.isStatic = isStatic;
             this.accessModifier = accessModifier;
+            this.isAsync = isAsync;
         }
 
         public String getName() {
@@ -440,6 +526,10 @@ public class ArkTSDeclarations {
             return accessModifier;
         }
 
+        public boolean isAsync() {
+            return isAsync;
+        }
+
         @Override
         public String toArkTS(int indent) {
             StringBuilder sb = new StringBuilder();
@@ -449,6 +539,9 @@ public class ArkTSDeclarations {
             }
             if (isStatic) {
                 sb.append("static ");
+            }
+            if (isAsync) {
+                sb.append("async ");
             }
             StringJoiner paramJoiner = new StringJoiner(", ");
             for (FunctionDeclaration.FunctionParam p : params) {

@@ -156,10 +156,11 @@ class InstructionHandler {
             int reg = (int) operands.get(0).getValue();
             ArkTSExpression value =
                     new ArkTSExpression.VariableExpression("v" + reg);
+            boolean isDelegate = isYieldDelegate(value);
             return new StatementResult(
                     new ArkTSStatement.ExpressionStatement(
                             new ArkTSAccessExpressions.YieldExpression(
-                                    value, false)),
+                                    value, isDelegate)),
                     null);
         }
         if (opcode == ArkOpcodesCompat.RESUMEGENERATOR) {
@@ -588,6 +589,31 @@ class InstructionHandler {
                                         varName),
                                 expr)),
                 expr);
+    }
+
+    /**
+     * Heuristic: checks if a yielded value expression indicates yield*
+     * delegation. A yield* occurs when the yielded value is the result
+     * of getting an iterator from another iterable.
+     *
+     * @param value the yielded value expression
+     * @return true if this looks like a yield* delegate
+     */
+    private static boolean isYieldDelegate(ArkTSExpression value) {
+        if (value == null) {
+            return false;
+        }
+        String name = null;
+        if (value instanceof ArkTSExpression.VariableExpression) {
+            name = ((ArkTSExpression.VariableExpression) value).getName();
+        }
+        if (name == null) {
+            return false;
+        }
+        return "iterator".equals(name)
+                || "propIterator".equals(name)
+                || name.startsWith("iter_")
+                || name.startsWith("delegate_");
     }
 
     private StatementResult handleSta(ArkInstruction insn,

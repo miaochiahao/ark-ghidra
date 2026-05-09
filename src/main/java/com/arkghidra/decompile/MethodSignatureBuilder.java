@@ -1,6 +1,7 @@
 package com.arkghidra.decompile;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import com.arkghidra.format.AbcMethod;
@@ -11,7 +12,8 @@ import com.arkghidra.format.AbcProto;
  *
  * <p>Maps shorty type codes to ArkTS type names and constructs parameter lists
  * with type annotations. When debug info is available, uses real parameter
- * names instead of synthetic ones (param_0, param_1, etc.).
+ * names instead of synthetic ones (param_0, param_1, etc.). Supports generic
+ * function signatures with type parameters.
  */
 public class MethodSignatureBuilder {
 
@@ -221,5 +223,131 @@ public class MethodSignatureBuilder {
             default:
                 return "Object";
         }
+    }
+
+    // --- Generic function signature support ---
+
+    /**
+     * Builds a generic function signature string with type parameters.
+     *
+     * <p>Produces output like
+     * {@code function foo<T>(x: T): T} or
+     * {@code function foo<T extends Base>(x: T): T}.
+     *
+     * @param name the function name
+     * @param typeParams the type parameters
+     * @param params the function parameters with types
+     * @param returnType the return type (may be null for void)
+     * @return the complete signature string
+     */
+    public static String buildGenericSignature(String name,
+            List<ArkTSTypeDeclarations.TypeParameter> typeParams,
+            List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params,
+            String returnType) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("function ").append(name);
+        if (typeParams != null && !typeParams.isEmpty()) {
+            sb.append("<");
+            for (int i = 0; i < typeParams.size(); i++) {
+                if (i > 0) {
+                    sb.append(", ");
+                }
+                sb.append(typeParams.get(i).toString());
+            }
+            sb.append(">");
+        }
+        sb.append("(");
+        for (int i = 0; i < params.size(); i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            sb.append(params.get(i).toString());
+        }
+        sb.append(")");
+        if (returnType != null && !"void".equals(returnType)) {
+            sb.append(": ").append(returnType);
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Builds a generic function declaration AST node.
+     *
+     * @param name the function name
+     * @param typeParams the type parameters (e.g. [T, U extends Base])
+     * @param params the function parameters with type annotations
+     * @param returnType the return type (may be null)
+     * @param body the function body
+     * @return the generic function declaration
+     */
+    public static ArkTSTypeDeclarations.GenericFunctionDeclaration buildGenericFunction(
+            String name,
+            List<ArkTSTypeDeclarations.TypeParameter> typeParams,
+            List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params,
+            String returnType,
+            ArkTSStatement body) {
+        return new ArkTSTypeDeclarations.GenericFunctionDeclaration(
+                name, typeParams, params, returnType, body);
+    }
+
+    /**
+     * Resolves a reference type index to a type name.
+     *
+     * <p>When a proto has REF shorty types, the referenceTypes list contains
+     * indices that can be resolved to class/type names. Falls back to "Object"
+     * when the index cannot be resolved.
+     *
+     * @param proto the method prototype
+     * @param paramIndex the parameter index (0-based, excluding return type)
+     * @return the resolved type name, or null if no reference info available
+     */
+    public static String resolveReferenceType(AbcProto proto, int paramIndex) {
+        if (proto == null || proto.getReferenceTypes() == null) {
+            return null;
+        }
+        List<Integer> refTypes = proto.getReferenceTypes();
+        int idx = paramIndex + 1;
+        if (idx < refTypes.size() && refTypes.get(idx) >= 0) {
+            return "ref_" + refTypes.get(idx);
+        }
+        return null;
+    }
+
+    /**
+     * Creates type parameters from a list of type parameter names.
+     *
+     * @param names the type parameter names (e.g. ["T", "U"])
+     * @return the list of TypeParameter objects with no constraints
+     */
+    public static List<ArkTSTypeDeclarations.TypeParameter> createTypeParams(
+            String... names) {
+        List<ArkTSTypeDeclarations.TypeParameter> result =
+                new ArrayList<>();
+        for (String name : names) {
+            result.add(new ArkTSTypeDeclarations.TypeParameter(name, null));
+        }
+        return Collections.unmodifiableList(result);
+    }
+
+    /**
+     * Creates type parameters with constraints.
+     *
+     * <p>Each entry in constraints can be null (no constraint) or a type name.
+     *
+     * @param names the type parameter names
+     * @param constraints the constraint types (parallel array to names)
+     * @return the list of TypeParameter objects
+     */
+    public static List<ArkTSTypeDeclarations.TypeParameter> createTypeParams(
+            String[] names, String[] constraints) {
+        List<ArkTSTypeDeclarations.TypeParameter> result =
+                new ArrayList<>();
+        for (int i = 0; i < names.length; i++) {
+            String constraint = (constraints != null && i < constraints.length)
+                    ? constraints[i] : null;
+            result.add(new ArkTSTypeDeclarations.TypeParameter(
+                    names[i], constraint));
+        }
+        return Collections.unmodifiableList(result);
     }
 }

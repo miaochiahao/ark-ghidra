@@ -391,11 +391,16 @@ final class ArkOpcodesCompat {
      */
     static boolean isTerminator(int opcode) {
         return isUnconditionalJump(opcode) || isConditionalBranch(opcode)
-                || opcode == RETURN || opcode == RETURNUNDEFINED;
+                || opcode == RETURN || opcode == RETURNUNDEFINED
+                || opcode == THROW;
     }
 
     static boolean isGetIterator(int opcode) {
         return opcode == GETITERATOR_IMM8 || opcode == GETITERATOR_IMM16;
+    }
+
+    static boolean isGetAsyncIterator(int opcode) {
+        return opcode == GETASYNCITERATOR;
     }
 
     static boolean isCloseIterator(int opcode) {

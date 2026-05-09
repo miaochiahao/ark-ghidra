@@ -141,7 +141,7 @@ public class ArkTSDecompiler {
         }
 
         return buildMethodSource(method, proto, code, bodyStmts,
-                abcFile, restParamIndex);
+                abcFile, restParamIndex, ctx.isAsync);
     }
 
     /**
@@ -513,12 +513,12 @@ public class ArkTSDecompiler {
             AbcCode code, List<ArkTSStatement> bodyStmts,
             AbcFile abcFile) {
         return buildMethodSource(method, proto, code, bodyStmts,
-                abcFile, -1);
+                abcFile, -1, false);
     }
 
     private String buildMethodSource(AbcMethod method, AbcProto proto,
             AbcCode code, List<ArkTSStatement> bodyStmts,
-            AbcFile abcFile, int restParamIndex) {
+            AbcFile abcFile, int restParamIndex, boolean isAsync) {
         List<ArkTSStatement> filteredStmts =
                 filterTrivialReturnUndefined(bodyStmts);
 
@@ -532,7 +532,8 @@ public class ArkTSDecompiler {
                 new ArkTSStatement.BlockStatement(filteredStmts);
         ArkTSDeclarations.FunctionDeclaration func =
                 new ArkTSDeclarations.FunctionDeclaration(
-                        method.getName(), params, returnType, body);
+                        method.getName(), params, returnType, body,
+                        isAsync);
         return func.toArkTS(0);
     }
 
@@ -578,6 +579,26 @@ public class ArkTSDecompiler {
             }
         }
         return -1;
+    }
+
+    /**
+     * Detects whether a method is async by scanning its code for
+     * the ASYNCFUNCTIONENTER opcode.
+     *
+     * @param code the method's code section
+     * @return true if the method contains an ASYNCFUNCTIONENTER opcode
+     */
+    boolean detectAsyncMethod(AbcCode code) {
+        if (code == null || code.getInstructions() == null
+                || code.getCodeSize() == 0) {
+            return false;
+        }
+        for (byte b : code.getInstructions()) {
+            if ((b & 0xFF) == ArkOpcodesCompat.ASYNCFUNCTIONENTER) {
+                return true;
+            }
+        }
+        return false;
     }
 
     AbcProto resolveProto(AbcMethod method, AbcFile abcFile) {

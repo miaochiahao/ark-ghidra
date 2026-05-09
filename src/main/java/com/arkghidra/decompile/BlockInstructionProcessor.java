@@ -153,6 +153,7 @@ class BlockInstructionProcessor {
             int opcode = insn.getOpcode();
             if (ArkOpcodesCompat.isGetIterator(opcode)
                     || ArkOpcodesCompat.isCloseIterator(opcode)
+                    || ArkOpcodesCompat.isGetAsyncIterator(opcode)
                     || opcode == ArkOpcodesCompat.GETNEXTPROPNAME
                     || opcode == ArkOpcodesCompat.GETPROPITERATOR) {
                 continue;
@@ -160,6 +161,7 @@ class BlockInstructionProcessor {
             if (opcode == ArkOpcodesCompat.STA && idx > 0) {
                 int prevOpcode = instructions.get(idx - 1).getOpcode();
                 if (ArkOpcodesCompat.isGetIterator(prevOpcode)
+                        || ArkOpcodesCompat.isGetAsyncIterator(prevOpcode)
                         || prevOpcode
                                 == ArkOpcodesCompat.GETNEXTPROPNAME
                         || prevOpcode

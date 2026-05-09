@@ -287,6 +287,66 @@ public class ArkTSControlFlow {
         }
     }
 
+    // --- For-Await-Of ---
+
+    /**
+     * A for-await-of loop statement: for await (const x of asyncIterable).
+     *
+     * <p>Used for async iteration over async iterables, detected from
+     * the GETASYNCITERATOR opcode pattern in the CFG.
+     */
+    public static class ForAwaitOfStatement extends ArkTSStatement {
+        private final String variableKind;
+        private final String variableName;
+        private final ArkTSExpression iterable;
+        private final ArkTSStatement body;
+
+        /**
+         * Constructs a for-await-of statement.
+         *
+         * @param variableKind "let" or "const"
+         * @param variableName the loop variable name
+         * @param iterable the async iterable expression
+         * @param body the loop body
+         */
+        public ForAwaitOfStatement(String variableKind,
+                String variableName, ArkTSExpression iterable,
+                ArkTSStatement body) {
+            this.variableKind = variableKind;
+            this.variableName = variableName;
+            this.iterable = iterable;
+            this.body = body;
+        }
+
+        public String getVariableKind() {
+            return variableKind;
+        }
+
+        public String getVariableName() {
+            return variableName;
+        }
+
+        public ArkTSExpression getIterable() {
+            return iterable;
+        }
+
+        public ArkTSStatement getBody() {
+            return body;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(indent(indent)).append("for await (")
+                    .append(variableKind).append(" ")
+                    .append(variableName).append(" of ")
+                    .append(iterable.toArkTS()).append(") {\n");
+            ArkTSStatement.appendBlockBody(sb, body, indent + 1);
+            sb.append(indent(indent)).append("}");
+            return sb.toString();
+        }
+    }
+
     // --- Do/While ---
 
     /**
@@ -335,6 +395,7 @@ public class ArkTSControlFlow {
     public static class TryCatchStatement extends ArkTSStatement {
         private final ArkTSStatement tryBlock;
         private final String catchParam;
+        private final String catchParamType;
         private final ArkTSStatement catchBlock;
         private final ArkTSStatement finallyBlock;
 
@@ -349,8 +410,25 @@ public class ArkTSControlFlow {
         public TryCatchStatement(ArkTSStatement tryBlock,
                 String catchParam, ArkTSStatement catchBlock,
                 ArkTSStatement finallyBlock) {
+            this(tryBlock, catchParam, null, catchBlock, finallyBlock);
+        }
+
+        /**
+         * Constructs a try/catch statement with catch parameter type.
+         *
+         * @param tryBlock the try body
+         * @param catchParam the catch parameter name (may be null)
+         * @param catchParamType the catch parameter type annotation (may be null)
+         * @param catchBlock the catch body (may be null)
+         * @param finallyBlock the finally body (may be null)
+         */
+        public TryCatchStatement(ArkTSStatement tryBlock,
+                String catchParam, String catchParamType,
+                ArkTSStatement catchBlock,
+                ArkTSStatement finallyBlock) {
             this.tryBlock = tryBlock;
             this.catchParam = catchParam;
+            this.catchParamType = catchParamType;
             this.catchBlock = catchBlock;
             this.finallyBlock = finallyBlock;
         }
@@ -361,6 +439,10 @@ public class ArkTSControlFlow {
 
         public String getCatchParam() {
             return catchParam;
+        }
+
+        public String getCatchParamType() {
+            return catchParamType;
         }
 
         public ArkTSStatement getCatchBlock() {
@@ -379,7 +461,11 @@ public class ArkTSControlFlow {
             sb.append(indent(indent)).append("}");
             if (catchBlock != null) {
                 sb.append(" catch (");
-                sb.append(catchParam != null ? catchParam : "e");
+                String param = catchParam != null ? catchParam : "e";
+                sb.append(param);
+                if (catchParamType != null) {
+                    sb.append(": ").append(catchParamType);
+                }
                 sb.append(") {\n");
                 ArkTSStatement.appendBlockBody(sb, catchBlock, indent + 1);
                 sb.append(indent(indent)).append("}");

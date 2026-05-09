@@ -1,5 +1,6 @@
 package com.arkghidra.decompile;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -12,7 +13,8 @@ import com.arkghidra.disasm.ArkOperand;
  *
  * <p>Maps instruction patterns to ArkTS types and provides type annotations
  * for variable declarations. The type tracker maintains a register-to-type map
- * that is updated as instructions are processed.
+ * that is updated as instructions are processed. Supports union types,
+ * generic types, array types, and type guard narrowing.
  */
 public class TypeInference {
 
@@ -307,5 +309,261 @@ public class TypeInference {
                 || "%".equals(op) || "**".equals(op)
                 || "<<".equals(op) || ">>>".equals(op) || ">>".equals(op)
                 || "&".equals(op) || "|".equals(op) || "^".equals(op);
+    }
+
+    // --- Union type support ---
+
+    /**
+     * Builds a union type string from a list of constituent types.
+     *
+     * <p>Deduplicates types and sorts them for deterministic output.
+     * Returns null if the list is empty. Returns the single type if
+     * only one unique type is present.
+     *
+     * @param types the list of type names to union
+     * @return the union type string (e.g. "string | number"), or null
+     */
+    public static String buildUnionType(List<String> types) {
+        if (types == null || types.isEmpty()) {
+            return null;
+        }
+        List<String> unique = new ArrayList<>();
+        for (String t : types) {
+            if (t != null && !unique.contains(t)) {
+                unique.add(t);
+            }
+        }
+        if (unique.isEmpty()) {
+            return null;
+        }
+        if (unique.size() == 1) {
+            return unique.get(0);
+        }
+        unique.sort(String::compareToIgnoreCase);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < unique.size(); i++) {
+            if (i > 0) {
+                sb.append(" | ");
+            }
+            sb.append(unique.get(i));
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Checks whether a type string represents a union type.
+     *
+     * @param type the type string
+     * @return true if the type contains a union separator
+     */
+    public static boolean isUnionType(String type) {
+        return type != null && type.contains(" | ");
+    }
+
+    /**
+     * Parses a union type string into its constituent types.
+     *
+     * @param type the union type string (e.g. "string | number")
+     * @return the list of individual type names
+     */
+    public static List<String> parseUnionTypes(String type) {
+        List<String> result = new ArrayList<>();
+        if (type == null) {
+            return result;
+        }
+        String[] parts = type.split("\\s*\\|\\s*");
+        for (String part : parts) {
+            String trimmed = part.trim();
+            if (!trimmed.isEmpty()) {
+                result.add(trimmed);
+            }
+        }
+        return result;
+    }
+
+    // --- Array type support ---
+
+    /**
+     * Formats a type as an array type: element[] or Array&lt;element&gt;.
+     *
+     * <p>Uses shorthand {@code element[]} syntax for simple types and
+     * {@code Array<element>} for complex types (union, generic).
+     *
+     * @param elementType the element type name
+     * @return the array type string
+     */
+    public static String formatArrayType(String elementType) {
+        if (elementType == null) {
+            return "Array<unknown>";
+        }
+        if (isUnionType(elementType) || elementType.contains("<")) {
+            return "Array<" + elementType + ">";
+        }
+        return elementType + "[]";
+    }
+
+    /**
+     * Checks whether a type string represents an array type.
+     *
+     * @param type the type string
+     * @return true if the type is an array type (ends with "[]" or starts with "Array&lt;")
+     */
+    public static boolean isArrayType(String type) {
+        return type != null
+                && (type.endsWith("[]") || type.startsWith("Array<"));
+    }
+
+    /**
+     * Extracts the element type from an array type string.
+     *
+     * @param type the array type string (e.g. "number[]" or "Array&lt;string&gt;")
+     * @return the element type, or "unknown" if parsing fails
+     */
+    public static String extractArrayElementType(String type) {
+        if (type == null) {
+            return "unknown";
+        }
+        if (type.endsWith("[]")) {
+            return type.substring(0, type.length() - 2);
+        }
+        if (type.startsWith("Array<") && type.endsWith(">")) {
+            return type.substring(6, type.length() - 1);
+        }
+        return "unknown";
+    }
+
+    // --- Generic type support ---
+
+    /**
+     * Formats a generic type string: {@code Name<arg1, arg2>}.
+     *
+     * @param baseName the base type name (e.g. "Container")
+     * @param typeArgs the type arguments (e.g. ["T"])
+     * @return the generic type string
+     */
+    public static String formatGenericType(String baseName,
+            List<String> typeArgs) {
+        if (baseName == null) {
+            return "Object";
+        }
+        if (typeArgs == null || typeArgs.isEmpty()) {
+            return baseName;
+        }
+        StringBuilder sb = new StringBuilder(baseName);
+        sb.append("<");
+        for (int i = 0; i < typeArgs.size(); i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            sb.append(typeArgs.get(i));
+        }
+        sb.append(">");
+        return sb.toString();
+    }
+
+    /**
+     * Checks whether a type string represents a generic type.
+     *
+     * @param type the type string
+     * @return true if the type has angle brackets
+     */
+    public static boolean isGenericType(String type) {
+        return type != null && type.contains("<") && type.contains(">");
+    }
+
+    // --- Type guard (typeof narrowing) support ---
+
+    /**
+     * Maps a typeof comparison string to the corresponding ArkTS type.
+     *
+     * <p>For example, {@code typeof x === "string"} narrows to {@code string}.
+     *
+     * @param typeofString the string literal compared in the typeof check
+     * @return the corresponding type name, or null if not a recognized typeof
+     */
+    public static String typeofStringToType(String typeofString) {
+        if (typeofString == null) {
+            return null;
+        }
+        switch (typeofString) {
+            case "\"string\"":
+                return "string";
+            case "\"number\"":
+                return "number";
+            case "\"boolean\"":
+                return "boolean";
+            case "\"undefined\"":
+                return "undefined";
+            case "\"object\"":
+                return "Object";
+            case "\"function\"":
+                return "Function";
+            case "\"symbol\"":
+                return "symbol";
+            case "\"bigint\"":
+                return "bigint";
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * Attempts to narrow a variable's type based on a typeof guard.
+     *
+     * <p>If the expression is a binary comparison of typeof var === "typename",
+     * returns the narrowed type. Otherwise returns null.
+     *
+     * @param expr the expression to analyze
+     * @return the narrowed type name, or null if not a typeof guard
+     */
+    public static String narrowTypeFromTypeofGuard(ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.BinaryExpression)) {
+            return null;
+        }
+        ArkTSExpression.BinaryExpression bin =
+                (ArkTSExpression.BinaryExpression) expr;
+        if (!"===".equals(bin.getOperator()) && !"==".equals(bin.getOperator())) {
+            return null;
+        }
+        ArkTSExpression left = bin.getLeft();
+        ArkTSExpression right = bin.getRight();
+        String typeofOperand = extractTypeofOperand(left);
+        String literalValue = extractStringLiteral(right);
+        if (typeofOperand != null && literalValue != null) {
+            return typeofStringToType(literalValue);
+        }
+        typeofOperand = extractTypeofOperand(right);
+        literalValue = extractStringLiteral(left);
+        if (typeofOperand != null && literalValue != null) {
+            return typeofStringToType(literalValue);
+        }
+        return null;
+    }
+
+    private static String extractTypeofOperand(ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.UnaryExpression)) {
+            return null;
+        }
+        ArkTSExpression.UnaryExpression unary =
+                (ArkTSExpression.UnaryExpression) expr;
+        if (!"typeof".equals(unary.getOperator())) {
+            return null;
+        }
+        return unary.getOperand() instanceof ArkTSExpression.VariableExpression
+                ? ((ArkTSExpression.VariableExpression) unary.getOperand())
+                        .getName()
+                : "expr";
+    }
+
+    private static String extractStringLiteral(ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.LiteralExpression)) {
+            return null;
+        }
+        ArkTSExpression.LiteralExpression lit =
+                (ArkTSExpression.LiteralExpression) expr;
+        if (lit.getKind() == ArkTSExpression.LiteralExpression.LiteralKind.STRING) {
+            return "\"" + lit.getValue() + "\"";
+        }
+        return null;
     }
 }

@@ -473,6 +473,117 @@ public class ArkTSTypeDeclarations {
         }
     }
 
+    // --- Generic function declaration ---
+
+    /**
+     * A generic function declaration with type parameters:
+     * {@code function foo&lt;T&gt;(x: T): T}.
+     */
+    public static class GenericFunctionDeclaration extends ArkTSStatement {
+        private final String name;
+        private final List<TypeParameter> typeParams;
+        private final List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params;
+        private final String returnType;
+        private final ArkTSStatement body;
+
+        /**
+         * Constructs a generic function declaration.
+         *
+         * @param name the function name
+         * @param typeParams the type parameters (e.g. [T, U extends Base])
+         * @param params the function parameters with type annotations
+         * @param returnType the return type (may be null)
+         * @param body the function body (typically a BlockStatement)
+         */
+        public GenericFunctionDeclaration(String name,
+                List<TypeParameter> typeParams,
+                List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params,
+                String returnType, ArkTSStatement body) {
+            this.name = name;
+            this.typeParams = Collections.unmodifiableList(
+                    new ArrayList<>(typeParams));
+            this.params = Collections.unmodifiableList(
+                    new ArrayList<>(params));
+            this.returnType = returnType;
+            this.body = body;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public List<TypeParameter> getTypeParams() {
+            return typeParams;
+        }
+
+        public List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> getParams() {
+            return params;
+        }
+
+        public String getReturnType() {
+            return returnType;
+        }
+
+        public ArkTSStatement getBody() {
+            return body;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringJoiner paramJoiner = new StringJoiner(", ");
+            for (ArkTSDeclarations.FunctionDeclaration.FunctionParam p : params) {
+                paramJoiner.add(p.toString());
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.append(indent(indent)).append("function ").append(name);
+            if (!typeParams.isEmpty()) {
+                StringJoiner tpJoiner = new StringJoiner(", ");
+                for (TypeParameter tp : typeParams) {
+                    tpJoiner.add(tp.toString());
+                }
+                sb.append("<").append(tpJoiner).append(">");
+            }
+            sb.append("(").append(paramJoiner).append(")");
+            if (returnType != null) {
+                sb.append(": ").append(returnType);
+            }
+            sb.append(" ");
+            if (body instanceof ArkTSStatement.BlockStatement) {
+                sb.append(((ArkTSStatement.BlockStatement) body)
+                        .toArkTS(indent));
+            } else {
+                sb.append("{\n");
+                sb.append(body.toArkTS(indent + 1)).append("\n");
+                sb.append(indent(indent)).append("}");
+            }
+            return sb.toString();
+        }
+    }
+
+    // --- Generic class declaration with type parameters and generic members ---
+
+    /**
+     * A generic class declaration that also supports generic methods.
+     * Extends {@link GenericClassDeclaration} with the ability to declare
+     * type parameters on individual methods.
+     */
+    public static class GenericClassWithMethodsDeclaration
+            extends GenericClassDeclaration {
+        /**
+         * Constructs a generic class with methods declaration.
+         *
+         * @param name the class name
+         * @param typeParams the type parameters
+         * @param superClass the super class name (may be null)
+         * @param members the class members
+         */
+        public GenericClassWithMethodsDeclaration(String name,
+                List<TypeParameter> typeParams, String superClass,
+                List<ArkTSStatement> members) {
+            super(name, typeParams, superClass, members);
+        }
+    }
+
     // --- Destructuring declaration ---
 
     /**

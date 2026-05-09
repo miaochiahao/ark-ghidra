@@ -184,10 +184,12 @@ class DeclarationBuilder {
                 & AbcAccessFlags.ACC_STATIC) != 0;
         String accessModifier = accessFlagsToModifier(
                 method.getAccessFlags());
+        boolean isAsync = code != null
+                && decompiler.detectAsyncMethod(code);
 
         return new ArkTSDeclarations.ClassMethodDeclaration(
                 method.getName(), params, returnType, body,
-                isStatic, accessModifier);
+                isStatic, accessModifier, isAsync);
     }
 
     /**

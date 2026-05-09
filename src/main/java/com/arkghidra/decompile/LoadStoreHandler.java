@@ -315,8 +315,15 @@ class LoadStoreHandler {
         // --- Async iterator ---
         if (opcode == ArkOpcodesCompat.GETASYNCITERATOR) {
             return new InstructionHandler.StatementResult(null,
-                    new ArkTSExpression.VariableExpression(
-                            "[Symbol.asyncIterator]"));
+                    new ArkTSExpression.CallExpression(
+                            new ArkTSExpression.MemberExpression(
+                                    accValue != null ? accValue
+                                            : new ArkTSExpression
+                                                    .VariableExpression(ACC),
+                                    new ArkTSExpression.VariableExpression(
+                                            "Symbol.asyncIterator"),
+                                    false),
+                            Collections.emptyList()));
         }
 
         // --- Super by value ---

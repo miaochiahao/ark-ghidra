@@ -7910,4 +7910,320 @@ class ArkTSDecompilerTest {
         assertEquals(1, count,
                 "Should have exactly one occurrence of foo: " + output);
     }
+
+    // --- Issue #55: Iterator and generator protocol decompilation tests ---
+
+    @Test
+    void testForAwaitOfStatement_toArkTS() {
+        ArkTSExpression iterable =
+                new ArkTSExpression.VariableExpression("asyncStream");
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSControlFlow.ForAwaitOfStatement stmt =
+                new ArkTSControlFlow.ForAwaitOfStatement("const", "chunk",
+                        iterable, body);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.startsWith("for await (const chunk of asyncStream)"),
+                "Should start with for-await-of header, got: " + result);
+        assertTrue(result.contains("{"),
+                "Should contain opening brace, got: " + result);
+    }
+
+    @Test
+    void testForAwaitOfStatement_withBody() {
+        ArkTSExpression iterable =
+                new ArkTSExpression.VariableExpression("asyncData");
+        ArkTSExpression value =
+                new ArkTSExpression.VariableExpression("chunk");
+        List<ArkTSStatement> bodyStmts = List.of(
+                new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.CallExpression(
+                                new ArkTSExpression.VariableExpression(
+                                        "process"),
+                                List.of(value))));
+        ArkTSStatement body =
+                new ArkTSStatement.BlockStatement(bodyStmts);
+        ArkTSControlFlow.ForAwaitOfStatement stmt =
+                new ArkTSControlFlow.ForAwaitOfStatement("const", "chunk",
+                        iterable, body);
+        String result = stmt.toArkTS(0);
+        assertTrue(result.contains("for await (const chunk of asyncData)"),
+                "Should contain for-await-of header, got: " + result);
+        assertTrue(result.contains("process(chunk)"),
+                "Should contain body call, got: " + result);
+    }
+
+    @Test
+    void testForAwaitOfStatement_withIndent() {
+        ArkTSExpression iterable =
+                new ArkTSExpression.VariableExpression("events");
+        ArkTSStatement body =
+                new ArkTSStatement.BlockStatement(Collections.emptyList());
+        ArkTSControlFlow.ForAwaitOfStatement stmt =
+                new ArkTSControlFlow.ForAwaitOfStatement("const", "evt",
+                        iterable, body);
+        String result = stmt.toArkTS(2);
+        assertTrue(result.startsWith("        for await (const evt of events)"),
+                "Should be indented 2 levels, got: " + result);
+    }
+
+    @Test
+    void testForAwaitOfStatement_getters() {
+        ArkTSExpression iterable =
+                new ArkTSExpression.VariableExpression("asyncItems");
+        ArkTSStatement body =
+                new ArkTSStatement.BlockStatement(Collections.emptyList());
+        ArkTSControlFlow.ForAwaitOfStatement stmt =
+                new ArkTSControlFlow.ForAwaitOfStatement("let", "item",
+                        iterable, body);
+        assertEquals("let", stmt.getVariableKind());
+        assertEquals("item", stmt.getVariableName());
+        assertEquals("asyncItems", stmt.getIterable().toArkTS());
+    }
+
+    @Test
+    void testDecompile_asyncIteratorInstruction() {
+        // GETASYNCITERATOR = 0xD7
+        ArkInstruction getAsyncIter = new ArkInstruction(
+                ArkOpcodesCompat.GETASYNCITERATOR, "getasynciterator",
+                ArkInstructionFormat.NONE, 0, 1,
+                Collections.emptyList(), false);
+        ArkInstruction retUndef = new ArkInstruction(
+                ArkOpcodesCompat.RETURNUNDEFINED, "returnundefined",
+                ArkInstructionFormat.NONE, 1, 1,
+                Collections.emptyList(), false);
+        String result = decompiler.decompileInstructions(
+                List.of(getAsyncIter, retUndef));
+        assertNotNull(result,
+                "Should handle GETASYNCITERATOR without error");
+    }
+
+    @Test
+    void testDecompile_generatorWithYieldExpression() {
+        // CREATEGENERATOROBJ v0
+        ArkInstruction createGen = new ArkInstruction(
+                ArkOpcodesCompat.CREATEGENERATOROBJ, "creategeneratorobj",
+                ArkInstructionFormat.V8, 0, 2,
+                List.of(new ArkOperand(ArkOperand.Type.REGISTER, 0)),
+                false);
+        // LDAI 42
+        ArkInstruction ldai = new ArkInstruction(
+                ArkOpcodesCompat.LDAI, "ldai",
+                ArkInstructionFormat.IMM32, 2, 5,
+                List.of(new ArkOperand(ArkOperand.Type.IMMEDIATE32_SIGNED, 42)),
+                false);
+        // STA v1
+        ArkInstruction sta = new ArkInstruction(
+                ArkOpcodesCompat.STA, "sta",
+                ArkInstructionFormat.V8, 7, 2,
+                List.of(new ArkOperand(ArkOperand.Type.REGISTER, 1)),
+                false);
+        // SUSPENDGENERATOR v1
+        ArkInstruction suspendGen = new ArkInstruction(
+                ArkOpcodesCompat.SUSPENDGENERATOR, "suspendgenerator",
+                ArkInstructionFormat.V8, 9, 2,
+                List.of(new ArkOperand(ArkOperand.Type.REGISTER, 1)),
+                false);
+        // RETURNUNDEFINED
+        ArkInstruction retUndef = new ArkInstruction(
+                ArkOpcodesCompat.RETURNUNDEFINED, "returnundefined",
+                ArkInstructionFormat.NONE, 11, 1,
+                Collections.emptyList(), false);
+        String result = decompiler.decompileInstructions(
+                List.of(createGen, ldai, sta, suspendGen, retUndef));
+        assertNotNull(result,
+                "Should decompile generator with yield without error");
+        assertTrue(result.contains("yield"),
+                "Should contain yield keyword, got: " + result);
+    }
+
+    @Test
+    void testDecompile_yieldDelegateExpression() {
+        // Test that yield* with an iterator variable produces correct output
+        ArkTSExpression iterable =
+                new ArkTSExpression.VariableExpression("iterator");
+        ArkTSAccessExpressions.YieldExpression expr =
+                new ArkTSAccessExpressions.YieldExpression(iterable, true);
+        assertEquals("yield* iterator", expr.toArkTS(),
+                "Delegate yield should use yield* syntax");
+    }
+
+    @Test
+    void testDecompile_asyncGeneratorWithReturn() {
+        // CREATEASYNCGENERATOROBJ v0
+        ArkInstruction createAsyncGen = new ArkInstruction(
+                ArkOpcodesCompat.CREATEASYNCGENERATOROBJ,
+                "createasyncgeneratorobj",
+                ArkInstructionFormat.V8, 0, 2,
+                List.of(new ArkOperand(ArkOperand.Type.REGISTER, 0)),
+                false);
+        // LDAI 100
+        ArkInstruction ldai = new ArkInstruction(
+                ArkOpcodesCompat.LDAI, "ldai",
+                ArkInstructionFormat.IMM32, 2, 5,
+                List.of(new ArkOperand(ArkOperand.Type.IMMEDIATE32_SIGNED, 100)),
+                false);
+        // STA v1
+        ArkInstruction sta = new ArkInstruction(
+                ArkOpcodesCompat.STA, "sta",
+                ArkInstructionFormat.V8, 7, 2,
+                List.of(new ArkOperand(ArkOperand.Type.REGISTER, 1)),
+                false);
+        // ASYNCGENERATORRESOLVE v0, v1, v2
+        ArkInstruction resolve = new ArkInstruction(
+                ArkOpcodesCompat.ASYNCGENERATORRESOLVE,
+                "asyncgeneratorresolve",
+                ArkInstructionFormat.V8_V8_V8, 9, 4,
+                List.of(new ArkOperand(ArkOperand.Type.REGISTER, 0),
+                        new ArkOperand(ArkOperand.Type.REGISTER, 1),
+                        new ArkOperand(ArkOperand.Type.REGISTER, 2)),
+                false);
+        // RETURNUNDEFINED
+        ArkInstruction retUndef = new ArkInstruction(
+                ArkOpcodesCompat.RETURNUNDEFINED, "returnundefined",
+                ArkInstructionFormat.NONE, 13, 1,
+                Collections.emptyList(), false);
+        String result = decompiler.decompileInstructions(
+                List.of(createAsyncGen, ldai, sta, resolve, retUndef));
+        assertNotNull(result,
+                "Should decompile async generator resolve without error");
+        assertTrue(result.contains("return"),
+                "Should contain return from async generator resolve, got: "
+                        + result);
+    }
+
+    @Test
+    void testDecompile_forAwaitOfLoopPattern() {
+        List<ArkInstruction> insns = new ArrayList<>();
+        // offset 0: GETASYNCITERATOR (len 1)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.GETASYNCITERATOR,
+                "getasynciterator", ArkInstructionFormat.NONE,
+                0, 1, Collections.emptyList(), false));
+        // offset 1: STA v1 (len 2)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.STA, "sta",
+                ArkInstructionFormat.V8, 1, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 1)),
+                false));
+        // offset 3: LDA v1 (len 2) -- loop header
+        insns.add(new ArkInstruction(ArkOpcodesCompat.LDA, "lda",
+                ArkInstructionFormat.V8, 3, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 1)),
+                false));
+        // offset 5: GETNEXTPROPNAME v1 (len 2)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.GETNEXTPROPNAME,
+                "getnextpropname", ArkInstructionFormat.V8, 5, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 1)),
+                false));
+        // offset 7: STA v2 (len 2)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.STA, "sta",
+                ArkInstructionFormat.V8, 7, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 2)),
+                false));
+        // offset 9: LDA v2 (len 2)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.LDA, "lda",
+                ArkInstructionFormat.V8, 9, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 2)),
+                false));
+        // offset 11: JEQZ_IMM8 -> offset 18 (len 2), offset_val = 18-13 = 5
+        insns.add(new ArkInstruction(ArkOpcodesCompat.JEQZ_IMM8, "jeqz",
+                ArkInstructionFormat.IMM8, 11, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE8_SIGNED, 5)),
+                false));
+        // offset 13: STA v3 (len 2) -- loop body
+        insns.add(new ArkInstruction(ArkOpcodesCompat.STA, "sta",
+                ArkInstructionFormat.V8, 13, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.REGISTER, 3)),
+                false));
+        // offset 15: JMP_IMM16 -> offset 3 (len 3), offset_val = 3-18 = -15
+        insns.add(new ArkInstruction(ArkOpcodesCompat.JMP_IMM16, "jmp",
+                ArkInstructionFormat.IMM16, 15, 3,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE16_SIGNED, -15)),
+                false));
+        // offset 18: RETURNUNDEFINED (len 1)
+        insns.add(new ArkInstruction(ArkOpcodesCompat.RETURNUNDEFINED,
+                "returnundefined", ArkInstructionFormat.NONE, 18, 1,
+                Collections.emptyList(), false));
+        String result = decompiler.decompileInstructions(insns);
+        assertNotNull(result,
+                "Should decompile for-await-of instructions without error, got: "
+                        + result);
+    }
+
+    @Test
+    void testDecompile_generatorFunctionExpression() {
+        // Test GeneratorFunctionExpression with name and async flag
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                List.of(new ArkTSDeclarations.FunctionDeclaration
+                        .FunctionParam("n", null));
+        ArkTSExpression yieldExpr =
+                new ArkTSAccessExpressions.YieldExpression(
+                        new ArkTSExpression.VariableExpression("n"), false);
+        ArkTSStatement bodyStmt =
+                new ArkTSStatement.ExpressionStatement(yieldExpr);
+        ArkTSAccessExpressions.GeneratorFunctionExpression expr =
+                new ArkTSAccessExpressions.GeneratorFunctionExpression(
+                        "gen", params,
+                        new ArkTSStatement.BlockStatement(List.of(bodyStmt)),
+                        false);
+        String result = expr.toArkTS();
+        assertTrue(result.contains("function*"),
+                "Should contain function* keyword, got: " + result);
+        assertTrue(result.contains("gen"),
+                "Should contain generator name, got: " + result);
+        assertTrue(result.contains("yield n"),
+                "Should contain yield expression, got: " + result);
+    }
+
+    @Test
+    void testDecompile_asyncGeneratorFunctionExpression() {
+        // Test async generator function expression
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                Collections.emptyList();
+        ArkTSExpression yieldExpr =
+                new ArkTSAccessExpressions.YieldExpression(
+                        new ArkTSExpression.LiteralExpression("1",
+                                ArkTSExpression.LiteralExpression
+                                        .LiteralKind.NUMBER),
+                        false);
+        ArkTSStatement bodyStmt =
+                new ArkTSStatement.ExpressionStatement(yieldExpr);
+        ArkTSAccessExpressions.GeneratorFunctionExpression expr =
+                new ArkTSAccessExpressions.GeneratorFunctionExpression(
+                        null, params,
+                        new ArkTSStatement.BlockStatement(List.of(bodyStmt)),
+                        true);
+        String result = expr.toArkTS();
+        assertTrue(result.contains("async function*"),
+                "Should contain async function* keyword, got: " + result);
+        assertTrue(result.contains("yield 1"),
+                "Should contain yield expression, got: " + result);
+    }
+
+    @Test
+    void testDecompile_yieldExpressionBare() {
+        // Bare yield (no value) followed by return
+        ArkInstruction suspendGen = new ArkInstruction(
+                ArkOpcodesCompat.SUSPENDGENERATOR, "suspendgenerator",
+                ArkInstructionFormat.V8, 0, 2,
+                List.of(new ArkOperand(ArkOperand.Type.REGISTER, 0)),
+                false);
+        ArkInstruction retUndef = new ArkInstruction(
+                ArkOpcodesCompat.RETURNUNDEFINED, "returnundefined",
+                ArkInstructionFormat.NONE, 2, 1,
+                Collections.emptyList(), false);
+        String result = decompiler.decompileInstructions(
+                List.of(suspendGen, retUndef));
+        assertNotNull(result,
+                "Should handle bare yield without error");
+        assertTrue(result.contains("yield"),
+                "Should contain yield keyword, got: " + result);
+    }
 }

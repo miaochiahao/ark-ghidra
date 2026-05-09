@@ -492,6 +492,190 @@ class LoopProcessor {
         return stmts;
     }
 
+    // --- For-await-of detection ---
+
+    /**
+     * Detects a for-await-of loop pattern from the control flow graph.
+     * Similar to for-of but uses GETASYNCITERATOR instead of GETITERATOR.
+     *
+     * @param condBlock the loop condition/header block
+     * @param loopBody the loop body block
+     * @param cfg the control flow graph
+     * @return the pattern if detected, or null
+     */
+    ControlFlowReconstructor.ControlFlowPattern detectForAwaitOfPattern(
+            BasicBlock condBlock, BasicBlock loopBody,
+            ControlFlowGraph cfg) {
+        boolean hasAsyncIterator = false;
+        BasicBlock setupBlock = null;
+        for (ArkInstruction insn : condBlock.getInstructions()) {
+            if (ArkOpcodesCompat.isGetAsyncIterator(insn.getOpcode())) {
+                hasAsyncIterator = true;
+                break;
+            }
+        }
+        if (!hasAsyncIterator) {
+            for (CFGEdge pred : condBlock.getPredecessors()) {
+                BasicBlock predBlock =
+                        cfg.getBlockAt(pred.getFromOffset());
+                if (predBlock != null) {
+                    for (ArkInstruction insn :
+                            predBlock.getInstructions()) {
+                        if (ArkOpcodesCompat.isGetAsyncIterator(
+                                insn.getOpcode())) {
+                            hasAsyncIterator = true;
+                            setupBlock = predBlock;
+                            break;
+                        }
+                    }
+                    if (!hasAsyncIterator) {
+                        for (CFGEdge pred2 :
+                                predBlock.getPredecessors()) {
+                            BasicBlock pred2Block =
+                                    cfg.getBlockAt(
+                                            pred2.getFromOffset());
+                            if (pred2Block != null
+                                    && pred2Block != condBlock) {
+                                for (ArkInstruction insn2 :
+                                        pred2Block.getInstructions()) {
+                                    if (ArkOpcodesCompat.isGetAsyncIterator(
+                                            insn2.getOpcode())) {
+                                        hasAsyncIterator = true;
+                                        setupBlock = pred2Block;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (hasAsyncIterator) {
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (hasAsyncIterator) {
+                    break;
+                }
+            }
+        }
+        if (!hasAsyncIterator) {
+            return null;
+        }
+        String iterVarName = null;
+        String itemVarName = null;
+        List<ArkInstruction> searchInsns = setupBlock != null
+                ? setupBlock.getInstructions()
+                : condBlock.getInstructions();
+        for (int i = 0; i < searchInsns.size() - 1; i++) {
+            ArkInstruction insn = searchInsns.get(i);
+            if (ArkOpcodesCompat.isGetAsyncIterator(insn.getOpcode())) {
+                if (i + 1 < searchInsns.size()) {
+                    ArkInstruction nextInsn = searchInsns.get(i + 1);
+                    if (nextInsn.getOpcode()
+                            == ArkOpcodesCompat.STA) {
+                        iterVarName = "v" + nextInsn.getOperands()
+                                .get(0).getValue();
+                    }
+                }
+                break;
+            }
+        }
+        for (int i = 0; i < condBlock.getInstructions().size();
+                i++) {
+            ArkInstruction insn =
+                    condBlock.getInstructions().get(i);
+            if (insn.getOpcode()
+                    == ArkOpcodesCompat.GETNEXTPROPNAME) {
+                if (i + 1 < condBlock.getInstructions().size()) {
+                    ArkInstruction nextInsn =
+                            condBlock.getInstructions().get(i + 1);
+                    if (nextInsn.getOpcode()
+                            == ArkOpcodesCompat.STA) {
+                        itemVarName = "v" + nextInsn.getOperands()
+                                .get(0).getValue();
+                    }
+                }
+            }
+        }
+        if (itemVarName == null) {
+            for (int i = 0; i < loopBody.getInstructions().size();
+                    i++) {
+                ArkInstruction insn =
+                        loopBody.getInstructions().get(i);
+                if (insn.getOpcode()
+                        == ArkOpcodesCompat.GETNEXTPROPNAME) {
+                    if (i + 1 < loopBody.getInstructions().size()) {
+                        ArkInstruction nextInsn =
+                                loopBody.getInstructions().get(i + 1);
+                        if (nextInsn.getOpcode()
+                                == ArkOpcodesCompat.STA) {
+                            itemVarName = "v" + nextInsn.getOperands()
+                                    .get(0).getValue();
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        if (itemVarName == null) {
+            itemVarName = "item";
+        }
+        ArkTSExpression iterableExpr =
+                new ArkTSExpression.VariableExpression(
+                        iterVarName != null ? iterVarName
+                                : "asyncIterable");
+        ControlFlowReconstructor.ControlFlowPattern p =
+                new ControlFlowReconstructor.ControlFlowPattern(
+                        ControlFlowReconstructor.PatternType
+                                .FOR_AWAIT_OF_LOOP);
+        p.conditionBlock = condBlock;
+        p.trueBlock = loopBody;
+        p.iteratorVarName = itemVarName;
+        p.iterableExpr = iterableExpr;
+        p.iteratorSetupBlock = setupBlock;
+        return p;
+    }
+
+    // --- For-await-of processing ---
+
+    /**
+     * Processes a for-await-of loop: emits
+     * for await (const x of asyncIterable) { body }.
+     *
+     * @param condBlock the loop condition/header block
+     * @param pattern the detected for-await-of pattern
+     * @param ctx the decompilation context
+     * @param cfg the control flow graph
+     * @param visited set of already-visited blocks
+     * @return the generated statements
+     */
+    List<ArkTSStatement> processForAwaitOfLoop(BasicBlock condBlock,
+            ControlFlowReconstructor.ControlFlowPattern pattern,
+            DecompilationContext ctx, ControlFlowGraph cfg,
+            Set<BasicBlock> visited) {
+        List<ArkTSStatement> stmts = new ArrayList<>();
+        List<ArkTSStatement> preStmts =
+                reconstructor.processBlockInstructionsExcludingIterator(
+                        condBlock, ctx, condBlock.getLastInstruction());
+        stmts.addAll(preStmts);
+        int loopHeaderOffset = condBlock.getStartOffset();
+        int loopEndOffset = estimateLoopEndOffset(
+                condBlock, pattern, cfg);
+        ctx.pushLoopContext(loopHeaderOffset, loopEndOffset);
+        visited.add(pattern.trueBlock);
+        List<ArkTSStatement> bodyStmts =
+                reconstructor.processBlockInstructions(
+                        pattern.trueBlock, ctx);
+        ArkTSStatement bodyBlock =
+                new ArkTSStatement.BlockStatement(bodyStmts);
+        ctx.popLoopContext();
+        ArkTSStatement forAwaitOfStmt =
+                new ArkTSControlFlow.ForAwaitOfStatement(
+                        "const", pattern.iteratorVarName,
+                        pattern.iterableExpr, bodyBlock);
+        stmts.add(forAwaitOfStmt);
+        return stmts;
+    }
+
     // --- Loop offset helpers ---
 
     private int estimateLoopEndOffset(BasicBlock condBlock,
@@ -527,5 +711,74 @@ class LoopProcessor {
             }
         }
         return maxOffset;
+    }
+
+    // --- For-await-of detection and processing ---
+
+    ControlFlowReconstructor.ControlFlowPattern detectForAwaitOfPattern(
+            BasicBlock condBlock, BasicBlock loopBody,
+            ControlFlowGraph cfg) {
+        boolean hasAsyncIterator = false;
+        for (ArkInstruction insn : condBlock.getInstructions()) {
+            if (ArkOpcodesCompat.isGetAsyncIterator(insn.getOpcode())) {
+                hasAsyncIterator = true;
+                break;
+            }
+        }
+        if (!hasAsyncIterator) {
+            for (CFGEdge pred : condBlock.getPredecessors()) {
+                BasicBlock predBlock =
+                        cfg.getBlockAt(pred.getFromOffset());
+                if (predBlock != null) {
+                    for (ArkInstruction insn :
+                            predBlock.getInstructions()) {
+                        if (ArkOpcodesCompat.isGetAsyncIterator(
+                                insn.getOpcode())) {
+                            hasAsyncIterator = true;
+                            break;
+                        }
+                    }
+                }
+                if (hasAsyncIterator) {
+                    break;
+                }
+            }
+        }
+        if (!hasAsyncIterator) {
+            return null;
+        }
+        ControlFlowReconstructor.ControlFlowPattern p =
+                new ControlFlowReconstructor.ControlFlowPattern(
+                        ControlFlowReconstructor.PatternType.FOR_AWAIT_OF_LOOP);
+        p.conditionBlock = condBlock;
+        p.trueBlock = loopBody;
+        return p;
+    }
+
+    List<ArkTSStatement> processForAwaitOfLoop(BasicBlock condBlock,
+            ControlFlowReconstructor.ControlFlowPattern pattern,
+            DecompilationContext ctx, ControlFlowGraph cfg,
+            Set<BasicBlock> visited) {
+        List<ArkTSStatement> stmts = new ArrayList<>();
+        String varName = "item";
+        ArkTSExpression iterable =
+                new ArkTSExpression.VariableExpression("asyncIterable");
+        BasicBlock bodyBlock = pattern.trueBlock;
+        ctx.pushLoopContext(condBlock.getStartOffset(),
+                bodyBlock != null ? bodyBlock.getEndOffset() : 0);
+        List<ArkTSStatement> bodyStmts = new ArrayList<>();
+        if (bodyBlock != null) {
+            visited.add(bodyBlock);
+            bodyStmts.addAll(reconstructor.processBlockInstructions(
+                    bodyBlock, ctx));
+        }
+        ctx.popLoopContext();
+        ArkTSStatement body =
+                new ArkTSStatement.BlockStatement(bodyStmts);
+        ArkTSControlFlow.ForAwaitOfStatement forAwaitOfStmt =
+                new ArkTSControlFlow.ForAwaitOfStatement("let", varName,
+                        iterable, body);
+        stmts.add(forAwaitOfStmt);
+        return stmts;
     }
 }

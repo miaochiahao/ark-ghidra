@@ -52,7 +52,7 @@ class ControlFlowReconstructor {
 
     enum PatternType {
         LINEAR, IF_ONLY, IF_ELSE, WHILE_LOOP, FOR_LOOP,
-        FOR_OF_LOOP, FOR_IN_LOOP, DO_WHILE, BREAK,
+        FOR_OF_LOOP, FOR_IN_LOOP, FOR_AWAIT_OF_LOOP, DO_WHILE, BREAK,
         CONTINUE, TERNARY, SHORT_CIRCUIT_AND,
         SHORT_CIRCUIT_OR, SWITCH, UNKNOWN
     }
@@ -104,6 +104,8 @@ class ControlFlowReconstructor {
         final int endPc;
         final List<CatchHandler> handlers;
         boolean processed;
+        private CatchHandler finallyHandler;
+        private boolean finallyOnly;
 
         TryCatchRegion(int startPc, int endPc,
                 List<CatchHandler> handlers) {
@@ -111,6 +113,8 @@ class ControlFlowReconstructor {
             this.endPc = endPc;
             this.handlers = handlers;
             this.processed = false;
+            this.finallyHandler = null;
+            this.finallyOnly = false;
         }
 
         boolean isProcessed() {
@@ -119,6 +123,22 @@ class ControlFlowReconstructor {
 
         void markProcessed() {
             processed = true;
+        }
+
+        CatchHandler getFinallyHandler() {
+            return finallyHandler;
+        }
+
+        void setFinallyHandler(CatchHandler handler) {
+            this.finallyHandler = handler;
+        }
+
+        boolean isFinallyOnly() {
+            return finallyOnly;
+        }
+
+        void setFinallyOnly(boolean finallyOnly) {
+            this.finallyOnly = finallyOnly;
         }
     }
 
@@ -228,6 +248,11 @@ class ControlFlowReconstructor {
                     stmts.addAll(loopProcessor.processForInLoop(block,
                             pattern, ctx, cfg, visited));
                     break;
+                case FOR_AWAIT_OF_LOOP:
+                    visited.add(block);
+                    stmts.addAll(loopProcessor.processForAwaitOfLoop(block,
+                            pattern, ctx, cfg, visited));
+                    break;
                 case BREAK:
                     visited.add(block);
                     stmts.addAll(processBlockInstructions(block, ctx));
@@ -318,6 +343,12 @@ class ControlFlowReconstructor {
                                 block, loopBody, cfg);
                 if (forInP != null) {
                     return forInP;
+                }
+                ControlFlowPattern forAwaitOfP =
+                        loopProcessor.detectForAwaitOfPattern(
+                                block, loopBody, cfg);
+                if (forAwaitOfP != null) {
+                    return forAwaitOfP;
                 }
                 ControlFlowPattern p = new ControlFlowPattern(
                         PatternType.WHILE_LOOP);
