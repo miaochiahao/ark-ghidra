@@ -12454,4 +12454,77 @@ class ArkTSDecompilerTest {
                 List.of("string", "number"));
         assertEquals("Record<string, number>", recordType);
     }
+
+    // --- Collection iteration tests (#87) ---
+
+    @Test
+    void testForOfWithDestructuring() {
+        ArkTSControlFlow.ForOfStatement forOf =
+                new ArkTSControlFlow.ForOfStatement("const", "entry",
+                        new ArkTSExpression.CallExpression(
+                                new ArkTSExpression.MemberExpression(
+                                        new ArkTSExpression.VariableExpression(
+                                                "map"),
+                                        new ArkTSExpression.VariableExpression(
+                                                "entries"),
+                                        false),
+                                Collections.emptyList()),
+                        new ArkTSStatement.BlockStatement(
+                                Collections.emptyList()),
+                        "[key, value]");
+        String result = forOf.toArkTS(0);
+        assertTrue(result.contains("for (const [key, value] of"),
+                "Expected destructuring in for-of, got: " + result);
+    }
+
+    @Test
+    void testMapConstructor() {
+        ArkTSAccessExpressions.BuiltInNewExpression mapNew =
+                new ArkTSAccessExpressions.BuiltInNewExpression("Map",
+                        Collections.emptyList());
+        assertEquals("new Map()", mapNew.toArkTS());
+    }
+
+    @Test
+    void testSetConstructor() {
+        ArkTSAccessExpressions.BuiltInNewExpression setNew =
+                new ArkTSAccessExpressions.BuiltInNewExpression("Set",
+                        Collections.emptyList());
+        assertEquals("new Set()", setNew.toArkTS());
+    }
+
+    @Test
+    void testMapConstructorWithIterable() {
+        ArkTSAccessExpressions.BuiltInNewExpression mapNew =
+                new ArkTSAccessExpressions.BuiltInNewExpression("Map",
+                        List.of(new ArkTSExpression.VariableExpression(
+                                "entries")));
+        assertEquals("new Map(entries)", mapNew.toArkTS());
+    }
+
+    @Test
+    void testArrayFromCall() {
+        ArkTSExpression.CallExpression arrayFrom =
+                new ArkTSExpression.CallExpression(
+                        new ArkTSExpression.MemberExpression(
+                                new ArkTSExpression.VariableExpression(
+                                        "Array"),
+                                new ArkTSExpression.VariableExpression(
+                                        "from"),
+                                false),
+                        List.of(new ArkTSExpression.VariableExpression(
+                                "source")));
+        assertEquals("Array.from(source)", arrayFrom.toArkTS());
+    }
+
+    @Test
+    void testForOfWithSimpleVariable() {
+        ArkTSControlFlow.ForOfStatement forOf =
+                new ArkTSControlFlow.ForOfStatement("const", "item",
+                        new ArkTSExpression.VariableExpression("items"),
+                        new ArkTSStatement.BlockStatement(
+                                Collections.emptyList()));
+        String result = forOf.toArkTS(0);
+        assertEquals("for (const item of items) {\n}", result);
+    }
 }

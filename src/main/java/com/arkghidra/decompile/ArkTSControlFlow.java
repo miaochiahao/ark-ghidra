@@ -205,6 +205,7 @@ public class ArkTSControlFlow {
         private final String variableName;
         private final ArkTSExpression iterable;
         private final ArkTSStatement body;
+        private final String destructuringPattern;
 
         /**
          * Constructs a for-of statement.
@@ -216,10 +217,27 @@ public class ArkTSControlFlow {
          */
         public ForOfStatement(String variableKind, String variableName,
                 ArkTSExpression iterable, ArkTSStatement body) {
+            this(variableKind, variableName, iterable, body, null);
+        }
+
+        /**
+         * Constructs a for-of statement with destructuring pattern.
+         *
+         * @param variableKind "let" or "const"
+         * @param variableName the loop variable name
+         * @param iterable the iterable expression
+         * @param body the loop body
+         * @param destructuringPattern the destructuring pattern
+         *        (e.g. "[key, value]"), or null
+         */
+        public ForOfStatement(String variableKind, String variableName,
+                ArkTSExpression iterable, ArkTSStatement body,
+                String destructuringPattern) {
             this.variableKind = variableKind;
             this.variableName = variableName;
             this.iterable = iterable;
             this.body = body;
+            this.destructuringPattern = destructuringPattern;
         }
 
         public String getVariableKind() {
@@ -242,9 +260,13 @@ public class ArkTSControlFlow {
         public String toArkTS(int indent) {
             StringBuilder sb = new StringBuilder();
             sb.append(indent(indent)).append("for (")
-                    .append(variableKind).append(" ")
-                    .append(variableName).append(" of ")
-                    .append(iterable.toArkTS()).append(") {\n");
+                    .append(variableKind).append(" ");
+            if (destructuringPattern != null) {
+                sb.append(destructuringPattern);
+            } else {
+                sb.append(variableName);
+            }
+            sb.append(" of ").append(iterable.toArkTS()).append(") {\n");
             ArkTSStatement.appendBlockBody(sb, body, indent + 1);
             sb.append(indent(indent)).append("}");
             return sb.toString();
