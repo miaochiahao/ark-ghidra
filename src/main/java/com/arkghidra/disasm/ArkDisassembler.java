@@ -75,7 +75,8 @@ public class ArkDisassembler {
                 + " bytesLength=" + bytes.length);
         }
 
-        List<ArkInstruction> result = new ArrayList<>();
+        List<ArkInstruction> result = new ArrayList<>(
+                Math.max(4, length / 4));
         int end = offset + length;
         int pc = offset;
 

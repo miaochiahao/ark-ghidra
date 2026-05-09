@@ -79,7 +79,8 @@ public class ControlFlowGraph {
         }
 
         // Identify all basic block boundaries
-        Set<Integer> leaders = new HashSet<>();
+        int estLeaders = Math.max(4, instructions.size() / 8);
+        Set<Integer> leaders = new HashSet<>(estLeaders);
         // First instruction is always a leader
         leaders.add(instructions.get(0).getOffset());
 
@@ -113,8 +114,9 @@ public class ControlFlowGraph {
         }
 
         // Build basic blocks
-        List<BasicBlock> blocks = new ArrayList<>();
-        Map<Integer, BasicBlock> blockMap = new LinkedHashMap<>();
+        int estBlocks = Math.max(2, leaders.size());
+        List<BasicBlock> blocks = new ArrayList<>(estBlocks);
+        Map<Integer, BasicBlock> blockMap = new LinkedHashMap<>(estBlocks);
 
         BasicBlock current = null;
         for (ArkInstruction insn : instructions) {

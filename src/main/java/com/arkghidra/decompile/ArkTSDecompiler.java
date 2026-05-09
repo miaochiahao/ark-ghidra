@@ -47,6 +47,7 @@ public class ArkTSDecompiler {
     private final InstructionHandler instrHandler;
     private final ControlFlowReconstructor cfReconstructor;
     private final DeclarationBuilder declBuilder;
+    private final ArkDisassembler disasm = new ArkDisassembler();
 
     public ArkTSDecompiler() {
         this.instrHandler = new InstructionHandler(this);
@@ -72,7 +73,6 @@ public class ArkTSDecompiler {
             return buildEmptyMethod(method, null);
         }
 
-        ArkDisassembler disasm = new ArkDisassembler();
         List<ArkInstruction> instructions;
         try {
             instructions = disasm.disassemble(
@@ -207,14 +207,14 @@ public class ArkTSDecompiler {
         }
         int classCount = abcFile.getClasses().size();
 
-        List<ArkTSStatement> imports = new ArrayList<>();
-        List<ArkTSStatement> declarations = new ArrayList<>();
-        List<ArkTSStatement> exports = new ArrayList<>();
-        Set<String> seenImportPaths = new HashSet<>();
+        List<ArkTSStatement> imports = new ArrayList<>(8);
+        List<ArkTSStatement> declarations = new ArrayList<>(classCount);
+        List<ArkTSStatement> exports = new ArrayList<>(8);
+        Set<String> seenImportPaths = new HashSet<>(8);
 
         // Track imports per module path for merging
         Map<String, ModuleImportCollector> importCollectors =
-                new LinkedHashMap<>();
+                new LinkedHashMap<>(8);
 
         for (int i = 0; i < abcFile.getClasses().size(); i++) {
             AbcModuleRecord record = abcFile.getModuleRecord(i);
@@ -382,7 +382,6 @@ public class ArkTSDecompiler {
             return Collections.emptyList();
         }
 
-        ArkDisassembler disasm = new ArkDisassembler();
         List<ArkInstruction> instructions = disasm.disassemble(
                 code.getInstructions(), 0, (int) code.getCodeSize());
 

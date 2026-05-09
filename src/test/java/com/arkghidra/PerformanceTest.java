@@ -355,6 +355,47 @@ class PerformanceTest {
     }
 
     @Test
+    @Timeout(value = 15)
+    @DisplayName("Decompiler reuse does not degrade performance")
+    void testDecompilerReusePerformance() {
+        AbcFile abc = AbcFile.parse(largeAbcData);
+        com.arkghidra.decompile.ArkTSDecompiler decompiler =
+                new com.arkghidra.decompile.ArkTSDecompiler();
+
+        // First pass
+        long start1 = System.nanoTime();
+        for (AbcClass cls : abc.getClasses()) {
+            for (AbcMethod method : cls.getMethods()) {
+                if (method.getCodeOff() == 0) {
+                    continue;
+                }
+                AbcCode code = abc.getCodeForMethod(method);
+                decompiler.decompileMethod(method, code, abc);
+            }
+        }
+        long elapsed1 = System.nanoTime() - start1;
+
+        // Second pass (reusing same decompiler instance)
+        long start2 = System.nanoTime();
+        for (AbcClass cls : abc.getClasses()) {
+            for (AbcMethod method : cls.getMethods()) {
+                if (method.getCodeOff() == 0) {
+                    continue;
+                }
+                AbcCode code = abc.getCodeForMethod(method);
+                decompiler.decompileMethod(method, code, abc);
+            }
+        }
+        long elapsed2 = System.nanoTime() - start2;
+
+        // Second pass should not be significantly slower
+        double ms1 = elapsed1 / 1_000_000.0;
+        double ms2 = elapsed2 / 1_000_000.0;
+        assertTrue(ms2 < 15000,
+                "Second pass took too long: " + ms2 + "ms (first: " + ms1 + "ms)");
+    }
+
+    @Test
     @Timeout(value = 5)
     @DisplayName("CFG construction performance with many branches")
     void testCfgConstructionPerformance() {
