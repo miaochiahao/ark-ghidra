@@ -58,6 +58,9 @@ class OperatorHandler {
             if ("-".equals(op)) {
                 return "number";
             }
+            if ("typeof".equals(op)) {
+                return "string";
+            }
         }
         if (expr instanceof ArkTSAccessExpressions.ArrayLiteralExpression) {
             return "Array<unknown>";

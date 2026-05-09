@@ -697,6 +697,19 @@ public class AbcFile {
     public List<AbcClass> getClasses() {
         return classes;
     }
+
+    /**
+     * Returns a flat list of all methods across all classes.
+     *
+     * @return all methods in the file
+     */
+    public List<AbcMethod> getMethods() {
+        List<AbcMethod> allMethods = new ArrayList<>();
+        for (AbcClass cls : classes) {
+            allMethods.addAll(cls.getMethods());
+        }
+        return allMethods;
+    }
     public List<AbcProto> getProtos() {
         return protos;
     }

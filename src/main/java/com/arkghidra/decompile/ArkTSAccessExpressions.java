@@ -719,4 +719,202 @@ public class ArkTSAccessExpressions {
             return sb.toString();
         }
     }
+
+    // --- Anonymous function expression ---
+
+    /**
+     * An anonymous function expression: function(params) { body }.
+     *
+     * <p>Used when a definefunc result is stored to a variable but cannot
+     * be simplified to an arrow function (e.g. has multiple statements,
+     * or is a generator/async function).
+     */
+    public static class AnonymousFunctionExpression
+            extends ArkTSExpression {
+        private final List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params;
+        private final ArkTSStatement body;
+        private final boolean isAsync;
+        private final boolean isGenerator;
+
+        /**
+         * Constructs an anonymous function expression.
+         *
+         * @param params the parameters
+         * @param body the function body
+         * @param isAsync true if this is an async function
+         * @param isGenerator true if this is a generator function
+         */
+        public AnonymousFunctionExpression(
+                List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params,
+                ArkTSStatement body, boolean isAsync,
+                boolean isGenerator) {
+            this.params = Collections.unmodifiableList(
+                    new ArrayList<>(params));
+            this.body = body;
+            this.isAsync = isAsync;
+            this.isGenerator = isGenerator;
+        }
+
+        public List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> getParams() {
+            return params;
+        }
+
+        public ArkTSStatement getBody() {
+            return body;
+        }
+
+        public boolean isAsync() {
+            return isAsync;
+        }
+
+        public boolean isGenerator() {
+            return isGenerator;
+        }
+
+        @Override
+        public String toArkTS() {
+            StringBuilder sb = new StringBuilder();
+            if (isAsync) {
+                sb.append("async ");
+            }
+            sb.append("function");
+            if (isGenerator) {
+                sb.append("*");
+            }
+            StringJoiner paramJoiner = new StringJoiner(", ");
+            for (ArkTSDeclarations.FunctionDeclaration.FunctionParam p
+                    : params) {
+                paramJoiner.add(p.toString());
+            }
+            sb.append("(").append(paramJoiner).append(") ");
+            if (body instanceof ArkTSStatement.BlockStatement) {
+                sb.append(((ArkTSStatement.BlockStatement) body)
+                        .toArkTS(0));
+            } else {
+                sb.append("{\n");
+                sb.append(body.toArkTS(1)).append("\n");
+                sb.append("}");
+            }
+            return sb.toString();
+        }
+    }
+
+    // --- Generator function expression ---
+
+    /**
+     * A generator function expression: function*(params) { body }.
+     *
+     * <p>Detected from creategeneratorobj opcode paired with definefunc.
+     * The body contains yield expressions.
+     */
+    public static class GeneratorFunctionExpression
+            extends ArkTSExpression {
+        private final String name;
+        private final List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params;
+        private final ArkTSStatement body;
+        private final boolean isAsync;
+
+        /**
+         * Constructs a generator function expression.
+         *
+         * @param name the function name (may be null for anonymous)
+         * @param params the parameters
+         * @param body the function body
+         * @param isAsync true if this is an async generator
+         */
+        public GeneratorFunctionExpression(String name,
+                List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params,
+                ArkTSStatement body, boolean isAsync) {
+            this.name = name;
+            this.params = Collections.unmodifiableList(
+                    new ArrayList<>(params));
+            this.body = body;
+            this.isAsync = isAsync;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> getParams() {
+            return params;
+        }
+
+        public ArkTSStatement getBody() {
+            return body;
+        }
+
+        public boolean isAsync() {
+            return isAsync;
+        }
+
+        @Override
+        public String toArkTS() {
+            StringBuilder sb = new StringBuilder();
+            if (isAsync) {
+                sb.append("async ");
+            }
+            sb.append("function*");
+            if (name != null && !name.isEmpty()) {
+                sb.append(" ").append(name);
+            }
+            StringJoiner paramJoiner = new StringJoiner(", ");
+            for (ArkTSDeclarations.FunctionDeclaration.FunctionParam p
+                    : params) {
+                paramJoiner.add(p.toString());
+            }
+            sb.append("(").append(paramJoiner).append(") ");
+            if (body instanceof ArkTSStatement.BlockStatement) {
+                sb.append(((ArkTSStatement.BlockStatement) body)
+                        .toArkTS(0));
+            } else {
+                sb.append("{\n");
+                sb.append(body.toArkTS(1)).append("\n");
+                sb.append("}");
+            }
+            return sb.toString();
+        }
+    }
+
+    // --- Closure expression ---
+
+    /**
+     * A closure (inner function that captures outer variables).
+     *
+     * <p>Represented as an arrow function or anonymous function that
+     * references lexical variables from enclosing scopes.
+     * The captured variables are tracked for informational purposes
+     * but do not change the output syntax.
+     */
+    public static class ClosureExpression extends ArkTSExpression {
+        private final ArkTSExpression innerFunction;
+        private final List<String> capturedVariables;
+
+        /**
+         * Constructs a closure expression.
+         *
+         * @param innerFunction the inner function expression
+         *        (arrow or anonymous)
+         * @param capturedVariables the names of captured outer variables
+         */
+        public ClosureExpression(ArkTSExpression innerFunction,
+                List<String> capturedVariables) {
+            this.innerFunction = innerFunction;
+            this.capturedVariables = Collections.unmodifiableList(
+                    new ArrayList<>(capturedVariables));
+        }
+
+        public ArkTSExpression getInnerFunction() {
+            return innerFunction;
+        }
+
+        public List<String> getCapturedVariables() {
+            return capturedVariables;
+        }
+
+        @Override
+        public String toArkTS() {
+            return innerFunction.toArkTS();
+        }
+    }
 }

@@ -89,8 +89,11 @@ class BlockInstructionProcessor {
                 continue;
             }
 
-            // Try to detect destructuring patterns starting at LDA
-            if (opcode == ArkOpcodesCompat.LDA) {
+            // Try to detect destructuring patterns starting at LDA.
+            // Use normalized opcode to catch wide property access variants.
+            int normalizedOpcode =
+                    ArkOpcodesCompat.getNormalizedOpcode(insn);
+            if (normalizedOpcode == ArkOpcodesCompat.LDA) {
                 ObjectCreationHandler.DestructuringResult destrResult =
                         tryDetectDestructuring(instructions, idx,
                                 ctx, declaredVars);
@@ -198,7 +201,10 @@ class BlockInstructionProcessor {
             }
 
             // Try to detect destructuring patterns starting at LDA
-            if (opcode == ArkOpcodesCompat.LDA) {
+            // Use normalized opcode to catch wide property access variants.
+            int normalizedOpcode =
+                    ArkOpcodesCompat.getNormalizedOpcode(insn);
+            if (normalizedOpcode == ArkOpcodesCompat.LDA) {
                 ObjectCreationHandler.DestructuringResult destrResult =
                         tryDetectDestructuring(instructions, idx,
                                 ctx, declaredVars);
@@ -283,7 +289,7 @@ class BlockInstructionProcessor {
         }
 
         ArkInstruction nextInsn = instructions.get(idx + 1);
-        int nextOpcode = nextInsn.getOpcode();
+        int nextOpcode = ArkOpcodesCompat.getNormalizedOpcode(nextInsn);
 
         // Try array destructuring first (ldobjbyindex pattern)
         if (nextOpcode == ArkOpcodesCompat.LDOBJBYINDEX) {

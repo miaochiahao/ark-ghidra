@@ -184,7 +184,11 @@ public class ArkTSDecompiler {
         List<ArkTSStatement> imports = new ArrayList<>();
         List<ArkTSStatement> declarations = new ArrayList<>();
         List<ArkTSStatement> exports = new ArrayList<>();
-        Set<String> seenImports = new HashSet<>();
+        Set<String> seenImportPaths = new HashSet<>();
+
+        // Track imports per module path for merging
+        Map<String, ModuleImportCollector> importCollectors =
+                new LinkedHashMap<>();
 
         for (int i = 0; i < abcFile.getClasses().size(); i++) {
             AbcModuleRecord record = abcFile.getModuleRecord(i);
@@ -192,6 +196,7 @@ public class ArkTSDecompiler {
                 List<String> moduleRequests =
                         abcFile.resolveModuleRequests(record);
 
+                // Collect regular imports, detecting default imports
                 for (AbcModuleRecord.RegularImport ri :
                         record.getRegularImports()) {
                     String localName = abcFile.getSourceFileName(
@@ -200,23 +205,23 @@ public class ArkTSDecompiler {
                             ri.getImportNameOffset());
                     String modulePath = getModulePath(
                             moduleRequests, ri.getModuleRequestIdx());
-                    List<String> namedImports = new ArrayList<>();
-                    if (localName != null && importName != null
-                            && !localName.equals(importName)) {
-                        namedImports.add(
-                                importName + " as " + localName);
-                    } else if (importName != null) {
-                        namedImports.add(importName);
+                    if (modulePath == null) {
+                        continue;
                     }
-                    if (modulePath != null) {
-                        imports.add(
-                                new ArkTSDeclarations.ImportStatement(
-                                        namedImports, modulePath,
-                                        false, null, null));
-                        seenImports.add(modulePath);
+                    seenImportPaths.add(modulePath);
+                    ModuleImportCollector collector =
+                            importCollectors.computeIfAbsent(
+                                    modulePath,
+                                    k -> new ModuleImportCollector());
+                    if ("default".equals(importName)) {
+                        collector.setDefaultImport(localName);
+                    } else {
+                        collector.addNamedImport(
+                                importName, localName);
                     }
                 }
 
+                // Collect namespace imports
                 for (AbcModuleRecord.NamespaceImport ni :
                         record.getNamespaceImports()) {
                     String localName = abcFile.getSourceFileName(
@@ -224,15 +229,16 @@ public class ArkTSDecompiler {
                     String modulePath = getModulePath(
                             moduleRequests, ni.getModuleRequestIdx());
                     if (localName != null && modulePath != null) {
-                        imports.add(
-                                new ArkTSDeclarations.ImportStatement(
-                                        Collections.emptyList(),
-                                        modulePath, false, null,
-                                        localName));
-                        seenImports.add(modulePath);
+                        seenImportPaths.add(modulePath);
+                        ModuleImportCollector collector =
+                                importCollectors.computeIfAbsent(
+                                        modulePath,
+                                        k -> new ModuleImportCollector());
+                        collector.setNamespaceImport(localName);
                     }
                 }
 
+                // Local exports
                 for (AbcModuleRecord.LocalExport le :
                         record.getLocalExports()) {
                     String localName = abcFile.getSourceFileName(
@@ -254,6 +260,7 @@ public class ArkTSDecompiler {
                     }
                 }
 
+                // Indirect exports (re-exports with from clause)
                 for (AbcModuleRecord.IndirectExport ie :
                         record.getIndirectExports()) {
                     String exportName = abcFile.getSourceFileName(
@@ -274,16 +281,38 @@ public class ArkTSDecompiler {
                             && !namedExports.isEmpty()) {
                         exports.add(
                                 new ArkTSDeclarations.ExportStatement(
-                                        namedExports, null, false));
+                                        namedExports, null, false,
+                                        modulePath));
+                    }
+                }
+
+                // Star exports
+                for (AbcModuleRecord.StarExport se :
+                        record.getStarExports()) {
+                    String modulePath = getModulePath(moduleRequests,
+                            se.getModuleRequestIdx());
+                    if (modulePath != null) {
+                        exports.add(
+                                new ArkTSDeclarations.ExportStatement(
+                                        Collections.emptyList(), null,
+                                        false, modulePath, true));
                     }
                 }
             }
         }
 
+        // Build merged import statements from collectors
+        for (Map.Entry<String, ModuleImportCollector> entry
+                : importCollectors.entrySet()) {
+            String modulePath = entry.getKey();
+            ModuleImportCollector collector = entry.getValue();
+            imports.add(collector.toImportStatement(modulePath));
+        }
+
         for (AbcClass abcClass : abcFile.getClasses()) {
             ArkTSStatement classDecl =
                     declBuilder.buildClassDeclaration(
-                            abcClass, abcFile, seenImports);
+                            abcClass, abcFile, seenImportPaths);
             if (classDecl != null) {
                 if (declBuilder.isExported(abcClass)) {
                     exports.add(new ArkTSDeclarations.ExportStatement(
@@ -300,18 +329,6 @@ public class ArkTSDecompiler {
         List<ArkTSStatement> enumDecls =
                 declBuilder.detectEnumsFromLiteralArrays(abcFile);
         declarations.addAll(enumDecls);
-
-        for (String moduleRef : seenImports) {
-            boolean alreadyImported = imports.stream().anyMatch(s ->
-                    s instanceof ArkTSDeclarations.ImportStatement
-                    && ((ArkTSDeclarations.ImportStatement) s)
-                            .getModulePath().equals(moduleRef));
-            if (!alreadyImported) {
-                imports.add(new ArkTSDeclarations.ImportStatement(
-                        Collections.emptyList(), moduleRef, false,
-                        null, null));
-            }
-        }
 
         return buildFileOutput(imports, declarations, exports);
     }
@@ -790,6 +807,49 @@ public class ArkTSDecompiler {
                 ControlFlowGraph cfg,
                 List<ArkInstruction> instructions) {
             super(method, code, proto, abcFile, cfg, instructions);
+        }
+    }
+
+    /**
+     * Collects import entries for a single module path, supporting
+     * merging of default, named, and namespace imports into one
+     * import statement.
+     */
+    static class ModuleImportCollector {
+        private String defaultImportName;
+        private String namespaceImportName;
+        private final List<String> namedImports = new ArrayList<>();
+        private final Set<String> seenNames = new HashSet<>();
+
+        void setDefaultImport(String localName) {
+            this.defaultImportName = localName;
+        }
+
+        void setNamespaceImport(String localName) {
+            this.namespaceImportName = localName;
+        }
+
+        void addNamedImport(String importName, String localName) {
+            String entry;
+            if (localName != null && importName != null
+                    && !localName.equals(importName)) {
+                entry = importName + " as " + localName;
+            } else if (importName != null) {
+                entry = importName;
+            } else {
+                return;
+            }
+            if (seenNames.add(entry)) {
+                namedImports.add(entry);
+            }
+        }
+
+        ArkTSDeclarations.ImportStatement toImportStatement(
+                String modulePath) {
+            return new ArkTSDeclarations.ImportStatement(
+                    namedImports, modulePath,
+                    defaultImportName != null,
+                    defaultImportName, namespaceImportName);
         }
     }
 }

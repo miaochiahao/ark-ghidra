@@ -7,6 +7,9 @@ import java.util.Set;
 
 import com.arkghidra.disasm.ArkInstruction;
 import com.arkghidra.disasm.ArkOperand;
+import com.arkghidra.format.AbcClass;
+import com.arkghidra.format.AbcCode;
+import com.arkghidra.format.AbcMethod;
 
 /**
  * Handles instruction-level processing during ArkTS decompilation.
@@ -47,7 +50,12 @@ class InstructionHandler {
     StatementResult processInstruction(ArkInstruction insn,
             DecompilationContext ctx, ArkTSExpression accValue,
             Set<String> declaredVars, TypeInference typeInf) {
-        int opcode = insn.getOpcode();
+        int rawOpcode = insn.getOpcode();
+        // Normalize wide (0xFD-prefixed) sub-opcodes to their primary
+        // equivalents so all downstream dispatch logic works unchanged.
+        int opcode = insn.isWide()
+                ? ArkOpcodesCompat.normalizeWideOpcode(rawOpcode)
+                : rawOpcode;
         List<ArkOperand> operands = insn.getOperands();
 
         // --- Loads that set the accumulator ---
@@ -589,6 +597,13 @@ class InstructionHandler {
         int reg = (int) operands.get(0).getValue();
         String varName = "v" + reg;
         if (accValue != null) {
+            // Check if storing a definefunc expression to a variable
+            if (accValue instanceof DefineFuncExpression) {
+                return handleDefineFuncStore(
+                        (DefineFuncExpression) accValue, varName,
+                        declaredVars, ctx);
+            }
+
             accValue = tryReconstructTemplateLiteral(accValue);
             String accType =
                     OperatorHandler.getAccType(accValue, typeInf);
@@ -614,6 +629,270 @@ class InstructionHandler {
                     accValue);
         }
         return null;
+    }
+
+    /**
+     * Handles storing a definefunc result to a variable.
+     * Converts the definefunc into an arrow function or anonymous
+     * function expression depending on context.
+     */
+    private StatementResult handleDefineFuncStore(
+            DefineFuncExpression defineFunc, String varName,
+            Set<String> declaredVars, DecompilationContext ctx) {
+        int methodIdx = defineFunc.getMethodIdx();
+
+        // Build placeholder parameters
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                new ArrayList<>();
+        if (ctx != null && ctx.code != null) {
+            int numArgs = ctx.numArgs;
+            for (int i = 0; i < numArgs; i++) {
+                params.add(
+                        new ArkTSDeclarations.FunctionDeclaration
+                                .FunctionParam("param_" + i, null));
+            }
+        }
+
+        // Try to resolve method name from abcFile
+        String methodName = resolveMethodName(ctx, methodIdx);
+        boolean isAsync = ctx != null && ctx.isAsync;
+
+        // Check for generator by looking at the method's code
+        boolean isGenerator = detectGeneratorMethod(ctx, methodIdx);
+
+        // Build the body from nested code if available
+        List<ArkTSStatement> bodyStmts = resolveDefineFuncBody(
+                ctx, methodIdx);
+
+        ArkTSExpression funcExpr;
+        if (isGenerator) {
+            funcExpr = new ArkTSAccessExpressions
+                    .GeneratorFunctionExpression(
+                            methodName, params,
+                            new ArkTSStatement.BlockStatement(bodyStmts),
+                            isAsync);
+        } else if (bodyStmts.size() == 1
+                && bodyStmts.get(0)
+                        instanceof ArkTSStatement.ReturnStatement) {
+            // Single return statement -> arrow function with expression
+            ArkTSExpression returnVal =
+                    ((ArkTSStatement.ReturnStatement) bodyStmts.get(0))
+                            .getValue();
+            funcExpr = new ArkTSAccessExpressions
+                    .ArrowFunctionExpression(
+                            params,
+                            returnVal != null
+                                    ? new ArkTSStatement.ExpressionStatement(
+                                            returnVal)
+                                    : new ArkTSStatement.BlockStatement(
+                                            bodyStmts),
+                            isAsync);
+        } else if (bodyStmts.isEmpty()) {
+            funcExpr = new ArkTSAccessExpressions
+                    .ArrowFunctionExpression(
+                            params,
+                            new ArkTSStatement.BlockStatement(
+                                    Collections.emptyList()),
+                            isAsync);
+        } else {
+            funcExpr = new ArkTSAccessExpressions
+                    .AnonymousFunctionExpression(
+                            params,
+                            new ArkTSStatement.BlockStatement(bodyStmts),
+                            isAsync, false);
+        }
+
+        // Detect closure: check if the function body references
+        // lexical variables from outer scope
+        funcExpr = tryWrapAsClosure(funcExpr, ctx);
+
+        if (!declaredVars.contains(varName)) {
+            declaredVars.add(varName);
+            return new StatementResult(
+                    new ArkTSStatement.VariableDeclaration(
+                            "let", varName, null, funcExpr),
+                    funcExpr);
+        }
+        return new StatementResult(
+                new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.AssignExpression(
+                                new ArkTSExpression.VariableExpression(
+                                        varName),
+                                funcExpr)),
+                funcExpr);
+    }
+
+    /**
+     * Resolves the method name from the ABC file for a definefunc.
+     */
+    private String resolveMethodName(DecompilationContext ctx,
+            int methodIdx) {
+        if (ctx != null && ctx.abcFile != null) {
+            AbcMethod method = findMethodByIdx(ctx, methodIdx);
+            if (method != null) {
+                return method.getName();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Detects if a method is a generator by checking its code
+     * for suspendgenerator/yield instructions.
+     */
+    private boolean detectGeneratorMethod(DecompilationContext ctx,
+            int methodIdx) {
+        if (ctx == null || ctx.abcFile == null) {
+            return false;
+        }
+        AbcMethod method = findMethodByIdx(ctx, methodIdx);
+        if (method == null) {
+            return false;
+        }
+        AbcCode code = ctx.abcFile.getCodeForMethod(method);
+        if (code == null || code.getInstructions() == null) {
+            return false;
+        }
+        for (byte b : code.getInstructions()) {
+            int unsigned = b & 0xFF;
+            if (unsigned == ArkOpcodesCompat.SUSPENDGENERATOR
+                    || unsigned == ArkOpcodesCompat
+                            .CREATEGENERATOROBJ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Attempts to resolve the body of a definefunc method from
+     * the ABC file.
+     */
+    private List<ArkTSStatement> resolveDefineFuncBody(
+            DecompilationContext ctx, int methodIdx) {
+        if (ctx == null || ctx.abcFile == null) {
+            return Collections.emptyList();
+        }
+        AbcMethod method = findMethodByIdx(ctx, methodIdx);
+        if (method == null) {
+            return Collections.emptyList();
+        }
+        AbcCode code = ctx.abcFile.getCodeForMethod(method);
+        if (code == null || code.getCodeSize() == 0) {
+            return Collections.emptyList();
+        }
+        try {
+            return decompiler.decompileMethodBody(method, code,
+                    ctx.abcFile);
+        } catch (Exception e) {
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * Finds a method by its index in the flat method list across
+     * all classes.
+     *
+     * @param ctx the decompilation context
+     * @param methodIdx the flat method index
+     * @return the method, or null if not found
+     */
+    private AbcMethod findMethodByIdx(DecompilationContext ctx,
+            int methodIdx) {
+        if (ctx == null || ctx.abcFile == null || methodIdx < 0) {
+            return null;
+        }
+        int idx = 0;
+        for (AbcClass cls : ctx.abcFile.getClasses()) {
+            for (AbcMethod m : cls.getMethods()) {
+                if (idx == methodIdx) {
+                    return m;
+                }
+                idx++;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Checks if a function expression references lexical variables
+     * and wraps it as a ClosureExpression if so.
+     */
+    private ArkTSExpression tryWrapAsClosure(
+            ArkTSExpression funcExpr,
+            DecompilationContext ctx) {
+        if (ctx == null || ctx.abcFile == null) {
+            return funcExpr;
+        }
+        List<String> captured = new ArrayList<>();
+        collectLexicalReferences(funcExpr, captured);
+        if (!captured.isEmpty()) {
+            return new ArkTSAccessExpressions.ClosureExpression(
+                    funcExpr, captured);
+        }
+        return funcExpr;
+    }
+
+    /**
+     * Collects lexical variable references (lex_LEVEL_SLOT)
+     * from an expression tree.
+     */
+    private void collectLexicalReferences(ArkTSExpression expr,
+            List<String> captured) {
+        if (expr instanceof ArkTSExpression.VariableExpression) {
+            String name =
+                    ((ArkTSExpression.VariableExpression) expr).getName();
+            if (name.startsWith("lex_")
+                    && !captured.contains(name)) {
+                captured.add(name);
+            }
+        } else if (expr
+                instanceof ArkTSAccessExpressions.ArrowFunctionExpression) {
+            ArkTSAccessExpressions.ArrowFunctionExpression arrow =
+                    (ArkTSAccessExpressions.ArrowFunctionExpression) expr;
+            collectLexicalReferencesFromStatement(
+                    arrow.getBody(), captured);
+        } else if (expr instanceof ArkTSAccessExpressions
+                .AnonymousFunctionExpression) {
+            ArkTSAccessExpressions.AnonymousFunctionExpression anon =
+                    (ArkTSAccessExpressions
+                            .AnonymousFunctionExpression) expr;
+            collectLexicalReferencesFromStatement(
+                    anon.getBody(), captured);
+        }
+    }
+
+    /**
+     * Collects lexical variable references from a statement tree.
+     */
+    private void collectLexicalReferencesFromStatement(
+            ArkTSStatement stmt, List<String> captured) {
+        if (stmt instanceof ArkTSStatement.BlockStatement) {
+            for (ArkTSStatement child
+                    : ((ArkTSStatement.BlockStatement) stmt).getBody()) {
+                collectLexicalReferencesFromStatement(child, captured);
+            }
+        } else if (stmt instanceof ArkTSStatement.ExpressionStatement) {
+            collectLexicalReferences(
+                    ((ArkTSStatement.ExpressionStatement) stmt)
+                            .getExpression(),
+                    captured);
+        } else if (stmt
+                instanceof ArkTSStatement.VariableDeclaration) {
+            ArkTSExpression init =
+                    ((ArkTSStatement.VariableDeclaration) stmt)
+                            .getInitializer();
+            if (init != null) {
+                collectLexicalReferences(init, captured);
+            }
+        } else if (stmt
+                instanceof ArkTSStatement.ReturnStatement) {
+            ArkTSExpression val =
+                    ((ArkTSStatement.ReturnStatement) stmt).getValue();
+            if (val != null) {
+                collectLexicalReferences(val, captured);
+            }
+        }
     }
 
     private StatementResult handleMov(List<ArkOperand> operands,
@@ -723,5 +1002,97 @@ class InstructionHandler {
             DecompilationContext ctx, Set<String> declaredVars) {
         return objectCreationHandler.tryDetectObjectDestructuringInBlock(
                 instructions, startIndex, ctx, declaredVars);
+    }
+
+    /**
+     * Checks if the given expression is a DefineFuncExpression.
+     *
+     * @param expr the expression to check
+     * @return true if it is a DefineFuncExpression
+     */
+    static boolean isDefineFuncExpression(ArkTSExpression expr) {
+        return expr instanceof DefineFuncExpression;
+    }
+
+    /**
+     * Extracts the method index from a DefineFuncExpression.
+     *
+     * @param expr the expression (must be a DefineFuncExpression)
+     * @return the method index
+     */
+    static int getDefineFuncMethodIdx(ArkTSExpression expr) {
+        return ((DefineFuncExpression) expr).getMethodIdx();
+    }
+
+    /**
+     * Creates an arrow function expression from a definefunc result.
+     * The body is a simple expression (single return value).
+     *
+     * @param params the function parameters
+     * @param bodyExpr the body expression
+     * @param isAsync true if async
+     * @return the arrow function expression
+     */
+    static ArkTSExpression createArrowFunction(
+            List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params,
+            ArkTSExpression bodyExpr, boolean isAsync) {
+        return new ArkTSAccessExpressions.ArrowFunctionExpression(
+                params,
+                new ArkTSStatement.ExpressionStatement(bodyExpr),
+                isAsync);
+    }
+
+    /**
+     * Creates an arrow function expression with a block body.
+     *
+     * @param params the function parameters
+     * @param bodyStmts the body statements
+     * @param isAsync true if async
+     * @return the arrow function expression
+     */
+    static ArkTSExpression createArrowFunctionWithBody(
+            List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params,
+            List<ArkTSStatement> bodyStmts, boolean isAsync) {
+        return new ArkTSAccessExpressions.ArrowFunctionExpression(
+                params,
+                new ArkTSStatement.BlockStatement(bodyStmts),
+                isAsync);
+    }
+
+    /**
+     * Creates an anonymous function expression from a definefunc result.
+     *
+     * @param params the function parameters
+     * @param bodyStmts the body statements
+     * @param isAsync true if async
+     * @param isGenerator true if generator
+     * @return the anonymous function expression
+     */
+    static ArkTSExpression createAnonymousFunction(
+            List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params,
+            List<ArkTSStatement> bodyStmts, boolean isAsync,
+            boolean isGenerator) {
+        return new ArkTSAccessExpressions.AnonymousFunctionExpression(
+                params,
+                new ArkTSStatement.BlockStatement(bodyStmts),
+                isAsync, isGenerator);
+    }
+
+    /**
+     * Creates a generator function expression from a definefunc result.
+     *
+     * @param name the function name (may be null)
+     * @param params the function parameters
+     * @param bodyStmts the body statements
+     * @param isAsync true if async
+     * @return the generator function expression
+     */
+    static ArkTSExpression createGeneratorFunction(String name,
+            List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params,
+            List<ArkTSStatement> bodyStmts, boolean isAsync) {
+        return new ArkTSAccessExpressions.GeneratorFunctionExpression(
+                name, params,
+                new ArkTSStatement.BlockStatement(bodyStmts),
+                isAsync);
     }
 }

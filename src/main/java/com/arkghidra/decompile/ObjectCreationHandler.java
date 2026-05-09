@@ -215,7 +215,8 @@ class ObjectCreationHandler {
                 ArkInstruction nextInsn = instructions.get(scanIdx + 1);
                 ArkInstruction afterNext = instructions.get(scanIdx + 2);
 
-                if (nextInsn.getOpcode() == ArkOpcodesCompat.LDOBJBYINDEX
+                if (ArkOpcodesCompat.getNormalizedOpcode(nextInsn)
+                        == ArkOpcodesCompat.LDOBJBYINDEX
                         && afterNext.getOpcode()
                                 == ArkOpcodesCompat.STA) {
                     int srcReg = (int) insn.getOperands().get(0)
@@ -372,7 +373,7 @@ class ObjectCreationHandler {
                 ArkInstruction nextInsn = instructions.get(scanIdx + 1);
                 ArkInstruction afterNext = instructions.get(scanIdx + 2);
 
-                if (nextInsn.getOpcode()
+                if (ArkOpcodesCompat.getNormalizedOpcode(nextInsn)
                         == ArkOpcodesCompat.LDOBJBYNAME
                         && afterNext.getOpcode()
                                 == ArkOpcodesCompat.STA) {

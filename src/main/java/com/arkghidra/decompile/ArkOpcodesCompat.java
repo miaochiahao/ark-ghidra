@@ -1,5 +1,6 @@
 package com.arkghidra.decompile;
 
+import com.arkghidra.disasm.ArkInstruction;
 import com.arkghidra.disasm.ArkOpcodes;
 
 /**
@@ -208,7 +209,149 @@ final class ArkOpcodesCompat {
     static final int STOWNBYNAMEWITHNAMESET =
             ArkOpcodes.STOWNBYNAMEWITHNAMESET;
 
+    // --- Wide (0xFD-prefixed) sub-opcodes ---
+    static final int WIDE_CREATEEMPTYARRAY = ArkOpcodes.WIDE_CREATEEMPTYARRAY;
+    static final int WIDE_CREATEARRAYWITHBUFFER =
+            ArkOpcodes.WIDE_CREATEARRAYWITHBUFFER;
+    static final int WIDE_CREATEOBJECTWITHBUFFER =
+            ArkOpcodes.WIDE_CREATEOBJECTWITHBUFFER;
+    static final int WIDE_NEWOBJRANGE = ArkOpcodes.WIDE_NEWOBJRANGE;
+    static final int WIDE_TYPEOF = ArkOpcodes.WIDE_TYPEOF;
+    static final int WIDE_LDOBJBYVALUE = ArkOpcodes.WIDE_LDOBJBYVALUE;
+    static final int WIDE_STOBJBYVALUE = ArkOpcodes.WIDE_STOBJBYVALUE;
+    static final int WIDE_LDSUPERBYVALUE = ArkOpcodes.WIDE_LDSUPERBYVALUE;
+    static final int WIDE_LDOBJBYINDEX = ArkOpcodes.WIDE_LDOBJBYINDEX;
+    static final int WIDE_STOBJBYINDEX = ArkOpcodes.WIDE_STOBJBYINDEX;
+    static final int WIDE_LDLEXVAR = ArkOpcodes.WIDE_LDLEXVAR;
+    static final int WIDE_STLEXVAR = ArkOpcodes.WIDE_STLEXVAR;
+    static final int WIDE_TRYLDGLOBALBYNAME =
+            ArkOpcodes.WIDE_TRYLDGLOBALBYNAME;
+    static final int WIDE_TRYSTGLOBALBYNAME =
+            ArkOpcodes.WIDE_TRYSTGLOBALBYNAME;
+    static final int WIDE_LDOBJBYNAME = ArkOpcodes.WIDE_LDOBJBYNAME;
+    static final int WIDE_STOBJBYNAME = ArkOpcodes.WIDE_STOBJBYNAME;
+    static final int WIDE_LDSUPERBYNAME = ArkOpcodes.WIDE_LDSUPERBYNAME;
+    static final int WIDE_LDTHISBYNAME = ArkOpcodes.WIDE_LDTHISBYNAME;
+    static final int WIDE_STTHISBYNAME = ArkOpcodes.WIDE_STTHISBYNAME;
+    static final int WIDE_LDTHISBYVALUE = ArkOpcodes.WIDE_LDTHISBYVALUE;
+    static final int WIDE_STTHISBYVALUE = ArkOpcodes.WIDE_STTHISBYVALUE;
+    static final int WIDE_DEFINEFUNC = ArkOpcodes.WIDE_DEFINEFUNC;
+    static final int WIDE_GETTEMPLATEOBJECT =
+            ArkOpcodes.WIDE_GETTEMPLATEOBJECT;
+    static final int WIDE_SETOBJECTWITHPROTO =
+            ArkOpcodes.WIDE_SETOBJECTWITHPROTO;
+    static final int WIDE_STOWNBYVALUE = ArkOpcodes.WIDE_STOWNBYVALUE;
+    static final int WIDE_STOWNBYINDEX = ArkOpcodes.WIDE_STOWNBYINDEX;
+    static final int WIDE_STOWNBYNAME = ArkOpcodes.WIDE_STOWNBYNAME;
+    static final int WIDE_DEFINEMETHOD = ArkOpcodes.WIDE_DEFINEMETHOD;
+    static final int WIDE_SUPERCALLTHISRANGE =
+            ArkOpcodes.WIDE_SUPERCALLTHISRANGE;
+    static final int WIDE_MOV = ArkOpcodes.WIDE_MOV;
+
     private ArkOpcodesCompat() {
+    }
+
+    /**
+     * Maps a wide (0xFD-prefixed) sub-opcode to its corresponding
+     * primary opcode. Returns the sub-opcode unchanged if no mapping
+     * exists (i.e., it is not a known wide sub-opcode).
+     *
+     * @param wideSubOpcode the sub-opcode following the 0xFD prefix
+     * @return the equivalent primary opcode
+     */
+    static int normalizeWideOpcode(int wideSubOpcode) {
+        switch (wideSubOpcode) {
+            case WIDE_MOV: return MOV;
+            case WIDE_DEFINEFUNC: return DEFINEFUNC;
+            case WIDE_DEFINEMETHOD: return DEFINEMETHOD;
+            case WIDE_NEWOBJRANGE: return NEWOBJRANGE;
+            case WIDE_SUPERCALLTHISRANGE: return SUPERCALLTHISRANGE;
+            case WIDE_CREATEEMPTYARRAY: return CREATEEMPTYARRAY;
+            case WIDE_CREATEARRAYWITHBUFFER: return CREATEARRAYWITHBUFFER;
+            case WIDE_CREATEOBJECTWITHBUFFER: return CREATEOBJECTWITHBUFFER;
+            case WIDE_TYPEOF: return TYPEOF;
+            case WIDE_GETTEMPLATEOBJECT: return GETTEMPLATEOBJECT;
+            case WIDE_SETOBJECTWITHPROTO: return SETOBJECTWITHPROTO;
+            case WIDE_LDLEXVAR: return LDLEXVAR;
+            case WIDE_STLEXVAR: return STLEXVAR;
+            case WIDE_TRYLDGLOBALBYNAME: return TRYLDGLOBALBYNAME;
+            case WIDE_TRYSTGLOBALBYNAME: return TRYSTGLOBALBYNAME;
+            case WIDE_LDOBJBYNAME: return LDOBJBYNAME;
+            case WIDE_STOBJBYNAME: return STOBJBYNAME;
+            case WIDE_LDSUPERBYNAME: return LDSUPERBYNAME;
+            case WIDE_LDTHISBYNAME: return LDTHISBYNAME;
+            case WIDE_STTHISBYNAME: return STTHISBYNAME;
+            case WIDE_LDOBJBYVALUE: return LDOBJBYVALUE;
+            case WIDE_STOBJBYVALUE: return STOBJBYVALUE;
+            case WIDE_LDSUPERBYVALUE: return LDSUPERBYVALUE;
+            case WIDE_LDTHISBYVALUE: return LDTHISBYVALUE;
+            case WIDE_STTHISBYVALUE: return STTHISBYVALUE;
+            case WIDE_LDOBJBYINDEX: return LDOBJBYINDEX;
+            case WIDE_STOBJBYINDEX: return STOBJBYINDEX;
+            case WIDE_STOWNBYVALUE: return STOWNBYVALUE;
+            case WIDE_STOWNBYINDEX: return STOWNBYINDEX;
+            case WIDE_STOWNBYNAME: return STOWNBYNAME;
+            default: return wideSubOpcode;
+        }
+    }
+
+    /**
+     * Returns true if the opcode is a known wide (0xFD-prefixed)
+     * sub-opcode.
+     *
+     * @param opcode the opcode to check
+     * @return true if this is a wide sub-opcode
+     */
+    static boolean isWideSubOpcode(int opcode) {
+        switch (opcode) {
+            case WIDE_MOV:
+            case WIDE_DEFINEFUNC:
+            case WIDE_DEFINEMETHOD:
+            case WIDE_NEWOBJRANGE:
+            case WIDE_SUPERCALLTHISRANGE:
+            case WIDE_CREATEEMPTYARRAY:
+            case WIDE_CREATEARRAYWITHBUFFER:
+            case WIDE_CREATEOBJECTWITHBUFFER:
+            case WIDE_TYPEOF:
+            case WIDE_GETTEMPLATEOBJECT:
+            case WIDE_SETOBJECTWITHPROTO:
+            case WIDE_LDLEXVAR:
+            case WIDE_STLEXVAR:
+            case WIDE_TRYLDGLOBALBYNAME:
+            case WIDE_TRYSTGLOBALBYNAME:
+            case WIDE_LDOBJBYNAME:
+            case WIDE_STOBJBYNAME:
+            case WIDE_LDSUPERBYNAME:
+            case WIDE_LDTHISBYNAME:
+            case WIDE_STTHISBYNAME:
+            case WIDE_LDOBJBYVALUE:
+            case WIDE_STOBJBYVALUE:
+            case WIDE_LDSUPERBYVALUE:
+            case WIDE_LDTHISBYVALUE:
+            case WIDE_STTHISBYVALUE:
+            case WIDE_LDOBJBYINDEX:
+            case WIDE_STOBJBYINDEX:
+            case WIDE_STOWNBYVALUE:
+            case WIDE_STOWNBYINDEX:
+            case WIDE_STOWNBYNAME:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /**
+     * Returns the normalized opcode for an instruction. For wide (0xFD-prefixed)
+     * instructions, returns the equivalent primary opcode. For normal instructions,
+     * returns the opcode unchanged.
+     *
+     * @param insn the instruction
+     * @return the normalized opcode
+     */
+    static int getNormalizedOpcode(ArkInstruction insn) {
+        return insn.isWide()
+                ? normalizeWideOpcode(insn.getOpcode())
+                : insn.getOpcode();
     }
 
     /**

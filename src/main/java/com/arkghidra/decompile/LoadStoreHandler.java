@@ -75,9 +75,11 @@ class LoadStoreHandler {
         // --- Module variable access ---
         if (opcode == ArkOpcodesCompat.LDEXTERNALMODULEVAR) {
             int varIdx = (int) operands.get(0).getValue();
+            String resolvedName = resolveExternalModuleVar(
+                    varIdx, ctx);
             ArkTSExpression expr =
                     new ArkTSExpression.VariableExpression(
-                            "ext_mod_" + varIdx);
+                            resolvedName);
             return new InstructionHandler.StatementResult(null, expr);
         }
         if (opcode == ArkOpcodesCompat.LDLOCALMODULEVAR) {
@@ -480,5 +482,60 @@ class LoadStoreHandler {
                             .LiteralKind.STRING));
         }
         return elements;
+    }
+
+    /**
+     * Resolves an external module variable index to its import name.
+     *
+     * <p>In Ark bytecode, external module variables are indexed in the order
+     * they appear in the module record's regular imports list. The variable
+     * index corresponds to the Nth regular import's local name.
+     *
+     * @param varIdx the variable index from ldexternalmodulevar
+     * @param ctx the decompilation context (may be null)
+     * @return the resolved import name or a placeholder
+     */
+    private static String resolveExternalModuleVar(
+            int varIdx, DecompilationContext ctx) {
+        if (ctx != null && ctx.abcFile != null) {
+            try {
+                for (int ci = 0;
+                        ci < ctx.abcFile.getClasses().size(); ci++) {
+                    com.arkghidra.format.AbcModuleRecord record =
+                            ctx.abcFile.getModuleRecord(ci);
+                    if (record == null) {
+                        continue;
+                    }
+                    List<com.arkghidra.format
+                            .AbcModuleRecord.RegularImport> regImports =
+                            record.getRegularImports();
+                    if (varIdx >= 0 && varIdx < regImports.size()) {
+                        String localName = ctx.abcFile.getSourceFileName(
+                                regImports.get(varIdx)
+                                        .getLocalNameOffset());
+                        if (localName != null) {
+                            return localName;
+                        }
+                    }
+                    // Namespace imports follow regular imports
+                    int nsBase = regImports.size();
+                    List<com.arkghidra.format
+                            .AbcModuleRecord.NamespaceImport> nsImports =
+                            record.getNamespaceImports();
+                    int nsIdx = varIdx - nsBase;
+                    if (nsIdx >= 0 && nsIdx < nsImports.size()) {
+                        String localName = ctx.abcFile.getSourceFileName(
+                                nsImports.get(nsIdx)
+                                        .getLocalNameOffset());
+                        if (localName != null) {
+                            return localName;
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // Fall through to placeholder
+            }
+        }
+        return "ext_mod_" + varIdx;
     }
 }

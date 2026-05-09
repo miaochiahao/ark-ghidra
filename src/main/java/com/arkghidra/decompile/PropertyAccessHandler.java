@@ -25,7 +25,9 @@ class PropertyAccessHandler {
 
     static ArkTSExpression translateCall(ArkInstruction insn,
             ArkTSExpression accValue, DecompilationContext ctx) {
-        int opcode = insn.getOpcode();
+        int opcode = insn.isWide()
+                ? ArkOpcodesCompat.normalizeWideOpcode(insn.getOpcode())
+                : insn.getOpcode();
         List<ArkOperand> operands = insn.getOperands();
 
         ArkTSExpression callee;
@@ -138,7 +140,9 @@ class PropertyAccessHandler {
 
     static ArkTSExpression translatePropertyLoad(ArkInstruction insn,
             ArkTSExpression accValue, DecompilationContext ctx) {
-        int opcode = insn.getOpcode();
+        int opcode = insn.isWide()
+                ? ArkOpcodesCompat.normalizeWideOpcode(insn.getOpcode())
+                : insn.getOpcode();
         List<ArkOperand> operands = insn.getOperands();
 
         ArkTSExpression obj;
@@ -186,7 +190,9 @@ class PropertyAccessHandler {
 
     static ArkTSExpression translatePropertyStore(ArkInstruction insn,
             ArkTSExpression accValue, DecompilationContext ctx) {
-        int opcode = insn.getOpcode();
+        int opcode = insn.isWide()
+                ? ArkOpcodesCompat.normalizeWideOpcode(insn.getOpcode())
+                : insn.getOpcode();
         List<ArkOperand> operands = insn.getOperands();
 
         ArkTSExpression obj;

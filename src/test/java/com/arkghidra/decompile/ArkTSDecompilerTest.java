@@ -6572,4 +6572,1342 @@ class ArkTSDecompilerTest {
                 "Expected mixed parameter properties: " + result);
     }
 
+    // ======== DESTRUCTURING INTEGRATION TESTS (Issue #44) ========
+
+    @Test
+    void testArrayDestructuring_basic() {
+        // let [a, b, c] = arr
+        // lda v0; ldobjbyindex 0, 0; sta v1
+        // lda v0; ldobjbyindex 0, 1; sta v2
+        // lda v0; ldobjbyindex 0, 2; sta v3
+        byte[] code = concat(
+                bytes(0x60, 0x00),                   // lda v0 (source)
+                bytes(0x3A, 0x00, 0x00, 0x00),       // ldobjbyindex 0, 0
+                bytes(0x61, 0x01),                   // sta v1
+                bytes(0x60, 0x00),                   // lda v0
+                bytes(0x3A, 0x00, 0x01, 0x00),       // ldobjbyindex 0, 1
+                bytes(0x61, 0x02),                   // sta v2
+                bytes(0x60, 0x00),                   // lda v0
+                bytes(0x3A, 0x00, 0x02, 0x00),       // ldobjbyindex 0, 2
+                bytes(0x61, 0x03),                   // sta v3
+                bytes(0x64)                          // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("[v1, v2, v3] = v0"),
+                "Should produce array destructuring: " + result);
+    }
+
+    @Test
+    void testArrayDestructuring_withRestElement() {
+        // let [first, ...rest] = arr
+        // lda v0; ldobjbyindex 0, 0; sta v1
+        // lda v0; ldobjbyindex 0, 1; sta v2
+        // rest via spread pattern
+        byte[] code = concat(
+                bytes(0x60, 0x00),                   // lda v0 (source)
+                bytes(0x3A, 0x00, 0x00, 0x00),       // ldobjbyindex 0, 0
+                bytes(0x61, 0x01),                   // sta v1
+                bytes(0x60, 0x00),                   // lda v0
+                bytes(0x3A, 0x00, 0x01, 0x00),       // ldobjbyindex 0, 1
+                bytes(0x61, 0x02),                   // sta v2
+                bytes(0x60, 0x00),                   // lda v0 (rest source)
+                bytes(0x06, 0x00, 0x00, 0x00),       // createarraywithbuffer 0, 0
+                bytes(0x61, 0x03),                   // sta v3 (rest target)
+                bytes(0x64)                          // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("[v1, v2, ...v3] = v0"),
+                "Should produce array destructuring with rest: " + result);
+    }
+
+    @Test
+    void testObjectDestructuring_basic() {
+        // let { x, y } = obj
+        // lda v0; ldobjbyname 0, 0; sta v1
+        // lda v0; ldobjbyname 0, 1; sta v2
+        byte[] code = concat(
+                bytes(0x60, 0x00),                   // lda v0 (source)
+                bytes(0x42, 0x00, 0x00, 0x00),       // ldobjbyname 0, str_0
+                bytes(0x61, 0x01),                   // sta v1
+                bytes(0x60, 0x00),                   // lda v0
+                bytes(0x42, 0x00, 0x01, 0x00),       // ldobjbyname 0, str_1
+                bytes(0x61, 0x02),                   // sta v2
+                bytes(0x64)                          // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("const { "),
+                "Should produce const destructuring: " + result);
+        assertTrue(result.contains("str_0") && result.contains("str_1"),
+                "Should contain property names: " + result);
+    }
+
+    @Test
+    void testObjectDestructuring_renamedProperty() {
+        // let { x: a, y: b } = obj
+        // lda v0; ldobjbyname 0, "x"; sta v3
+        // lda v0; ldobjbyname 0, "y"; sta v4
+        // When the target register name differs from property name,
+        // it becomes a rename: { str_0: v3, str_1: v4 }
+        byte[] code = concat(
+                bytes(0x60, 0x00),                   // lda v0 (source)
+                bytes(0x42, 0x00, 0x00, 0x00),       // ldobjbyname 0, str_0
+                bytes(0x61, 0x03),                   // sta v3 (different from str_0)
+                bytes(0x60, 0x00),                   // lda v0
+                bytes(0x42, 0x00, 0x01, 0x00),       // ldobjbyname 0, str_1
+                bytes(0x61, 0x04),                   // sta v4 (different from str_1)
+                bytes(0x64)                          // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("const {"),
+                "Should produce destructuring: " + result);
+        assertTrue(result.contains("str_0: v3"),
+                "Should have renamed property: " + result);
+        assertTrue(result.contains("str_1: v4"),
+                "Should have renamed property: " + result);
+    }
+
+    @Test
+    void testObjectDestructuring_withDefault() {
+        // Verify the DestructuringBinding supports default values
+        List<ArkTSPropertyExpressions.ObjectDestructuringExpression
+                .DestructuringBinding> bindings = List.of(
+                        new ArkTSPropertyExpressions
+                                .ObjectDestructuringExpression
+                                .DestructuringBinding("x", null),
+                        new ArkTSPropertyExpressions
+                                .ObjectDestructuringExpression
+                                .DestructuringBinding("y", null,
+                                        new ArkTSExpression.LiteralExpression(
+                                                "10",
+                                                ArkTSExpression.LiteralExpression
+                                                        .LiteralKind.NUMBER)));
+        ArkTSExpression source =
+                new ArkTSExpression.VariableExpression("obj");
+        ArkTSExpression expr =
+                new ArkTSPropertyExpressions
+                        .ObjectDestructuringExpression(
+                        bindings, source);
+        assertEquals("{ x, y = 10 } = obj", expr.toArkTS());
+    }
+
+    @Test
+    void testNestedObjectDestructuring() {
+        // Verify nested destructuring output via AST construction
+        ArkTSExpression innerSource =
+                new ArkTSExpression.VariableExpression("inner");
+        List<ArkTSPropertyExpressions.ObjectDestructuringExpression
+                .DestructuringBinding> innerBindings = List.of(
+                        new ArkTSPropertyExpressions
+                                .ObjectDestructuringExpression
+                                .DestructuringBinding("a", null),
+                        new ArkTSPropertyExpressions
+                                .ObjectDestructuringExpression
+                                .DestructuringBinding("b", null));
+        ArkTSExpression innerDestr =
+                new ArkTSPropertyExpressions
+                        .ObjectDestructuringExpression(
+                        innerBindings, innerSource);
+        // For nested destructuring, we just verify the output format
+        // since bytecode patterns for nested destructuring are complex
+        assertEquals("{ a, b } = inner", innerDestr.toArkTS());
+    }
+
+    @Test
+    void testDestructuringInForLoop() {
+        // Array destructuring in a simple instruction block
+        // Tests that destructuring doesn't interfere with other patterns
+        byte[] code = concat(
+                bytes(0x62), le32(5),                // ldai 5
+                bytes(0x61, 0x00),                   // sta v0
+                bytes(0x60, 0x00),                   // lda v0 (source)
+                bytes(0x3A, 0x00, 0x00, 0x00),       // ldobjbyindex 0, 0
+                bytes(0x61, 0x01),                   // sta v1
+                bytes(0x60, 0x00),                   // lda v0
+                bytes(0x3A, 0x00, 0x01, 0x00),       // ldobjbyindex 0, 1
+                bytes(0x61, 0x02),                   // sta v2
+                bytes(0x64)                          // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("let v0 = 5"),
+                "Should have initial assignment: " + result);
+        assertTrue(result.contains("[v1, v2] = v0"),
+                "Should produce destructuring: " + result);
+    }
+
+    @Test
+    void testMixedDestructuring() {
+        // Object destructuring followed by array destructuring
+        byte[] code = concat(
+                // Object destructuring from v0
+                bytes(0x60, 0x00),                   // lda v0
+                bytes(0x42, 0x00, 0x00, 0x00),       // ldobjbyname 0, str_0
+                bytes(0x61, 0x01),                   // sta v1
+                bytes(0x60, 0x00),                   // lda v0
+                bytes(0x42, 0x00, 0x01, 0x00),       // ldobjbyname 0, str_1
+                bytes(0x61, 0x02),                   // sta v2
+                // Array destructuring from v3
+                bytes(0x60, 0x03),                   // lda v3
+                bytes(0x3A, 0x00, 0x00, 0x00),       // ldobjbyindex 0, 0
+                bytes(0x61, 0x04),                   // sta v4
+                bytes(0x60, 0x03),                   // lda v3
+                bytes(0x3A, 0x00, 0x01, 0x00),       // ldobjbyindex 0, 1
+                bytes(0x61, 0x05),                   // sta v5
+                bytes(0x64)                          // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("const {"),
+                "Should produce object destructuring: " + result);
+        assertTrue(result.contains("[v4, v5] = v3"),
+                "Should produce array destructuring: " + result);
+    }
+
+    @Test
+    void testArrayDestructuring_withDefaultBinding() {
+        // Verify ArrayBinding with default value produces correct output
+        ArkTSPropertyExpressions.ArrayDestructuringExpression.ArrayBinding
+                bindingWithDefault =
+                new ArkTSPropertyExpressions
+                        .ArrayDestructuringExpression.ArrayBinding("x",
+                                new ArkTSExpression.LiteralExpression("42",
+                                        ArkTSExpression.LiteralExpression
+                                                .LiteralKind.NUMBER));
+        assertEquals("x = 42", bindingWithDefault.toArkTS());
+    }
+
+    @Test
+    void testArrayDestructuring_withDefaultFullExpression() {
+        // Full destructuring with defaults
+        List<ArkTSPropertyExpressions.ArrayDestructuringExpression
+                .ArrayBinding> bindings = List.of(
+                        new ArkTSPropertyExpressions
+                                .ArrayDestructuringExpression
+                                .ArrayBinding("a"),
+                        new ArkTSPropertyExpressions
+                                .ArrayDestructuringExpression
+                                .ArrayBinding("b",
+                                        new ArkTSExpression.LiteralExpression(
+                                                "0",
+                                                ArkTSExpression.LiteralExpression
+                                                        .LiteralKind.NUMBER)),
+                        new ArkTSPropertyExpressions
+                                .ArrayDestructuringExpression
+                                .ArrayBinding("c"));
+        ArkTSExpression source =
+                new ArkTSExpression.VariableExpression("arr");
+        ArkTSExpression expr =
+                new ArkTSPropertyExpressions
+                        .ArrayDestructuringExpression(
+                        bindings, "rest", source, true);
+        assertEquals("[a, b = 0, c, ...rest] = arr",
+                expr.toArkTS());
+    }
+
+    // --- Rest/Spread parameter and argument tests (#47) ---
+
+    @Test
+    void testRestParameter_basic() {
+        // copyrestargs 0 -> loads rest args into accumulator
+        byte[] code = concat(
+                bytes(0xCF, 0x00),           // copyrestargs 0
+                bytes(0x61, 0x00),           // sta v0
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("rest_0"),
+                "Should contain rest parameter variable: " + result);
+    }
+
+    @Test
+    void testRestParameter_withTypedArgs() {
+        // Test that FunctionParam with isRest=true produces ...name: any[]
+        ArkTSDeclarations.FunctionDeclaration.FunctionParam restParam =
+                new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
+                        "args", "string[]", true);
+        assertEquals("...args: string[]", restParam.toString());
+
+        ArkTSDeclarations.FunctionDeclaration.FunctionParam untypedRest =
+                new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
+                        "rest", null, true);
+        assertEquals("...rest: any[]", untypedRest.toString());
+
+        ArkTSDeclarations.FunctionDeclaration.FunctionParam normalParam =
+                new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
+                        "x", "number", false);
+        assertEquals("x: number", normalParam.toString());
+    }
+
+    @Test
+    void testSpreadInFunctionCall() {
+        // APPLY = 0xBA, IMM8_V8_V8 format
+        // apply numArgs=1, firstReg=v1 -> fn(...v1)
+        byte[] code = concat(
+                bytes(0x60, 0x00),           // lda v0 (callee)
+                bytes(0xBA, 0x01, 0x01, 0x00), // apply 1, v1, v0
+                bytes(0x61, 0x02),           // sta v2
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("...v1"),
+                "Should contain spread in function call: " + result);
+    }
+
+    @Test
+    void testSpreadInArrayLiteral() {
+        // starrayspread v0, v1 -> [...v1] spread into array
+        byte[] code = concat(
+                bytes(0xC6, 0x00, 0x01),     // starrayspread v0, v1
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("...v1"),
+                "Should contain spread in array: " + result);
+    }
+
+    @Test
+    void testSpreadInObjectLiteral() {
+        // createobjectwithexcludedkeys 2, v1 -> {...v1}
+        byte[] code = concat(
+                bytes(0xB3, 0x02, 0x01),     // createobjectwithexcludedkeys 2, v1
+                bytes(0x61, 0x00),           // sta v0
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("...v1"),
+                "Should contain spread in object: " + result);
+    }
+
+    @Test
+    void testMixedRestAndSpread() {
+        // copyrestargs followed by apply to call a function with spread
+        byte[] code = concat(
+                bytes(0xCF, 0x00),           // copyrestargs 0
+                bytes(0x61, 0x02),           // sta v2
+                bytes(0x60, 0x00),           // lda v0 (callee)
+                bytes(0xBA, 0x01, 0x02, 0x00), // apply 1, v2, v0 -> callee(...v2)
+                bytes(0x61, 0x01),           // sta v1
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("rest_0"),
+                "Should contain rest variable: " + result);
+        assertTrue(result.contains("...v2"),
+                "Should contain spread in call: " + result);
+    }
+
+    @Test
+    void testRestParamExpression_toArkTS() {
+        // Test the RestParameterExpression AST node
+        ArkTSAccessExpressions.RestParameterExpression restExpr =
+                new ArkTSAccessExpressions.RestParameterExpression("args",
+                        "string[]");
+        assertEquals("...args: string[]", restExpr.toArkTS());
+
+        ArkTSAccessExpressions.RestParameterExpression untyped =
+                new ArkTSAccessExpressions.RestParameterExpression("rest",
+                        null);
+        assertEquals("...rest", untyped.toArkTS());
+    }
+
+    @Test
+    void testSpreadCallExpression_toArkTS() {
+        // Test the SpreadCallExpression AST node
+        ArkTSExpression callee =
+                new ArkTSExpression.VariableExpression("fn");
+        ArkTSExpression spreadArg =
+                new ArkTSAccessExpressions.SpreadExpression(
+                        new ArkTSExpression.VariableExpression("args"));
+        ArkTSAccessExpressions.SpreadCallExpression call =
+                new ArkTSAccessExpressions.SpreadCallExpression(callee,
+                        List.of(spreadArg));
+        assertEquals("fn(...args)", call.toArkTS());
+    }
+
+    @Test
+    void testSpreadNewExpression_toArkTS() {
+        // Test the SpreadNewExpression AST node
+        ArkTSExpression callee =
+                new ArkTSExpression.VariableExpression("Ctor");
+        ArkTSExpression spreadArg =
+                new ArkTSAccessExpressions.SpreadExpression(
+                        new ArkTSExpression.VariableExpression("args"));
+        ArkTSAccessExpressions.SpreadNewExpression newExpr =
+                new ArkTSAccessExpressions.SpreadNewExpression(callee,
+                        List.of(spreadArg));
+        assertEquals("new Ctor(...args)", newExpr.toArkTS());
+    }
+
+    @Test
+    void testSpreadArrayExpression_toArkTS() {
+        // Test the SpreadArrayExpression AST node
+        ArkTSExpression elem1 = new ArkTSExpression.LiteralExpression("1",
+                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSExpression spreadArg =
+                new ArkTSAccessExpressions.SpreadExpression(
+                        new ArkTSExpression.VariableExpression("arr"));
+        ArkTSExpression elem2 = new ArkTSExpression.LiteralExpression("2",
+                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSAccessExpressions.SpreadArrayExpression arrExpr =
+                new ArkTSAccessExpressions.SpreadArrayExpression(
+                        List.of(elem1, spreadArg, elem2));
+        assertEquals("[1, ...arr, 2]", arrExpr.toArkTS());
+    }
+
+    @Test
+    void testSpreadObjectExpression_toArkTS() {
+        // Test the SpreadObjectExpression AST node
+        ArkTSExpression spreadArg =
+                new ArkTSAccessExpressions.SpreadExpression(
+                        new ArkTSExpression.VariableExpression("obj"));
+        ArkTSAccessExpressions.SpreadObjectExpression objExpr =
+                new ArkTSAccessExpressions.SpreadObjectExpression(
+                        List.of(spreadArg));
+        assertEquals("{ ...obj }", objExpr.toArkTS());
+    }
+
+    @Test
+    void testMethodSignatureBuilder_restParam() {
+        // Test that buildParams with restParamIndex produces correct params
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                MethodSignatureBuilder.buildParams(null, 3, null, 2);
+        assertEquals(3, params.size());
+        assertFalse(params.get(0).isRest());
+        assertFalse(params.get(1).isRest());
+        assertTrue(params.get(2).isRest());
+        assertEquals("...param_2: any[]", params.get(2).toString());
+    }
+
+    @Test
+    void testDetectRestParamIndex_withCopyrestargs() {
+        // Test that detectRestParamIndex finds COPYRESTARGS
+        ArkInstruction copyrest = new ArkInstruction(
+                ArkOpcodesCompat.COPYRESTARGS, "copyrestargs",
+                ArkInstructionFormat.IMM8, 0, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE8, 0)),
+                false);
+        ArkInstruction ret = new ArkInstruction(
+                ArkOpcodesCompat.RETURNUNDEFINED, "returnundefined",
+                ArkInstructionFormat.NONE, 2, 1,
+                Collections.emptyList(), false);
+        List<ArkInstruction> insns = List.of(copyrest, ret);
+        int restIdx = ArkTSDecompiler.detectRestParamIndex(insns, 3);
+        assertEquals(2, restIdx,
+                "Rest param should be at index 2 for 3 args");
+    }
+
+    @Test
+    void testDetectRestParamIndex_noCopyrestargs() {
+        // Test that detectRestParamIndex returns -1 when no COPYRESTARGS
+        ArkInstruction ret = new ArkInstruction(
+                ArkOpcodesCompat.RETURNUNDEFINED, "returnundefined",
+                ArkInstructionFormat.NONE, 0, 1,
+                Collections.emptyList(), false);
+        List<ArkInstruction> insns = List.of(ret);
+        int restIdx = ArkTSDecompiler.detectRestParamIndex(insns, 3);
+        assertEquals(-1, restIdx,
+                "Should return -1 when no COPYRESTARGS");
+    }
+
+    @Test
+    void testNewObjApply_withSpread() {
+        // NEWOBJAPPLY = 0xB4, IMM8_V8 format
+        // newobjapply 1, v1 -> new Ctor(...v1)
+        byte[] code = concat(
+                bytes(0x60, 0x00),           // lda v0 (constructor)
+                bytes(0xB4, 0x01, 0x01),     // newobjapply 1, v1
+                bytes(0x61, 0x02),           // sta v2
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("new "),
+                "Should contain new keyword: " + result);
+        assertTrue(result.contains("...v1"),
+                "Should contain spread in new expression: " + result);
+    }
+
+    // --- Bitwise operator tests ---
+
+    @Test
+    void testBitwiseAnd() {
+        // lda v0; and2 0, v1; sta v2
+        byte[] code = concat(
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x18, 0x00, 0x01), // and2 0, v1
+            bytes(0x61, 0x02)        // sta v2
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("(v0 & v1)"),
+                "Should contain bitwise AND: " + result);
+        assertTrue(result.contains("let v2: number"),
+                "Bitwise AND result should be typed as number: " + result);
+    }
+
+    @Test
+    void testBitwiseOr() {
+        // lda v0; or2 0, v1; sta v2
+        byte[] code = concat(
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x19, 0x00, 0x01), // or2 0, v1
+            bytes(0x61, 0x02)        // sta v2
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("(v0 | v1)"),
+                "Should contain bitwise OR: " + result);
+        assertTrue(result.contains("let v2: number"),
+                "Bitwise OR result should be typed as number: " + result);
+    }
+
+    @Test
+    void testBitwiseXor() {
+        // lda v0; xor2 0, v1; sta v2
+        byte[] code = concat(
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x1A, 0x00, 0x01), // xor2 0, v1
+            bytes(0x61, 0x02)        // sta v2
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("(v0 ^ v1)"),
+                "Should contain bitwise XOR: " + result);
+        assertTrue(result.contains("let v2: number"),
+                "Bitwise XOR result should be typed as number: " + result);
+    }
+
+    @Test
+    void testBitwiseNot_viaXor() {
+        // Bitwise NOT (~x) is implemented as XOR with -1 in Ark bytecode
+        // ldai -1; sta v1; lda v0; xor2 0, v1; sta v2
+        byte[] code = concat(
+            bytes(0x62), le32(-1),    // ldai -1
+            bytes(0x61, 0x01),        // sta v1
+            bytes(0x60, 0x00),        // lda v0
+            bytes(0x1A, 0x00, 0x01),  // xor2 0, v1
+            bytes(0x61, 0x02)         // sta v2
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("^"),
+                "Bitwise NOT via XOR should use ^ operator: " + result);
+        assertTrue(result.contains("-1"),
+                "Bitwise NOT via XOR should XOR with -1: " + result);
+    }
+
+    @Test
+    void testLeftShift() {
+        // lda v0; shl2 0, v1; sta v2
+        byte[] code = concat(
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x15, 0x00, 0x01), // shl2 0, v1
+            bytes(0x61, 0x02)        // sta v2
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("(v0 << v1)"),
+                "Should contain left shift: " + result);
+        assertTrue(result.contains("let v2: number"),
+                "Left shift result should be typed as number: " + result);
+    }
+
+    @Test
+    void testRightShift() {
+        // lda v0; ashr2 0, v1; sta v2
+        byte[] code = concat(
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x17, 0x00, 0x01), // ashr2 0, v1
+            bytes(0x61, 0x02)        // sta v2
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("(v0 >> v1)"),
+                "Should contain arithmetic right shift: " + result);
+        assertTrue(result.contains("let v2: number"),
+                "Right shift result should be typed as number: " + result);
+    }
+
+    @Test
+    void testUnsignedRightShift() {
+        // lda v0; shr2 0, v1; sta v2
+        byte[] code = concat(
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x16, 0x00, 0x01), // shr2 0, v1
+            bytes(0x61, 0x02)        // sta v2
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("(v0 >>> v1)"),
+                "Should contain unsigned right shift: " + result);
+        assertTrue(result.contains("let v2: number"),
+                "Unsigned right shift result should be typed as number: "
+                        + result);
+    }
+
+    @Test
+    void testStrictEquality() {
+        // lda v0; stricteq 0, v1; sta v2
+        byte[] code = concat(
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x28, 0x00, 0x01), // stricteq 0, v1
+            bytes(0x61, 0x02)        // sta v2
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("(v0 === v1)"),
+                "Should contain strict equality: " + result);
+        assertTrue(result.contains("let v2: boolean"),
+                "Strict equality result should be typed as boolean: "
+                        + result);
+    }
+
+    @Test
+    void testStrictInequality() {
+        // lda v0; strictnoteq 0, v1; sta v2
+        byte[] code = concat(
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x27, 0x00, 0x01), // strictnoteq 0, v1
+            bytes(0x61, 0x02)        // sta v2
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("(v0 !== v1)"),
+                "Should contain strict inequality: " + result);
+        assertTrue(result.contains("let v2: boolean"),
+                "Strict inequality result should be typed as boolean: "
+                        + result);
+    }
+
+    @Test
+    void testInstanceOf() {
+        // lda v0; instanceof 0, v1; sta v2
+        byte[] code = concat(
+            bytes(0x60, 0x00),       // lda v0
+            bytes(0x26, 0x00, 0x01), // instanceof 0, v1
+            bytes(0x61, 0x02)        // sta v2
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("(v0 instanceof v1)"),
+                "Should contain instanceof: " + result);
+        assertTrue(result.contains("let v2: boolean"),
+                "instanceof result should be typed as boolean: " + result);
+    }
+
+    @Test
+    void testTypeof() {
+        // lda v0; typeof 0; sta v1
+        byte[] code = concat(
+            bytes(0x60, 0x00),   // lda v0
+            bytes(0x1C, 0x00),   // typeof 0
+            bytes(0x61, 0x01)    // sta v1
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("typeof v0"),
+                "Should contain typeof: " + result);
+        assertTrue(result.contains("let v1: string"),
+                "typeof result should be typed as string: " + result);
+    }
+
+    // --- Function expression and closure tests ---
+
+    @Test
+    void testArrowFunction_simple() {
+        // Test ArrowFunctionExpression with single return
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                List.of(new ArkTSDeclarations.FunctionDeclaration
+                        .FunctionParam("x", "number"));
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.BinaryExpression(
+                                new ArkTSExpression.VariableExpression("x"),
+                                "+",
+                                new ArkTSExpression.LiteralExpression("1",
+                                        ArkTSExpression.LiteralExpression
+                                                .LiteralKind.NUMBER)))));
+        ArkTSAccessExpressions.ArrowFunctionExpression expr =
+                new ArkTSAccessExpressions.ArrowFunctionExpression(
+                        params, body, false);
+        String result = expr.toArkTS();
+        assertTrue(result.contains("(x: number) =>"),
+                "Should contain arrow with params: " + result);
+        assertTrue(result.contains("return (x + 1);"),
+                "Should contain return expression: " + result);
+    }
+
+    @Test
+    void testArrowFunction_withBody() {
+        // Test ArrowFunctionExpression with block body
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                List.of(
+                        new ArkTSDeclarations.FunctionDeclaration
+                                .FunctionParam("x", "number"),
+                        new ArkTSDeclarations.FunctionDeclaration
+                                .FunctionParam("y", "number"));
+        List<ArkTSStatement> stmts = List.of(
+                new ArkTSStatement.VariableDeclaration("let", "sum",
+                        "number",
+                        new ArkTSExpression.BinaryExpression(
+                                new ArkTSExpression.VariableExpression("x"),
+                                "+",
+                                new ArkTSExpression.VariableExpression("y"))),
+                new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.VariableExpression("sum")));
+        ArkTSStatement body =
+                new ArkTSStatement.BlockStatement(stmts);
+        ArkTSAccessExpressions.ArrowFunctionExpression expr =
+                new ArkTSAccessExpressions.ArrowFunctionExpression(
+                        params, body, false);
+        String result = expr.toArkTS();
+        assertTrue(result.contains("(x: number, y: number) =>"),
+                "Should contain params: " + result);
+        assertTrue(result.contains("let sum: number = (x + y);"),
+                "Should contain body: " + result);
+    }
+
+    @Test
+    void testAnonymousFunctionExpression() {
+        // Test AnonymousFunctionExpression toArkTS
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                List.of(new ArkTSDeclarations.FunctionDeclaration
+                        .FunctionParam("x", "number"));
+        List<ArkTSStatement> bodyStmts = List.of(
+                new ArkTSStatement.VariableDeclaration("let", "result",
+                        null, new ArkTSExpression.VariableExpression("x")),
+                new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.VariableExpression("result")));
+        ArkTSAccessExpressions.AnonymousFunctionExpression expr =
+                new ArkTSAccessExpressions.AnonymousFunctionExpression(
+                        params,
+                        new ArkTSStatement.BlockStatement(bodyStmts),
+                        false, false);
+        String result = expr.toArkTS();
+        assertTrue(result.startsWith("function("),
+                "Should start with 'function(': " + result);
+        assertTrue(result.contains("x: number"),
+                "Should contain param type: " + result);
+        assertTrue(result.contains("let result = x;"),
+                "Should contain body statements: " + result);
+        assertFalse(result.contains("*"),
+                "Should not contain generator star: " + result);
+    }
+
+    @Test
+    void testAnonymousFunctionExpression_async() {
+        // Test async anonymous function expression
+        ArkTSAccessExpressions.AnonymousFunctionExpression expr =
+                new ArkTSAccessExpressions.AnonymousFunctionExpression(
+                        Collections.emptyList(),
+                        new ArkTSStatement.BlockStatement(
+                                Collections.emptyList()),
+                        true, false);
+        String result = expr.toArkTS();
+        assertTrue(result.startsWith("async function("),
+                "Should start with 'async function(': " + result);
+    }
+
+    @Test
+    void testAnonymousFunctionExpression_generator() {
+        // Test generator anonymous function expression
+        List<ArkTSStatement> bodyStmts = List.of(
+                new ArkTSStatement.ExpressionStatement(
+                        new ArkTSAccessExpressions.YieldExpression(
+                                new ArkTSExpression.LiteralExpression("1",
+                                        ArkTSExpression.LiteralExpression
+                                                .LiteralKind.NUMBER),
+                                false)));
+        ArkTSAccessExpressions.AnonymousFunctionExpression expr =
+                new ArkTSAccessExpressions.AnonymousFunctionExpression(
+                        Collections.emptyList(),
+                        new ArkTSStatement.BlockStatement(bodyStmts),
+                        false, true);
+        String result = expr.toArkTS();
+        assertTrue(result.startsWith("function*("),
+                "Should start with 'function*(': " + result);
+        assertTrue(result.contains("yield 1"),
+                "Should contain yield: " + result);
+    }
+
+    @Test
+    void testGeneratorFunctionExpression() {
+        // Test GeneratorFunctionExpression toArkTS
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                List.of(new ArkTSDeclarations.FunctionDeclaration
+                        .FunctionParam("start", "number"));
+        List<ArkTSStatement> bodyStmts = List.of(
+                new ArkTSStatement.ExpressionStatement(
+                        new ArkTSAccessExpressions.YieldExpression(
+                                new ArkTSExpression.VariableExpression(
+                                        "start"),
+                                false)));
+        ArkTSAccessExpressions.GeneratorFunctionExpression expr =
+                new ArkTSAccessExpressions.GeneratorFunctionExpression(
+                        "gen", params,
+                        new ArkTSStatement.BlockStatement(bodyStmts),
+                        false);
+        String result = expr.toArkTS();
+        assertTrue(result.startsWith("function* gen("),
+                "Should start with 'function* gen(': " + result);
+        assertTrue(result.contains("start: number"),
+                "Should contain typed param: " + result);
+        assertTrue(result.contains("yield start"),
+                "Should contain yield: " + result);
+    }
+
+    @Test
+    void testGeneratorFunctionExpression_asyncGenerator() {
+        // Test async generator function expression
+        ArkTSAccessExpressions.GeneratorFunctionExpression expr =
+                new ArkTSAccessExpressions.GeneratorFunctionExpression(
+                        "asyncGen", Collections.emptyList(),
+                        new ArkTSStatement.BlockStatement(
+                                Collections.emptyList()),
+                        true);
+        String result = expr.toArkTS();
+        assertTrue(result.startsWith("async function* asyncGen("),
+                "Should start with 'async function* asyncGen(': " + result);
+    }
+
+    @Test
+    void testGeneratorFunctionExpression_anonymous() {
+        // Test anonymous generator function expression (no name)
+        ArkTSAccessExpressions.GeneratorFunctionExpression expr =
+                new ArkTSAccessExpressions.GeneratorFunctionExpression(
+                        null, Collections.emptyList(),
+                        new ArkTSStatement.BlockStatement(
+                                Collections.emptyList()),
+                        false);
+        String result = expr.toArkTS();
+        assertTrue(result.startsWith("function*("),
+                "Should start with 'function*(' for anonymous: " + result);
+    }
+
+    @Test
+    void testClosureCapturingVariable() {
+        // Test ClosureExpression wraps inner function
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                Collections.emptyList();
+        ArkTSExpression innerBody =
+                new ArkTSExpression.BinaryExpression(
+                        new ArkTSExpression.VariableExpression("lex_0_0"),
+                        "+",
+                        new ArkTSExpression.LiteralExpression("1",
+                                ArkTSExpression.LiteralExpression
+                                        .LiteralKind.NUMBER));
+        ArkTSExpression arrow =
+                new ArkTSAccessExpressions.ArrowFunctionExpression(
+                        params,
+                        new ArkTSStatement.ExpressionStatement(innerBody),
+                        false);
+        List<String> captured = List.of("lex_0_0");
+        ArkTSAccessExpressions.ClosureExpression closure =
+                new ArkTSAccessExpressions.ClosureExpression(arrow,
+                        captured);
+        String result = closure.toArkTS();
+        assertTrue(result.contains("() =>"),
+                "Should contain arrow function: " + result);
+        assertTrue(result.contains("lex_0_0"),
+                "Should contain captured variable: " + result);
+        assertEquals(1, closure.getCapturedVariables().size(),
+                "Should track one captured variable");
+        assertEquals("lex_0_0",
+                closure.getCapturedVariables().get(0),
+                "Should track captured variable name");
+    }
+
+    @Test
+    void testFunctionExpressionAsArgument() {
+        // Test that DefineFuncExpression produces func_N when used
+        // directly (not stored to variable)
+        DefineFuncExpression expr = new DefineFuncExpression(5);
+        assertEquals("func_5", expr.toArkTS(),
+                "Should render as func_5");
+        assertEquals(5, expr.getMethodIdx(),
+                "Should return method index");
+    }
+
+    @Test
+    void testDefineFuncStoredToVariable() {
+        // definefunc 3; sta v0; returnundefined
+        // In instruction-only mode (no ABC file), definefunc creates a
+        // function reference stored to v0. Full arrow function detection
+        // requires ABC context with method definitions.
+        byte[] code = concat(
+                bytes(0x33, 0x03, 0x00, 0x00, 0x00),  // definefunc 3
+                bytes(0x61, 0x00),                      // sta v0
+                bytes(0x65)                              // returnundefined
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0"),
+                "Should reference v0: " + result);
+    }
+
+    @Test
+    void testNestedFunctionExpressions() {
+        // Test nested arrow function: outer arrow with inner arrow in body
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> innerParams =
+                List.of(new ArkTSDeclarations.FunctionDeclaration
+                        .FunctionParam("y", "number"));
+        ArkTSExpression innerArrow =
+                new ArkTSAccessExpressions.ArrowFunctionExpression(
+                        innerParams,
+                        new ArkTSStatement.ExpressionStatement(
+                                new ArkTSExpression.VariableExpression("y")),
+                        false);
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> outerParams =
+                List.of(new ArkTSDeclarations.FunctionDeclaration
+                        .FunctionParam("x", "number"));
+        ArkTSStatement outerBody =
+                new ArkTSStatement.BlockStatement(
+                        List.of(new ArkTSStatement.ReturnStatement(
+                                innerArrow)));
+        ArkTSAccessExpressions.ArrowFunctionExpression outer =
+                new ArkTSAccessExpressions.ArrowFunctionExpression(
+                        outerParams, outerBody, false);
+        String result = outer.toArkTS();
+        assertTrue(result.contains("(x: number) =>"),
+                "Should contain outer params: " + result);
+        assertTrue(result.contains("(y: number) =>"),
+                "Should contain inner params: " + result);
+    }
+
+    @Test
+    void testArrowFunctionInVariable() {
+        // Test that a variable declaration with arrow function renders
+        // correctly
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                List.of(new ArkTSDeclarations.FunctionDeclaration
+                        .FunctionParam("x", "number"));
+        ArkTSExpression arrow =
+                new ArkTSAccessExpressions.ArrowFunctionExpression(
+                        params,
+                        new ArkTSStatement.ExpressionStatement(
+                                new ArkTSExpression.BinaryExpression(
+                                        new ArkTSExpression.VariableExpression(
+                                                "x"),
+                                        "+",
+                                        new ArkTSExpression.LiteralExpression(
+                                                "1",
+                                                ArkTSExpression
+                                                        .LiteralExpression
+                                                        .LiteralKind.NUMBER))),
+                        false);
+        ArkTSStatement decl =
+                new ArkTSStatement.VariableDeclaration(
+                        "let", "addOne", null, arrow);
+        String result = decl.toArkTS(0);
+        assertTrue(result.contains("let addOne = "),
+                "Should declare variable: " + result);
+        assertTrue(result.contains("(x: number) =>"),
+                "Should contain arrow function: " + result);
+        assertTrue(result.contains("(x + 1);"),
+                "Should contain body expression: " + result);
+    }
+
+    // =================================================================
+    // Wide (0xFD prefix) instruction tests
+    // =================================================================
+
+    @Test
+    void testWideMov() {
+        // 0xFD 0x8F = wide mov, WIDE_V8_V8 format (4 bytes total)
+        // wide mov v10, v20
+        byte[] code = concat(
+                bytes(0xFD, 0x8F, 0x0A, 0x14),  // wide mov v10, v20
+                bytes(0x64)                       // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        assertTrue(insns.get(0).isWide(),
+                "First instruction should be wide");
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("let v10"),
+                "Should declare v10: " + result);
+        assertTrue(result.contains("v20"),
+                "Should reference v20: " + result);
+    }
+
+    @Test
+    void testWideNewobjrange() {
+        // 0xFD 0x83 = wide newobjrange, WIDE_IMM16_IMM8_V8 format (5 bytes)
+        // wide newobjrange 3, 0, v10
+        // First: load the constructor into acc
+        byte[] code = concat(
+                bytes(0x60, 0x00),                          // lda v0 (constructor)
+                bytes(0xFD, 0x83, 0x03, 0x00, 0x0A),        // wide newobjrange 3, 0, v10
+                bytes(0x61, 0x01),                           // sta v1
+                bytes(0x64)                                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        // The newobjrange instruction should be wide
+        boolean foundWide = false;
+        for (ArkInstruction insn : insns) {
+            if (insn.isWide()) {
+                foundWide = true;
+                break;
+            }
+        }
+        assertTrue(foundWide, "Should contain a wide instruction");
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("new "),
+                "Should contain new keyword: " + result);
+    }
+
+    @Test
+    void testWideDefinefunc() {
+        // 0xFD 0x74 = wide definefunc, WIDE_IMM16_IMM16_IMM8 format (7 bytes)
+        // wide definefunc 0x0100, 0x0001, 0
+        byte[] code = concat(
+                bytes(0xFD, 0x74, 0x00, 0x01, 0x01, 0x00, 0x00),
+                bytes(0x61, 0x01),   // sta v1
+                bytes(0x64)          // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        assertTrue(insns.get(0).isWide(),
+                "First instruction should be wide");
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("func_"),
+                "Should contain func_ reference: " + result);
+    }
+
+    @Test
+    void testWideLdobjbyname() {
+        // 0xFD 0x90 = wide ldobjbyname, WIDE_IMM16_IMM16 format (6 bytes)
+        // wide ldobjbyname 0, 0x0005
+        byte[] code = concat(
+                bytes(0x60, 0x00),                          // lda v0 (object)
+                bytes(0xFD, 0x90, 0x00, 0x00, 0x05, 0x00),  // wide ldobjbyname 0, 5
+                bytes(0x61, 0x01),                           // sta v1
+                bytes(0x64)                                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        // Should not fall through to comment fallback
+        assertFalse(result.contains("/* wide_"),
+                "Should not emit wide comment fallback: " + result);
+    }
+
+    @Test
+    void testWideStobjbyname() {
+        // 0xFD 0x91 = wide stobjbyname, WIDE_IMM16_IMM16_V8 format (7 bytes)
+        // wide stobjbyname 0, 0x0005, v2
+        byte[] code = concat(
+                bytes(0x60, 0x00),                                  // lda v0 (value)
+                bytes(0xFD, 0x91, 0x00, 0x00, 0x05, 0x00, 0x02),    // wide stobjbyname 0, 5, v2
+                bytes(0x64)                                          // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        // Should not fall through to comment fallback
+        assertFalse(result.contains("/* wide_"),
+                "Should not emit wide comment fallback: " + result);
+    }
+
+    @Test
+    void testWideCreateemptyarray() {
+        // 0xFD 0x80 = wide createemptyarray, WIDE_IMM16 format (4 bytes)
+        // wide createemptyarray 0x0100
+        byte[] code = concat(
+                bytes(0xFD, 0x80, 0x00, 0x01),  // wide createemptyarray 256
+                bytes(0x61, 0x01),               // sta v1
+                bytes(0x64)                      // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        assertTrue(insns.get(0).isWide(),
+                "First instruction should be wide");
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("[]"),
+                "Should contain empty array: " + result);
+    }
+
+    @Test
+    void testWideLdobjbyvalue() {
+        // 0xFD 0x85 = wide ldobjbyvalue, WIDE_IMM16_V8 format (5 bytes)
+        // wide ldobjbyvalue 0, v3
+        byte[] code = concat(
+                bytes(0x60, 0x00),                      // lda v0 (object)
+                bytes(0xFD, 0x85, 0x00, 0x00, 0x03),    // wide ldobjbyvalue 0, v3
+                bytes(0x61, 0x01),                       // sta v1
+                bytes(0x64)                              // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        // Should not fall through to comment fallback
+        assertFalse(result.contains("/* wide_"),
+                "Should not emit wide comment fallback: " + result);
+    }
+
+    @Test
+    void testWideMixed() {
+        // Mix of normal and wide instructions in the same method
+        byte[] code = concat(
+                bytes(0x60, 0x00),                          // lda v0 (normal)
+                bytes(0xFD, 0x8F, 0x02, 0x03),              // wide mov v2, v3
+                bytes(0x60, 0x02),                          // lda v2 (normal)
+                bytes(0xFD, 0x80, 0x0A, 0x00),              // wide createemptyarray 10
+                bytes(0x61, 0x04),                          // sta v4 (normal)
+                bytes(0x64)                                 // return (normal)
+        );
+        List<ArkInstruction> insns = dis(code);
+        // Check we have both wide and normal instructions
+        int wideCount = 0;
+        for (ArkInstruction insn : insns) {
+            if (insn.isWide()) {
+                wideCount++;
+            }
+        }
+        assertTrue(wideCount >= 2,
+                "Should have at least 2 wide instructions, got " + wideCount);
+        String result = decompiler.decompileInstructions(insns);
+        assertFalse(result.contains("/* wide_"),
+                "Should not emit any wide comment fallback: " + result);
+        assertTrue(result.contains("let v2"),
+                "Should declare v2: " + result);
+        assertTrue(result.contains("[]"),
+                "Should contain array literal: " + result);
+    }
+
+    // --- Module system decompilation tests ---
+
+    @Test
+    void testDynamicImport_basic() {
+        // DYNAMICIMPORT = 0xBD, no operands
+        // Instruction-level test: verify it doesn't crash and produces output
+        byte[] code = concat(
+                bytes(0x3E, 0x00, 0x00),     // lda.str 0 -> acc = specifier string
+                bytes(0xBD),                 // dynamicimport -> import(acc)
+                bytes(0x61, 0x01),           // sta v1
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertFalse(result.isEmpty(),
+                "Should produce output: " + result);
+    }
+
+    @Test
+    void testDynamicImport_withAwait() {
+        // DYNAMICIMPORT followed by sta -> verify output without crash
+        byte[] code = concat(
+                bytes(0x65, 0x00),           // lda.str 0
+                bytes(0xBD),                 // dynamicimport
+                bytes(0x61, 0x01),           // sta v1
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertFalse(result.isEmpty(),
+                "Should produce output: " + result);
+    }
+
+    @Test
+    void testLdExternalModuleVar_basic() {
+        // LDEXTERNALMODULEVAR = 0x7E, IMM8 format
+        // Loads the Nth imported variable
+        byte[] code = concat(
+                bytes(0x7E, 0x00),           // ldexternalmodulevar 0
+                bytes(0x61, 0x01),           // sta v1
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("ext_mod_0"),
+                "Should contain external module variable: " + result);
+    }
+
+    @Test
+    void testLdLocalModuleVar_basic() {
+        // LDLOCALMODULEVAR = 0x7D, IMM8 format
+        byte[] code = concat(
+                bytes(0x7D, 0x00),           // ldlocalmodulevar 0
+                bytes(0x61, 0x01),           // sta v1
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("local_mod_0"),
+                "Should contain local module variable: " + result);
+    }
+
+    @Test
+    void testStModuleVar_basic() {
+        // STMODULEVAR = 0x7C, IMM8 format
+        // Instruction-level test: verify no crash
+        byte[] code = concat(
+                bytes(0x65, 0x00),           // lda.str 0
+                bytes(0x7C, 0x00),           // stmodulevar 0
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertFalse(result.isEmpty(),
+                "Should produce output: " + result);
+    }
+
+    @Test
+    void testGetModuleNamespace_basic() {
+        // GETMODULENAMESPACE = 0x7B, IMM8 format
+        byte[] code = concat(
+                bytes(0x7B, 0x00),           // getmodulenamespace 0
+                bytes(0x61, 0x01),           // sta v1
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("module_ns_0"),
+                "Should contain module namespace variable: " + result);
+    }
+
+    @Test
+    void testImportStatement_defaultImport() {
+        // Test the ImportStatement AST node for default imports
+        ArkTSDeclarations.ImportStatement stmt =
+                new ArkTSDeclarations.ImportStatement(
+                        Collections.emptyList(), "@ohos/entry",
+                        true, "MyClass", null);
+        String output = stmt.toArkTS(0);
+        assertTrue(output.contains("import MyClass"),
+                "Should contain default import: " + output);
+        assertTrue(output.contains("from '@ohos/entry'"),
+                "Should contain module path: " + output);
+    }
+
+    @Test
+    void testImportStatement_namespaceImport() {
+        // Test the ImportStatement AST node for namespace imports
+        ArkTSDeclarations.ImportStatement stmt =
+                new ArkTSDeclarations.ImportStatement(
+                        Collections.emptyList(), "@ohos/lib",
+                        false, null, "lib");
+        String output = stmt.toArkTS(0);
+        assertTrue(output.contains("import * as lib"),
+                "Should contain namespace import: " + output);
+        assertTrue(output.contains("from '@ohos/lib'"),
+                "Should contain module path: " + output);
+    }
+
+    @Test
+    void testImportStatement_namedImports() {
+        // Test the ImportStatement AST node with named imports
+        ArkTSDeclarations.ImportStatement stmt =
+                new ArkTSDeclarations.ImportStatement(
+                        List.of("foo", "bar as baz"), "./utils",
+                        false, null, null);
+        String output = stmt.toArkTS(0);
+        assertTrue(output.contains("import { foo, bar as baz }"),
+                "Should contain named imports: " + output);
+        assertTrue(output.contains("from './utils'"),
+                "Should contain module path: " + output);
+    }
+
+    @Test
+    void testImportStatement_defaultWithNamed() {
+        // Test combined default + named import
+        ArkTSDeclarations.ImportStatement stmt =
+                new ArkTSDeclarations.ImportStatement(
+                        List.of("Helper"), "@ohos/entry",
+                        true, "MyClass", null);
+        String output = stmt.toArkTS(0);
+        assertTrue(output.contains("import MyClass, { Helper }"),
+                "Should contain default + named import: " + output);
+    }
+
+    @Test
+    void testExportStatement_reExport() {
+        // Test re-export: export { X } from 'module'
+        ArkTSDeclarations.ExportStatement stmt =
+                new ArkTSDeclarations.ExportStatement(
+                        List.of("foo", "bar as baz"), null, false,
+                        "@ohos/util");
+        String output = stmt.toArkTS(0);
+        assertTrue(output.contains("export { foo, bar as baz }"),
+                "Should contain named re-exports: " + output);
+        assertTrue(output.contains("from '@ohos/util'"),
+                "Should contain from clause: " + output);
+    }
+
+    @Test
+    void testExportStatement_starExport() {
+        // Test star export: export * from 'module'
+        ArkTSDeclarations.ExportStatement stmt =
+                new ArkTSDeclarations.ExportStatement(
+                        Collections.emptyList(), null, false,
+                        "@ohos/core", true);
+        String output = stmt.toArkTS(0);
+        assertTrue(output.contains("export * from '@ohos/core'"),
+                "Should contain star export: " + output);
+    }
+
+    @Test
+    void testExportStatement_localExport() {
+        // Test local export: export { X }
+        ArkTSDeclarations.ExportStatement stmt =
+                new ArkTSDeclarations.ExportStatement(
+                        List.of("MyClass"), null, false);
+        String output = stmt.toArkTS(0);
+        assertTrue(output.contains("export { MyClass };"),
+                "Should contain local export: " + output);
+    }
+
+    @Test
+    void testModuleImportCollector_basic() {
+        // Test the ModuleImportCollector utility
+        ArkTSDecompiler.ModuleImportCollector collector =
+                new ArkTSDecompiler.ModuleImportCollector();
+        collector.addNamedImport("foo", "foo");
+        collector.addNamedImport("Bar", "myBar");
+        collector.setDefaultImport("Default");
+
+        ArkTSDeclarations.ImportStatement stmt =
+                collector.toImportStatement("my-module");
+        String output = stmt.toArkTS(0);
+        assertTrue(output.contains("import Default, { foo, Bar as myBar }"),
+                "Should merge default + named imports: " + output);
+        assertTrue(output.contains("from 'my-module'"),
+                "Should contain module path: " + output);
+    }
+
+    @Test
+    void testModuleImportCollector_namespaceOnly() {
+        // Test namespace-only import collector
+        ArkTSDecompiler.ModuleImportCollector collector =
+                new ArkTSDecompiler.ModuleImportCollector();
+        collector.setNamespaceImport("lib");
+
+        ArkTSDeclarations.ImportStatement stmt =
+                collector.toImportStatement("@ohos/lib");
+        String output = stmt.toArkTS(0);
+        assertTrue(output.contains("import * as lib"),
+                "Should contain namespace import: " + output);
+    }
+
+    @Test
+    void testModuleImportCollector_deduplication() {
+        // Test that duplicate named imports are deduplicated
+        ArkTSDecompiler.ModuleImportCollector collector =
+                new ArkTSDecompiler.ModuleImportCollector();
+        collector.addNamedImport("foo", "foo");
+        collector.addNamedImport("foo", "foo");
+
+        ArkTSDeclarations.ImportStatement stmt =
+                collector.toImportStatement("mod");
+        String output = stmt.toArkTS(0);
+        assertTrue(output.contains("{ foo }"),
+                "Should contain only one foo: " + output);
+        int count = output.split("foo").length - 1;
+        assertEquals(1, count,
+                "Should have exactly one occurrence of foo: " + output);
+    }
 }

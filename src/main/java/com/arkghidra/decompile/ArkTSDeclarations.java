@@ -1055,12 +1055,15 @@ public class ArkTSDeclarations {
     // --- Export statement ---
 
     /**
-     * An export statement: export { X, Y } or export default expr.
+     * An export statement: export { X, Y }, export default expr,
+     * or export { X } from 'module' (re-export).
      */
     public static class ExportStatement extends ArkTSStatement {
         private final List<String> exports;
         private final ArkTSStatement declaration;
         private final boolean isDefault;
+        private final String fromModulePath;
+        private final boolean isStarExport;
 
         /**
          * Constructs an export statement.
@@ -1071,10 +1074,41 @@ public class ArkTSDeclarations {
          */
         public ExportStatement(List<String> exports,
                 ArkTSStatement declaration, boolean isDefault) {
+            this(exports, declaration, isDefault, null, false);
+        }
+
+        /**
+         * Constructs an export statement with re-export source.
+         *
+         * @param exports the named exports
+         * @param declaration the declaration being exported (may be null)
+         * @param isDefault true if this is a default export
+         * @param fromModulePath the source module for re-exports (may be null)
+         */
+        public ExportStatement(List<String> exports,
+                ArkTSStatement declaration, boolean isDefault,
+                String fromModulePath) {
+            this(exports, declaration, isDefault, fromModulePath, false);
+        }
+
+        /**
+         * Constructs an export statement with full options.
+         *
+         * @param exports the named exports
+         * @param declaration the declaration being exported (may be null)
+         * @param isDefault true if this is a default export
+         * @param fromModulePath the source module for re-exports (may be null)
+         * @param isStarExport true if this is a star export (export * from)
+         */
+        public ExportStatement(List<String> exports,
+                ArkTSStatement declaration, boolean isDefault,
+                String fromModulePath, boolean isStarExport) {
             this.exports = Collections.unmodifiableList(
                     new ArrayList<>(exports));
             this.declaration = declaration;
             this.isDefault = isDefault;
+            this.fromModulePath = fromModulePath;
+            this.isStarExport = isStarExport;
         }
 
         public List<String> getExports() {
@@ -1089,6 +1123,14 @@ public class ArkTSDeclarations {
             return isDefault;
         }
 
+        public String getFromModulePath() {
+            return fromModulePath;
+        }
+
+        public boolean isStarExport() {
+            return isStarExport;
+        }
+
         @Override
         public String toArkTS(int indent) {
             StringBuilder sb = new StringBuilder();
@@ -1100,6 +1142,10 @@ public class ArkTSDeclarations {
                 }
                 return sb.toString();
             }
+            if (isStarExport && fromModulePath != null) {
+                sb.append("* from '").append(fromModulePath).append("';");
+                return sb.toString();
+            }
             if (declaration != null) {
                 sb.append(declaration.toArkTS(0));
                 return sb.toString();
@@ -1108,7 +1154,11 @@ public class ArkTSDeclarations {
             for (String exp : exports) {
                 joiner.add(exp);
             }
-            sb.append("{ ").append(joiner).append(" };");
+            sb.append("{ ").append(joiner).append(" }");
+            if (fromModulePath != null) {
+                sb.append(" from '").append(fromModulePath).append("'");
+            }
+            sb.append(";");
             return sb.toString();
         }
     }
