@@ -4191,6 +4191,21 @@ class ArkTSDecompilerTest {
     }
 
     @Test
+    void testDecompile_ldprivateproperty_defaultsToThis() {
+        // LDPRIVATEPROPERTY without a prior accumulator load should use this
+        // ldprivateproperty 0, 3, 0; sta v0; return
+        byte[] code = concat(
+                bytes(0xD8, 0x00, 0x03, 0x00, 0x00, 0x00), // ldprivateproperty 0, str_3, 0
+                bytes(0x61, 0x00),                        // sta v0
+                bytes(0x64)                               // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("this.#"),
+                "Should default to this when no accumulator: " + result);
+    }
+
+    @Test
     void testDecompile_stprivateproperty() {
         // STPRIVATEPROPERTY = 0xD9, IMM8_IMM16_IMM16_V8
         // ldai 42; stprivateproperty 0, 3, 0, v1
@@ -4202,6 +4217,22 @@ class ArkTSDecompilerTest {
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
         assertTrue(result.contains(".#"));
+        assertTrue(result.contains("v1.#"),
+                "Should use object register v1: " + result);
+    }
+
+    @Test
+    void testDecompile_stprivateproperty_assignsValue() {
+        // ldai 99; stprivateproperty 0, 7, 0, v2; return
+        byte[] code = concat(
+                bytes(0x62), le32(99),                    // ldai 99
+                bytes(0xD9, 0x00, 0x07, 0x00, 0x00, 0x00, 0x02), // stprivateproperty 0, str_7, 0, v2
+                bytes(0x64)                               // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v2.#str_7 = 99"),
+                "Should produce v2.#str_7 = 99: " + result);
     }
 
     @Test
@@ -4217,6 +4248,104 @@ class ArkTSDecompilerTest {
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
         assertTrue(result.contains(" in "));
+    }
+
+    @Test
+    void testDecompile_testin_withStringResolved() {
+        // lda v0; testin 0, 3, 0; sta v1; return
+        byte[] code = concat(
+                bytes(0x60, 0x00),                        // lda v0
+                bytes(0xDA, 0x00, 0x03, 0x00, 0x00, 0x00), // testin 0, str_3, 0
+                bytes(0x61, 0x01),                        // sta v1
+                bytes(0x64)                               // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("str_3 in "),
+                "Should contain 'str_3 in' pattern: " + result);
+    }
+
+    @Test
+    void testDecompile_privateFieldReadThenWrite() {
+        // Read private field from v0, then write back to v0's private field
+        // lda v0; ldprivateproperty 0, 2, 0; sta v1;
+        // ldai 10; stprivateproperty 0, 2, 0, v0; return
+        byte[] code = concat(
+                bytes(0x60, 0x00),                        // lda v0
+                bytes(0xD8, 0x00, 0x02, 0x00, 0x00, 0x00), // ldprivateproperty 0, str_2, 0
+                bytes(0x61, 0x01),                        // sta v1
+                bytes(0x62), le32(10),                    // ldai 10
+                bytes(0xD9, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00), // stprivateproperty to v0
+                bytes(0x64)                               // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0.#str_2"),
+                "Should read private field from v0: " + result);
+        assertTrue(result.contains("v0.#str_2 = 10"),
+                "Should write 10 to v0's private field: " + result);
+    }
+
+    @Test
+    void testDecompile_callruntimeCreatePrivateProperty() {
+        // callruntime.createprivateproperty str_3
+        // CRT_CREATEPRIVATEPROPERTY = 0x04, PREF_IMM8 format
+        byte[] code = concat(
+                bytes(0xFB, 0x04, 0x03),  // callruntime.createprivateproperty str_3
+                bytes(0x64)               // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("#str_3"),
+                "Should emit #str_3 private field declaration: " + result);
+        assertFalse(result.contains("/* private:"),
+                "Should not use comment-style declaration: " + result);
+    }
+
+    @Test
+    void testDecompile_callruntimeDefinePrivateProperty() {
+        // ldai 42; callruntime.defineprivateproperty str_5, v1
+        // CRT_DEFINEPRIVATEPROPERTY = 0x05, PREF_IMM8_V8 format
+        byte[] code = concat(
+                bytes(0x62), le32(42),                    // ldai 42
+                bytes(0xFB, 0x05, 0x05, 0x01),           // callruntime.defineprivateproperty str_5, v1
+                bytes(0x64)                               // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v1.#str_5 = 42"),
+                "Should assign 42 to v1's private field str_5: " + result);
+    }
+
+    @Test
+    void testDecompile_callruntimeDefinePrivateProperty_withAccValue() {
+        // lda v0; callruntime.defineprivateproperty str_2, v3
+        // CRT_DEFINEPRIVATEPROPERTY = 0x05, PREF_IMM8_V8 format
+        byte[] code = concat(
+                bytes(0x60, 0x00),                        // lda v0
+                bytes(0xFB, 0x05, 0x02, 0x03),           // callruntime.defineprivateproperty str_2, v3
+                bytes(0x64)                               // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v3.#str_2 = v0"),
+                "Should assign v0 to v3's private field str_2: " + result);
+    }
+
+    @Test
+    void testDecompile_privateFieldDeclaration_toArkTS() {
+        ArkTSPropertyExpressions.PrivateFieldDeclarationExpression expr =
+                new ArkTSPropertyExpressions.PrivateFieldDeclarationExpression(
+                        "secretField");
+        assertEquals("#secretField", expr.toArkTS());
+    }
+
+    @Test
+    void testDecompile_privateFieldDeclaration_getFieldName() {
+        ArkTSPropertyExpressions.PrivateFieldDeclarationExpression expr =
+                new ArkTSPropertyExpressions.PrivateFieldDeclarationExpression(
+                        "count");
+        assertEquals("count", expr.getFieldName());
     }
 
     // --- Async/generator instruction tests ---

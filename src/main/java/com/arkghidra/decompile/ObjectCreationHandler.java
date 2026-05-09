@@ -503,4 +503,74 @@ class ObjectCreationHandler {
         }
         return a.toArkTS().equals(b.toArkTS());
     }
+
+    // --- Prototype-related patterns ---
+
+    /**
+     * Builds an Object.setPrototypeOf() call expression.
+     *
+     * <p>Used when {@code setobjectwithproto} sets the prototype of
+     * an object to a value in the accumulator.
+     *
+     * @param objExpr the object whose prototype is being set
+     * @param protoExpr the prototype expression
+     * @return the call expression for Object.setPrototypeOf(obj, proto)
+     */
+    static ArkTSExpression buildSetPrototypeOfCall(
+            ArkTSExpression objExpr, ArkTSExpression protoExpr) {
+        ArkTSExpression setPrototypeOf =
+                new ArkTSExpression.MemberExpression(
+                        new ArkTSExpression.VariableExpression("Object"),
+                        new ArkTSExpression.VariableExpression(
+                                "setPrototypeOf"),
+                        false);
+        return new ArkTSExpression.CallExpression(
+                setPrototypeOf, List.of(objExpr, protoExpr));
+    }
+
+    /**
+     * Builds a __proto__ assignment expression.
+     *
+     * <p>Alternative form for setting prototype:
+     * {@code obj.__proto__ = proto}.
+     *
+     * @param objExpr the object whose prototype is being set
+     * @param protoExpr the prototype expression
+     * @return the assignment expression
+     */
+    static ArkTSExpression buildProtoAssignment(
+            ArkTSExpression objExpr, ArkTSExpression protoExpr) {
+        ArkTSExpression protoMember =
+                new ArkTSExpression.MemberExpression(
+                        objExpr,
+                        new ArkTSExpression.VariableExpression("__proto__"),
+                        false);
+        return new ArkTSExpression.AssignExpression(protoMember, protoExpr);
+    }
+
+    /**
+     * Creates an object literal with a __proto__ property.
+     *
+     * <p>When an object is created with CREATEOBJECTWITHBUFFER and
+     * immediately followed by SETOBJECTWITHPROTO, the resulting
+     * pattern is an object literal with a __proto__ property.
+     *
+     * @param properties the object properties
+     * @param protoExpr the prototype expression (may be null)
+     * @return the object literal expression
+     */
+    static ArkTSExpression createObjectWithPrototype(
+            List<ArkTSAccessExpressions.ObjectLiteralExpression.ObjectProperty>
+                    properties,
+            ArkTSExpression protoExpr) {
+        List<ArkTSAccessExpressions.ObjectLiteralExpression.ObjectProperty>
+                allProps = new ArrayList<>();
+        if (protoExpr != null) {
+            allProps.add(
+                    new ArkTSAccessExpressions.ObjectLiteralExpression
+                            .ObjectProperty("__proto__", protoExpr));
+        }
+        allProps.addAll(properties);
+        return new ArkTSAccessExpressions.ObjectLiteralExpression(allProps);
+    }
 }

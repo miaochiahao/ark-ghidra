@@ -40,6 +40,8 @@ public class ArkTSDeclarations {
             private final String name;
             private final String typeName;
             private final boolean isRest;
+            private final String defaultValue;
+            private final boolean isOptional;
 
             /**
              * Constructs a function parameter.
@@ -48,7 +50,7 @@ public class ArkTSDeclarations {
              * @param typeName the type annotation (may be null)
              */
             public FunctionParam(String name, String typeName) {
-                this(name, typeName, false);
+                this(name, typeName, false, null, false);
             }
 
             /**
@@ -60,9 +62,26 @@ public class ArkTSDeclarations {
              */
             public FunctionParam(String name, String typeName,
                     boolean isRest) {
+                this(name, typeName, isRest, null, false);
+            }
+
+            /**
+             * Constructs a function parameter with default value.
+             *
+             * @param name the parameter name
+             * @param typeName the type annotation (may be null)
+             * @param isRest true if this is a rest parameter
+             * @param defaultValue the default value expression (may be null)
+             * @param isOptional true if this parameter is optional (param?: type)
+             */
+            public FunctionParam(String name, String typeName,
+                    boolean isRest, String defaultValue,
+                    boolean isOptional) {
                 this.name = name;
                 this.typeName = typeName;
                 this.isRest = isRest;
+                this.defaultValue = defaultValue;
+                this.isOptional = isOptional;
             }
 
             public String getName() {
@@ -77,6 +96,24 @@ public class ArkTSDeclarations {
                 return isRest;
             }
 
+            /**
+             * Returns the default value expression, or null.
+             *
+             * @return the default value string, e.g. "42" or "\"hello\""
+             */
+            public String getDefaultValue() {
+                return defaultValue;
+            }
+
+            /**
+             * Returns true if this parameter is optional (param?: type).
+             *
+             * @return true if optional
+             */
+            public boolean isOptional() {
+                return isOptional;
+            }
+
             @Override
             public String toString() {
                 String resolvedType = typeName;
@@ -88,6 +125,19 @@ public class ArkTSDeclarations {
                         return "..." + name + ": " + resolvedType;
                     }
                     return "..." + name;
+                }
+                if (isOptional && defaultValue == null) {
+                    if (resolvedType != null) {
+                        return name + "?: " + resolvedType;
+                    }
+                    return name + "?";
+                }
+                if (defaultValue != null) {
+                    if (resolvedType != null) {
+                        return name + ": " + resolvedType + " = "
+                                + defaultValue;
+                    }
+                    return name + " = " + defaultValue;
                 }
                 if (resolvedType != null) {
                     return name + ": " + resolvedType;

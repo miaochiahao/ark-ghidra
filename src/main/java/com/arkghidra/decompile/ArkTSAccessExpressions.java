@@ -918,6 +918,121 @@ public class ArkTSAccessExpressions {
         }
     }
 
+    // --- RegExp literal ---
+
+    /**
+     * A regular expression literal expression: /pattern/flags.
+     *
+     * <p>Represents a regex literal created by CREATEREGEXPWITHLITERAL.
+     * The pattern and flags are extracted from the bytecode operand.
+     */
+    public static class RegExpLiteralExpression extends ArkTSExpression {
+        private final String pattern;
+        private final String flags;
+
+        /**
+         * Constructs a regex literal expression.
+         *
+         * @param pattern the regex pattern string
+         * @param flags the regex flags string (may be empty)
+         */
+        public RegExpLiteralExpression(String pattern, String flags) {
+            this.pattern = pattern;
+            this.flags = flags != null ? flags : "";
+        }
+
+        public String getPattern() {
+            return pattern;
+        }
+
+        public String getFlags() {
+            return flags;
+        }
+
+        @Override
+        public String toArkTS() {
+            return "/" + escapeRegexPattern(pattern) + "/" + flags;
+        }
+
+        private static String escapeRegexPattern(String s) {
+            StringBuilder sb = new StringBuilder(s.length());
+            for (int i = 0; i < s.length(); i++) {
+                char c = s.charAt(i);
+                if (c == '/') {
+                    sb.append("\\/");
+                } else if (c == '\\') {
+                    sb.append("\\\\");
+                } else {
+                    sb.append(c);
+                }
+            }
+            return sb.toString();
+        }
+    }
+
+    // --- Built-in object new expression ---
+
+    /**
+     * A built-in object construction expression.
+     *
+     * <p>Represents construction of well-known built-in objects like
+     * Map, Set, Promise, Proxy, WeakMap, WeakSet, etc. detected from
+     * the global name in the accumulator before newobjrange.
+     * Emits standard {@code new BuiltInName(args)} syntax.
+     */
+    public static class BuiltInNewExpression extends ArkTSExpression {
+        private final String className;
+        private final List<ArkTSExpression> arguments;
+
+        /**
+         * Known built-in class names that the decompiler recognizes.
+         */
+        public static final java.util.Set<String> BUILT_IN_CLASSES =
+                java.util.Set.of(
+                        "Map", "Set", "WeakMap", "WeakSet",
+                        "Promise", "Proxy",
+                        "ArrayBuffer", "SharedArrayBuffer",
+                        "DataView", "Float32Array", "Float64Array",
+                        "Int8Array", "Int16Array", "Int32Array",
+                        "Uint8Array", "Uint16Array", "Uint32Array",
+                        "Uint8ClampedArray", "BigInt64Array",
+                        "BigUint64Array",
+                        "MapIterator", "SetIterator",
+                        "RegExp", "Date", "Error",
+                        "TypeError", "RangeError", "SyntaxError",
+                        "ReferenceError", "URIError", "EvalError");
+
+        /**
+         * Constructs a built-in new expression.
+         *
+         * @param className the built-in class name
+         * @param arguments the constructor arguments
+         */
+        public BuiltInNewExpression(String className,
+                List<ArkTSExpression> arguments) {
+            this.className = className;
+            this.arguments = Collections.unmodifiableList(
+                    new ArrayList<>(arguments));
+        }
+
+        public String getClassName() {
+            return className;
+        }
+
+        public List<ArkTSExpression> getArguments() {
+            return arguments;
+        }
+
+        @Override
+        public String toArkTS() {
+            StringJoiner joiner = new StringJoiner(", ");
+            for (ArkTSExpression arg : arguments) {
+                joiner.add(arg.toArkTS());
+            }
+            return "new " + className + "(" + joiner + ")";
+        }
+    }
+
     // --- Runtime call expression ---
 
     /**

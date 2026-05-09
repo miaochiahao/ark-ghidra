@@ -7,11 +7,14 @@ import com.arkghidra.disasm.ArkInstruction;
 import com.arkghidra.disasm.ArkOperand;
 
 /**
- * Handles property access and call translation during ArkTS decompilation.
+ * Handles property access, private field access, and call translation
+ * during ArkTS decompilation.
  *
  * <p>Translates property load/store instructions (ldobjbyname, stobjbyvalue,
- * etc.) and call instructions (callarg0, callthisrange, etc.) into their
- * corresponding ArkTS expression trees.
+ * etc.), private field access (ldprivateproperty, stprivateproperty,
+ * createprivateproperty, defineprivateproperty), and call instructions
+ * (callarg0, callthisrange, etc.) into their corresponding ArkTS
+ * expression trees.
  */
 class PropertyAccessHandler {
 
@@ -243,5 +246,143 @@ class PropertyAccessHandler {
                 new ArkTSExpression.MemberExpression(obj, prop, false),
                 accValue != null ? accValue
                         : new ArkTSExpression.VariableExpression(ACC));
+    }
+
+    // --- Private property access translation ---
+
+    /**
+     * Translates a ldprivateproperty instruction into a private member
+     * read expression: obj.#field.
+     *
+     * <p>The object comes from the accumulator value (or defaults to
+     * {@code this} when no accumulator value is available). The field
+     * name is resolved from the string table.
+     *
+     * @param insn the instruction
+     * @param accValue the current accumulator value
+     * @param ctx the decompilation context
+     * @return the resulting private member expression
+     */
+    static ArkTSExpression translatePrivatePropertyLoad(ArkInstruction insn,
+            ArkTSExpression accValue, DecompilationContext ctx) {
+        List<ArkOperand> operands = insn.getOperands();
+        int stringIdx = (int) operands.get(1).getValue();
+        String propName = ctx.resolveString(stringIdx);
+        ArkTSExpression obj = accValue != null
+                ? accValue
+                : new ArkTSExpression.ThisExpression();
+        return new ArkTSPropertyExpressions.PrivateMemberExpression(
+                obj, propName);
+    }
+
+    /**
+     * Translates a stprivateproperty instruction into a private member
+     * write: obj.#field = value.
+     *
+     * <p>The value comes from the accumulator. The object register is the
+     * last operand. The field name is resolved from the string table.
+     *
+     * @param insn the instruction
+     * @param accValue the current accumulator value
+     * @param ctx the decompilation context
+     * @return a statement result with the assignment expression
+     */
+    static InstructionHandler.StatementResult translatePrivatePropertyStore(
+            ArkInstruction insn, ArkTSExpression accValue,
+            DecompilationContext ctx) {
+        List<ArkOperand> operands = insn.getOperands();
+        int stringIdx = (int) operands.get(1).getValue();
+        String propName = ctx.resolveString(stringIdx);
+        int objReg = (int) operands.get(
+                operands.size() - 1).getValue();
+        ArkTSExpression target =
+                new ArkTSPropertyExpressions.PrivateMemberExpression(
+                        new ArkTSExpression.VariableExpression("v" + objReg),
+                        propName);
+        ArkTSExpression value = accValue != null
+                ? accValue
+                : new ArkTSExpression.VariableExpression(ACC);
+        return new InstructionHandler.StatementResult(
+                new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.AssignExpression(target, value)),
+                value);
+    }
+
+    /**
+     * Translates a callruntime.createprivateproperty instruction into
+     * a private field declaration expression.
+     *
+     * <p>In ArkTS, private fields are declared with the {@code #field}
+     * syntax in the class body. This method produces a
+     * {@link ArkTSPropertyExpressions.PrivateFieldDeclarationExpression}
+     * that renders as the field name with the hash prefix.
+     *
+     * @param operands the instruction operands
+     * @param ctx the decompilation context
+     * @return a statement result containing the declaration expression
+     */
+    static InstructionHandler.StatementResult translateCreatePrivateProperty(
+            List<ArkOperand> operands, DecompilationContext ctx) {
+        int stringIdx = (int) operands.get(0).getValue();
+        String propName = ctx.resolveString(stringIdx);
+        return new InstructionHandler.StatementResult(null,
+                new ArkTSPropertyExpressions
+                        .PrivateFieldDeclarationExpression(propName));
+    }
+
+    /**
+     * Translates a callruntime.defineprivateproperty instruction into
+     * a private property assignment: obj.#field = value.
+     *
+     * <p>Used in constructors to initialize private field values after
+     * the field has been declared with createprivateproperty.
+     *
+     * @param operands the instruction operands
+     * @param accValue the current accumulator value
+     * @param ctx the decompilation context
+     * @return a statement result with the assignment expression
+     */
+    static InstructionHandler.StatementResult translateDefinePrivateProperty(
+            List<ArkOperand> operands, ArkTSExpression accValue,
+            DecompilationContext ctx) {
+        int stringIdx = (int) operands.get(0).getValue();
+        String propName = ctx.resolveString(stringIdx);
+        int objReg = (int) operands.get(1).getValue();
+        ArkTSExpression obj =
+                new ArkTSExpression.VariableExpression("v" + objReg);
+        ArkTSExpression target =
+                new ArkTSPropertyExpressions.PrivateMemberExpression(
+                        obj, propName);
+        ArkTSExpression value = accValue != null
+                ? accValue
+                : new ArkTSExpression.VariableExpression(ACC);
+        return new InstructionHandler.StatementResult(
+                new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.AssignExpression(target, value)),
+                value);
+    }
+
+    /**
+     * Translates a testin instruction into an in-expression: prop in obj.
+     *
+     * <p>The property name is resolved from the string table. The object
+     * comes from the accumulator (or a placeholder variable).
+     *
+     * @param insn the instruction
+     * @param accValue the current accumulator value
+     * @param ctx the decompilation context
+     * @return the resulting in-expression
+     */
+    static ArkTSExpression translateTestIn(ArkInstruction insn,
+            ArkTSExpression accValue, DecompilationContext ctx) {
+        List<ArkOperand> operands = insn.getOperands();
+        int stringIdx = (int) operands.get(1).getValue();
+        String propName = ctx.resolveString(stringIdx);
+        ArkTSExpression obj = accValue != null
+                ? accValue
+                : new ArkTSExpression.VariableExpression(ACC);
+        return new ArkTSPropertyExpressions.InExpression(
+                new ArkTSExpression.VariableExpression(propName),
+                obj);
     }
 }

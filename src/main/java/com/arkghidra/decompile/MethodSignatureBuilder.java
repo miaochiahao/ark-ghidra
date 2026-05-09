@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import com.arkghidra.format.AbcCode;
 import com.arkghidra.format.AbcMethod;
 import com.arkghidra.format.AbcProto;
 
@@ -117,6 +118,52 @@ public class MethodSignatureBuilder {
         }
 
         return params;
+    }
+
+    /**
+     * Builds the list of parameter names with type annotations and
+     * detected default values from the method's bytecode prologue.
+     *
+     * <p>First builds parameters normally, then scans the method's
+     * instructions for default value patterns. When a default is
+     * detected, the parameter is recreated with the default value
+     * and optional flag set appropriately.
+     *
+     * @param proto the method prototype
+     * @param code the method's code section (for scanning defaults)
+     * @param debugNames the debug parameter names (may be null or contain nulls)
+     * @return the list of parameters with defaults applied
+     */
+    public static List<ArkTSDeclarations.FunctionDeclaration.FunctionParam>
+            buildParamsWithDefaults(AbcProto proto, AbcCode code,
+                    List<String> debugNames) {
+        long numArgs = code != null ? code.getNumArgs() : 0;
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                buildParams(proto, numArgs, debugNames);
+
+        if (code == null || numArgs == 0) {
+            return params;
+        }
+
+        List<ParameterDefaultDetector.ParamDefault> defaults =
+                ParameterDefaultDetector.detectDefaults(
+                        code, (int) numArgs);
+
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> result =
+                new ArrayList<>();
+        for (int i = 0; i < params.size(); i++) {
+            ArkTSDeclarations.FunctionDeclaration.FunctionParam p =
+                    params.get(i);
+            if (i < defaults.size() && defaults.get(i) != null) {
+                ParameterDefaultDetector.ParamDefault d = defaults.get(i);
+                result.add(new ArkTSDeclarations.FunctionDeclaration
+                        .FunctionParam(p.getName(), p.getTypeName(),
+                                p.isRest(), d.defaultValue, d.isOptional));
+            } else {
+                result.add(p);
+            }
+        }
+        return result;
     }
 
     /**

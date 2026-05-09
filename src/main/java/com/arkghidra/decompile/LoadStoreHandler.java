@@ -72,6 +72,19 @@ class LoadStoreHandler {
                             args));
         }
 
+        // --- Global name resolution (tryldglobalbyname / ldglobalvar) ---
+        if (opcode == ArkOpcodesCompat.TRYLDGLOBALBYNAME
+                || opcode == ArkOpcodesCompat.LDGLOBALVAR) {
+            // Format is IMM8_IMM16. The stringIdx is the IMM16 field
+            // (operand[1]). Operand[0] is an internal tag/prefix byte.
+            int stringIdx = operands.size() >= 2
+                    ? (int) operands.get(1).getValue()
+                    : (int) operands.get(0).getValue();
+            String globalName = ctx.resolveString(stringIdx);
+            return new InstructionHandler.StatementResult(null,
+                    new ArkTSExpression.VariableExpression(globalName));
+        }
+
         // --- Module variable access ---
         if (opcode == ArkOpcodesCompat.LDEXTERNALMODULEVAR) {
             int varIdx = (int) operands.get(0).getValue();
@@ -288,15 +301,16 @@ class LoadStoreHandler {
 
         // --- RegExp ---
         if (opcode == ArkOpcodesCompat.CREATEREGEXPWITHLITERAL) {
-            int patternIdx = (int) operands.get(0).getValue();
-            String pattern = ctx.resolveString(patternIdx);
+            int stringIdx = (int) operands.get(1).getValue();
+            String pattern = ctx.resolveString(stringIdx);
+            String flags = "";
+            if (operands.size() >= 3) {
+                flags = decodeRegexFlags(
+                        (int) operands.get(2).getValue());
+            }
             return new InstructionHandler.StatementResult(null,
-                    new ArkTSExpression.NewExpression(
-                            new ArkTSExpression.VariableExpression("RegExp"),
-                            List.of(new ArkTSExpression.LiteralExpression(
-                                    pattern,
-                                    ArkTSExpression.LiteralExpression
-                                            .LiteralKind.STRING))));
+                    new ArkTSAccessExpressions.RegExpLiteralExpression(
+                            pattern, flags));
         }
 
         // --- Template ---
@@ -309,7 +323,25 @@ class LoadStoreHandler {
 
         // --- Object prototype ---
         if (opcode == ArkOpcodesCompat.SETOBJECTWITHPROTO) {
-            return null;
+            int objReg = (int) operands.get(
+                    operands.size() - 1).getValue();
+            ArkTSExpression obj =
+                    new ArkTSExpression.VariableExpression("v" + objReg);
+            ArkTSExpression proto = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            ArkTSExpression objectDotSetPrototypeOf =
+                    new ArkTSExpression.MemberExpression(
+                            new ArkTSExpression.VariableExpression("Object"),
+                            new ArkTSExpression.VariableExpression(
+                                    "setPrototypeOf"),
+                            false);
+            ArkTSExpression callExpr =
+                    new ArkTSExpression.CallExpression(
+                            objectDotSetPrototypeOf,
+                            List.of(obj, proto));
+            return new InstructionHandler.StatementResult(
+                    new ArkTSStatement.ExpressionStatement(callExpr), null);
         }
 
         // --- Async iterator ---
@@ -544,5 +576,39 @@ class LoadStoreHandler {
             }
         }
         return "ext_mod_" + varIdx;
+    }
+
+    /**
+     * Decodes a regex flags bitmask into a flags string.
+     *
+     * <p>The Ark bytecode regex flags bitmask uses:
+     * bit 0 = 'g' (global), bit 1 = 'i' (ignoreCase),
+     * bit 2 = 'm' (multiline), bit 3 = 's' (dotAll),
+     * bit 4 = 'u' (unicode), bit 5 = 'y' (sticky).
+     *
+     * @param flagsBitmask the flags bitmask value
+     * @return the decoded flags string
+     */
+    static String decodeRegexFlags(int flagsBitmask) {
+        StringBuilder sb = new StringBuilder();
+        if ((flagsBitmask & 0x01) != 0) {
+            sb.append('g');
+        }
+        if ((flagsBitmask & 0x02) != 0) {
+            sb.append('i');
+        }
+        if ((flagsBitmask & 0x04) != 0) {
+            sb.append('m');
+        }
+        if ((flagsBitmask & 0x08) != 0) {
+            sb.append('s');
+        }
+        if ((flagsBitmask & 0x10) != 0) {
+            sb.append('u');
+        }
+        if ((flagsBitmask & 0x20) != 0) {
+            sb.append('y');
+        }
+        return sb.toString();
     }
 }

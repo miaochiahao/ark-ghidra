@@ -55,6 +55,39 @@ public class ArkTSPropertyExpressions {
         }
     }
 
+    // --- Private field declaration (#field) ---
+
+    /**
+     * A private field declaration expression: #field.
+     *
+     * <p>Represents the declaration of a private field on a class,
+     * emitted by the {@code createprivateproperty} runtime call.
+     * In ArkTS, private fields are declared using the hash prefix
+     * syntax within the class body: {@code #fieldName;}.
+     */
+    public static class PrivateFieldDeclarationExpression
+            extends ArkTSExpression {
+        private final String fieldName;
+
+        /**
+         * Constructs a private field declaration expression.
+         *
+         * @param fieldName the private field name (without the # prefix)
+         */
+        public PrivateFieldDeclarationExpression(String fieldName) {
+            this.fieldName = fieldName;
+        }
+
+        public String getFieldName() {
+            return fieldName;
+        }
+
+        @Override
+        public String toArkTS() {
+            return "#" + fieldName;
+        }
+    }
+
     // --- In expression (prop in obj) ---
 
     /**
@@ -600,6 +633,44 @@ public class ArkTSPropertyExpressions {
         @Override
         public String toArkTS() {
             return "/* template_" + templateIndex + " */";
+        }
+    }
+
+    // --- Static field expression ---
+
+    /**
+     * A static field definition expression: static obj.prop = value.
+     *
+     * <p>Emitted when {@code definefieldbyname} has the static flag set
+     * in its flags byte, indicating a static class field assignment.
+     */
+    public static class StaticFieldExpression extends ArkTSExpression {
+        private final ArkTSExpression target;
+        private final ArkTSExpression value;
+
+        /**
+         * Constructs a static field expression.
+         *
+         * @param target the member expression being assigned to
+         * @param value the value expression
+         */
+        public StaticFieldExpression(ArkTSExpression target,
+                ArkTSExpression value) {
+            this.target = target;
+            this.value = value;
+        }
+
+        public ArkTSExpression getTarget() {
+            return target;
+        }
+
+        public ArkTSExpression getValue() {
+            return value;
+        }
+
+        @Override
+        public String toArkTS() {
+            return "static " + target.toArkTS() + " = " + value.toArkTS();
         }
     }
 }

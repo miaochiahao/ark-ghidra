@@ -239,46 +239,20 @@ class InstructionHandler {
 
         // --- Private property access ---
         if (opcode == ArkOpcodesCompat.LDPRIVATEPROPERTY) {
-            int stringIdx = (int) operands.get(1).getValue();
-            String propName = ctx.resolveString(stringIdx);
-            ArkTSExpression obj = accValue != null
-                    ? accValue
-                    : new ArkTSExpression.ThisExpression();
             return new StatementResult(null,
-                    new ArkTSPropertyExpressions.PrivateMemberExpression(
-                            obj, propName));
+                    PropertyAccessHandler.translatePrivatePropertyLoad(
+                            insn, accValue, ctx));
         }
         if (opcode == ArkOpcodesCompat.STPRIVATEPROPERTY) {
-            int stringIdx = (int) operands.get(1).getValue();
-            String propName = ctx.resolveString(stringIdx);
-            int objReg = (int) operands.get(
-                    operands.size() - 1).getValue();
-            ArkTSExpression target =
-                    new ArkTSPropertyExpressions.PrivateMemberExpression(
-                            new ArkTSExpression.VariableExpression(
-                                    "v" + objReg),
-                            propName);
-            ArkTSExpression value = accValue != null
-                    ? accValue
-                    : new ArkTSExpression.VariableExpression(ACC);
-            return new StatementResult(
-                    new ArkTSStatement.ExpressionStatement(
-                            new ArkTSExpression.AssignExpression(
-                                    target, value)),
-                    value);
+            return PropertyAccessHandler.translatePrivatePropertyStore(
+                    insn, accValue, ctx);
         }
 
         // --- TestIn (prop in obj) ---
         if (opcode == ArkOpcodesCompat.TESTIN) {
-            int stringIdx = (int) operands.get(1).getValue();
-            String propName = ctx.resolveString(stringIdx);
-            ArkTSExpression obj = accValue != null
-                    ? accValue
-                    : new ArkTSExpression.VariableExpression(ACC);
             return new StatementResult(null,
-                    new ArkTSPropertyExpressions.InExpression(
-                            new ArkTSExpression.VariableExpression(propName),
-                            obj));
+                    PropertyAccessHandler.translateTestIn(
+                            insn, accValue, ctx));
         }
 
         // --- Object creation with excluded keys ---
@@ -976,6 +950,19 @@ class InstructionHandler {
         ArkTSExpression callee = accValue != null
                 ? accValue
                 : new ArkTSExpression.VariableExpression(ACC);
+
+        // Detect built-in class construction (Map, Set, Promise, etc.)
+        if (callee instanceof ArkTSExpression.VariableExpression) {
+            String name =
+                    ((ArkTSExpression.VariableExpression) callee).getName();
+            if (ArkTSAccessExpressions.BuiltInNewExpression.BUILT_IN_CLASSES
+                    .contains(name)) {
+                return new StatementResult(null,
+                        new ArkTSAccessExpressions.BuiltInNewExpression(
+                                name, args));
+            }
+        }
+
         return new StatementResult(null,
                 new ArkTSExpression.NewExpression(callee, args));
     }
@@ -983,10 +970,12 @@ class InstructionHandler {
     private static StatementResult handleDefineByName(int opcode,
             List<ArkOperand> operands, ArkTSExpression accValue,
             DecompilationContext ctx) {
+        int flags = (int) operands.get(0).getValue();
         int stringIdx = (int) operands.get(1).getValue();
         String fieldName = ctx.resolveString(stringIdx);
         int objReg = (int) operands.get(
                 operands.size() - 1).getValue();
+        boolean isStaticField = (flags & 0x01) != 0;
         ArkTSExpression target =
                 new ArkTSExpression.MemberExpression(
                         new ArkTSExpression.VariableExpression("v" + objReg),
@@ -995,6 +984,14 @@ class InstructionHandler {
         ArkTSExpression value = accValue != null
                 ? accValue
                 : new ArkTSExpression.VariableExpression(ACC);
+        if (isStaticField) {
+            ArkTSExpression staticTarget =
+                    new ArkTSPropertyExpressions.StaticFieldExpression(
+                            target, value);
+            return new StatementResult(
+                    new ArkTSStatement.ExpressionStatement(staticTarget),
+                    value);
+        }
         return new StatementResult(
                 new ArkTSStatement.ExpressionStatement(
                         new ArkTSExpression.AssignExpression(target, value)),
@@ -1090,31 +1087,15 @@ class InstructionHandler {
 
         // --- createprivateproperty: declare private field ---
         if (subOpcode == ArkOpcodesCompat.CRT_CREATEPRIVATEPROPERTY) {
-            int stringIdx = (int) operands.get(0).getValue();
-            String propName = ctx.resolveString(stringIdx);
-            return new StatementResult(null,
-                    new ArkTSExpression.VariableExpression(
-                            "/* private: #" + propName + " */"));
+            return PropertyAccessHandler
+                    .translateCreatePrivateProperty(operands, ctx);
         }
 
         // --- defineprivateproperty: set private property value ---
         if (subOpcode == ArkOpcodesCompat.CRT_DEFINEPRIVATEPROPERTY) {
-            int stringIdx = (int) operands.get(0).getValue();
-            String propName = ctx.resolveString(stringIdx);
-            int objReg = (int) operands.get(1).getValue();
-            ArkTSExpression obj =
-                    new ArkTSExpression.VariableExpression("v" + objReg);
-            ArkTSExpression target =
-                    new ArkTSPropertyExpressions.PrivateMemberExpression(
-                            obj, propName);
-            ArkTSExpression value = accValue != null
-                    ? accValue
-                    : new ArkTSExpression.VariableExpression(ACC);
-            return new StatementResult(
-                    new ArkTSStatement.ExpressionStatement(
-                            new ArkTSExpression.AssignExpression(
-                                    target, value)),
-                    value);
+            return PropertyAccessHandler
+                    .translateDefinePrivateProperty(
+                            operands, accValue, ctx);
         }
 
         // --- istrue/isfalse runtime versions ---

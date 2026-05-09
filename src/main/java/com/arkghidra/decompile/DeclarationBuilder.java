@@ -174,8 +174,7 @@ class DeclarationBuilder {
         }
 
         List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
-                MethodSignatureBuilder.buildParams(proto,
-                        code != null ? code.getNumArgs() : 0,
+                MethodSignatureBuilder.buildParamsWithDefaults(proto, code,
                         decompiler.getDebugParamNames(method, abcFile));
         String returnType = MethodSignatureBuilder.getReturnType(proto);
         ArkTSStatement body =
@@ -219,8 +218,7 @@ class DeclarationBuilder {
         }
 
         List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
-                MethodSignatureBuilder.buildParams(proto,
-                        code != null ? code.getNumArgs() : 0,
+                MethodSignatureBuilder.buildParamsWithDefaults(proto, code,
                         decompiler.getDebugParamNames(method, abcFile));
         ArkTSStatement body =
                 new ArkTSStatement.BlockStatement(bodyStmts);
