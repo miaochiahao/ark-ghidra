@@ -93,6 +93,13 @@ public class DecompilationContext {
     private final Map<Integer, String> registerNames = new HashMap<>();
 
     /**
+     * Maps register numbers to context-inferred variable names.
+     * Used as fallback when debug names are not available.
+     * Inferred from call results, property access, etc.
+     */
+    private final Map<Integer, String> inferredNames = new HashMap<>();
+
+    /**
      * Maps bytecode offsets to source line numbers from debug info.
      * Populated from {@link com.arkghidra.format.AbcLineNumberEntry} data.
      */
@@ -307,6 +314,16 @@ public class DecompilationContext {
     }
 
     /**
+     * Returns whether a register has a debug name.
+     *
+     * @param reg the register number
+     * @return true if a debug name is set
+     */
+    public boolean hasRegisterName(int reg) {
+        return registerNames.containsKey(reg);
+    }
+
+    /**
      * Returns the debug name for a register, or null if not available.
      *
      * @param reg the register number
@@ -318,18 +335,35 @@ public class DecompilationContext {
 
     /**
      * Returns the variable name for a register: debug name if available,
-     * otherwise "v" + reg.
+     * inferred name if available, otherwise "v" + reg.
      *
      * @param reg the register number
      * @return the variable name to use in output
      */
     public String resolveRegisterName(int reg) {
         String name = registerNames.get(reg);
-        return name != null ? name : "v" + reg;
+        if (name != null) {
+            return name;
+        }
+        String inferred = inferredNames.get(reg);
+        return inferred != null ? inferred : "v" + reg;
     }
 
     /**
-     * Reads a Modified UTF-8 encoded string from raw bytecode data.
+     * Sets an inferred name for a register. Only sets if no debug name
+     * exists for the register.
+     *
+     * @param reg the register number
+     * @param name the inferred variable name
+     */
+    public void setInferredName(int reg, String name) {
+        if (name != null && !name.isEmpty()
+                && !registerNames.containsKey(reg)) {
+            inferredNames.put(reg, name);
+        }
+    }
+
+    /**
      * Handles the null terminator and basic MUTF-8 multi-byte sequences.
      *
      * @param data the raw bytecode data

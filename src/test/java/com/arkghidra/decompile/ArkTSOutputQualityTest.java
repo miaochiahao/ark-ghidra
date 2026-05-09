@@ -1276,4 +1276,82 @@ class ArkTSOutputQualityTest {
             assertEquals(20L, line);
         }
     }
+
+    @Nested
+    @DisplayName("Variable name inference from context")
+    class VariableNameInferenceTests {
+        @Test
+        void testInferNameFromMethodCall_getPrefix() {
+            // foo.getName() → name
+            ArkTSExpression obj =
+                    new ArkTSExpression.VariableExpression("obj");
+            ArkTSExpression method =
+                    new ArkTSExpression.VariableExpression("getName");
+            ArkTSExpression callee =
+                    new ArkTSExpression.MemberExpression(obj, method, false);
+            ArkTSExpression call = new ArkTSExpression.CallExpression(
+                    callee, List.of());
+
+            DecompilationContext ctx = new DecompilationContext(
+                    null, null, null, null, null, List.of());
+            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+
+            // Simulate: STA v0 with call result
+            ArkTSStatement varDecl = new ArkTSStatement.VariableDeclaration(
+                    "let", "name", null, call);
+            String output = varDecl.toArkTS(0);
+            assertTrue(output.contains("let name = obj.getName()"),
+                    "Should render correctly: " + output);
+        }
+
+        @Test
+        void testInferNameFromPropertyAccess() {
+            // obj.length → length
+            ArkTSExpression obj =
+                    new ArkTSExpression.VariableExpression("obj");
+            ArkTSExpression prop =
+                    new ArkTSExpression.VariableExpression("length");
+            ArkTSExpression member =
+                    new ArkTSExpression.MemberExpression(obj, prop, false);
+
+            ArkTSStatement varDecl =
+                    new ArkTSStatement.VariableDeclaration(
+                            "let", "length", null, member);
+            String output = varDecl.toArkTS(0);
+            assertTrue(output.contains("let length = obj.length"),
+                    "Should render correctly: " + output);
+        }
+
+        @Test
+        void testInferNameFromNewExpression() {
+            // new Error() → error
+            ArkTSExpression callee =
+                    new ArkTSExpression.VariableExpression("Error");
+            ArkTSExpression newExpr =
+                    new ArkTSExpression.NewExpression(callee, List.of());
+
+            ArkTSStatement varDecl =
+                    new ArkTSStatement.VariableDeclaration(
+                            "let", "error", null, newExpr);
+            String output = varDecl.toArkTS(0);
+            assertTrue(output.contains("let error = new Error()"),
+                    "Should render correctly: " + output);
+        }
+
+        @Test
+        void testInferredNameFallbackInContext() {
+            DecompilationContext ctx = new DecompilationContext(
+                    null, null, null, null, null, List.of());
+            // No debug name, no inferred name → v0
+            assertEquals("v0", ctx.resolveRegisterName(0));
+
+            // Set inferred name → uses inferred
+            ctx.setInferredName(0, "length");
+            assertEquals("length", ctx.resolveRegisterName(0));
+
+            // Debug name overrides inferred
+            ctx.setRegisterName(0, "arrayLen");
+            assertEquals("arrayLen", ctx.resolveRegisterName(0));
+        }
+    }
 }

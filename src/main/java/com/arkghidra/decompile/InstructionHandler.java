@@ -570,6 +570,98 @@ class InstructionHandler {
 
     // --- Private instruction handlers ---
 
+    /**
+     * Infers a variable name from the expression being stored.
+     * Patterns: method call result (getName → name), property access
+     * (obj.length → length), constructor (new Foo → foo).
+     */
+    private static String inferNameFromExpression(ArkTSExpression expr,
+            int reg) {
+        // Method call: obj.method() → method, foo.getName() → name
+        if (expr instanceof ArkTSExpression.CallExpression) {
+            ArkTSExpression callee =
+                    ((ArkTSExpression.CallExpression) expr).getCallee();
+            String name = extractNameFromCallee(callee);
+            if (name != null) {
+                return sanitizeName(name);
+            }
+        }
+        // Property access: obj.prop → prop, obj.getProp() → prop
+        if (expr instanceof ArkTSExpression.MemberExpression) {
+            ArkTSExpression.MemberExpression member =
+                    (ArkTSExpression.MemberExpression) expr;
+            if (!member.isComputed()) {
+                ArkTSExpression prop = member.getProperty();
+                if (prop instanceof ArkTSExpression.VariableExpression) {
+                    return sanitizeName(
+                            ((ArkTSExpression.VariableExpression) prop)
+                                    .getName());
+                }
+            }
+        }
+        // New expression: new ClassName() → className
+        if (expr instanceof ArkTSExpression.NewExpression) {
+            ArkTSExpression callee =
+                    ((ArkTSExpression.NewExpression) expr).getCallee();
+            if (callee instanceof ArkTSExpression.VariableExpression) {
+                String className =
+                        ((ArkTSExpression.VariableExpression) callee)
+                                .getName();
+                return decapitalize(className);
+            }
+        }
+        return null;
+    }
+
+    private static String extractNameFromCallee(ArkTSExpression callee) {
+        if (callee instanceof ArkTSExpression.MemberExpression) {
+            ArkTSExpression.MemberExpression member =
+                    (ArkTSExpression.MemberExpression) callee;
+            if (!member.isComputed()) {
+                ArkTSExpression prop = member.getProperty();
+                if (prop instanceof ArkTSExpression.VariableExpression) {
+                    return ((ArkTSExpression.VariableExpression) prop)
+                            .getName();
+                }
+            }
+        }
+        if (callee instanceof ArkTSExpression.VariableExpression) {
+            return ((ArkTSExpression.VariableExpression) callee).getName();
+        }
+        return null;
+    }
+
+    private static String sanitizeName(String name) {
+        if (name == null || name.isEmpty()) {
+            return null;
+        }
+        // Remove get/set/is prefixes
+        if (name.length() > 3 && name.startsWith("get")
+                && Character.isUpperCase(name.charAt(3))) {
+            return decapitalize(name.substring(3));
+        }
+        if (name.length() > 3 && name.startsWith("set")
+                && Character.isUpperCase(name.charAt(3))) {
+            return decapitalize(name.substring(3));
+        }
+        if (name.length() > 2 && name.startsWith("is")
+                && Character.isUpperCase(name.charAt(2))) {
+            return decapitalize(name.substring(2));
+        }
+        return name;
+    }
+
+    private static String decapitalize(String name) {
+        if (name == null || name.isEmpty()) {
+            return name;
+        }
+        if (name.length() == 1) {
+            return name.toLowerCase();
+        }
+        return Character.toLowerCase(name.charAt(0))
+                + name.substring(1);
+    }
+
     private StatementResult handleCreateGeneratorObj(
             List<ArkOperand> operands, ArkTSExpression accValue,
             Set<String> declaredVars, DecompilationContext ctx) {
@@ -653,6 +745,15 @@ class InstructionHandler {
         if (accValue != null) {
             // Track expression stored to register for later inlining
             ctx.setRegisterExpression(reg, accValue);
+
+            // Infer variable name from expression context when no debug name
+            if (!ctx.hasRegisterName(reg)) {
+                String inferred = inferNameFromExpression(accValue, reg);
+                if (inferred != null) {
+                    ctx.setInferredName(reg, inferred);
+                    varName = inferred;
+                }
+            }
 
             // Check if storing a definefunc expression to a variable
             if (accValue instanceof DefineFuncExpression) {
