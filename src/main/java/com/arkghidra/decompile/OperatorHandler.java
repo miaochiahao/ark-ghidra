@@ -207,6 +207,120 @@ class OperatorHandler {
         }
     }
 
+    // --- String literal merging ---
+
+    /**
+     * Merges adjacent string literals in a binary "+" expression.
+     *
+     * <p>When both operands of a "+" expression are string literals,
+     * they are concatenated into a single string literal:
+     * {@code "hello" + " world"} -> {@code "hello world"}.
+     *
+     * @param left the left operand
+     * @param op the operator string
+     * @param right the right operand
+     * @return a merged string literal, or a BinaryExpression if merging
+     *         does not apply
+     */
+    static ArkTSExpression tryMergeStringLiterals(ArkTSExpression left,
+            String op, ArkTSExpression right) {
+        if (!"+".equals(op)) {
+            return new ArkTSExpression.BinaryExpression(left, op, right);
+        }
+        String leftStr = extractStringValue(left);
+        String rightStr = extractStringValue(right);
+        if (leftStr != null && rightStr != null) {
+            return new ArkTSExpression.LiteralExpression(
+                    leftStr + rightStr,
+                    ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        }
+        return new ArkTSExpression.BinaryExpression(left, op, right);
+    }
+
+    private static String extractStringValue(ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.LiteralExpression)) {
+            return null;
+        }
+        ArkTSExpression.LiteralExpression lit =
+                (ArkTSExpression.LiteralExpression) expr;
+        if (lit.getKind()
+                != ArkTSExpression.LiteralExpression.LiteralKind.STRING) {
+            return null;
+        }
+        String val = lit.getValue();
+        // Strip surrounding quotes for merging
+        if (val.length() >= 2
+                && val.charAt(0) == '"'
+                && val.charAt(val.length() - 1) == '"') {
+            return val.substring(1, val.length() - 1);
+        }
+        return val;
+    }
+
+    // --- Boolean comparison simplification ---
+
+    /**
+     * Simplifies comparisons against boolean literals.
+     *
+     * <p>Patterns recognized:
+     * <ul>
+     *   <li>{@code x === true} -> {@code x}</li>
+     *   <li>{@code x === false} -> {@code !x}</li>
+     *   <li>{@code x !== true} -> {@code !x}</li>
+     *   <li>{@code x !== false} -> {@code x}</li>
+     *   <li>{@code true === x} -> {@code x}</li>
+     *   <li>{@code false === x} -> {@code !x}</li>
+     * </ul>
+     *
+     * @param expr the expression to simplify
+     * @return the simplified expression, or the original if no
+     *         simplification applies
+     */
+    static ArkTSExpression simplifyBooleanComparison(ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.BinaryExpression)) {
+            return expr;
+        }
+        ArkTSExpression.BinaryExpression bin =
+                (ArkTSExpression.BinaryExpression) expr;
+        String op = bin.getOperator();
+        if (!"===".equals(op) && !"!==".equals(op)) {
+            return expr;
+        }
+        Boolean leftBool = extractBooleanValue(bin.getLeft());
+        Boolean rightBool = extractBooleanValue(bin.getRight());
+        if (leftBool == null && rightBool == null) {
+            return expr;
+        }
+        boolean negate = "!==".equals(op);
+        if (rightBool != null) {
+            ArkTSExpression operand = bin.getLeft();
+            if (rightBool == negate) {
+                return new ArkTSExpression.UnaryExpression(
+                        "!", operand, true);
+            }
+            return operand;
+        }
+        ArkTSExpression operand = bin.getRight();
+        if (leftBool == negate) {
+            return new ArkTSExpression.UnaryExpression(
+                    "!", operand, true);
+        }
+        return operand;
+    }
+
+    private static Boolean extractBooleanValue(ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.LiteralExpression)) {
+            return null;
+        }
+        ArkTSExpression.LiteralExpression lit =
+                (ArkTSExpression.LiteralExpression) expr;
+        if (lit.getKind()
+                != ArkTSExpression.LiteralExpression.LiteralKind.BOOLEAN) {
+            return null;
+        }
+        return Boolean.parseBoolean(lit.getValue());
+    }
+
     // --- Type inference helper ---
 
     static String getAccType(ArkTSExpression expr, TypeInference typeInf) {
@@ -256,7 +370,11 @@ class OperatorHandler {
             }
         }
         if (expr instanceof ArkTSAccessExpressions.ArrayLiteralExpression) {
-            return "Array<unknown>";
+            ArkTSAccessExpressions.ArrayLiteralExpression arr =
+                    (ArkTSAccessExpressions.ArrayLiteralExpression) expr;
+            String elementType =
+                    TypeInference.inferArrayElementType(arr.getElements());
+            return TypeInference.formatArrayType(elementType);
         }
         if (expr instanceof ArkTSAccessExpressions.ObjectLiteralExpression) {
             return "Object";

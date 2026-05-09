@@ -433,6 +433,59 @@ public class TypeInference {
     }
 
     /**
+     * Infers the element type of an array from its initial element
+     * expressions.
+     *
+     * <p>Returns null for empty arrays or mixed types.
+     *
+     * @param elements the array element expressions
+     * @return the inferred element type name, or null
+     */
+    public static String inferArrayElementType(
+            List<ArkTSExpression> elements) {
+        if (elements == null || elements.isEmpty()) {
+            return null;
+        }
+        String commonType = null;
+        for (ArkTSExpression elem : elements) {
+            String elemType = inferExpressionType(elem);
+            if (elemType == null) {
+                return null;
+            }
+            if (commonType == null) {
+                commonType = elemType;
+            } else if (!commonType.equals(elemType)) {
+                return null;
+            }
+        }
+        return commonType;
+    }
+
+    private static String inferExpressionType(ArkTSExpression expr) {
+        if (expr instanceof ArkTSExpression.LiteralExpression) {
+            ArkTSExpression.LiteralExpression lit =
+                    (ArkTSExpression.LiteralExpression) expr;
+            switch (lit.getKind()) {
+                case NUMBER:
+                case NAN:
+                case INFINITY:
+                    return "number";
+                case STRING:
+                    return "string";
+                case BOOLEAN:
+                    return "boolean";
+                case NULL:
+                    return "null";
+                case UNDEFINED:
+                    return "undefined";
+                default:
+                    return null;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Checks whether a type string represents an array type.
      *
      * @param type the type string

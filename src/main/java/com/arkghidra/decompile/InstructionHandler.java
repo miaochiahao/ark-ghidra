@@ -392,6 +392,19 @@ class InstructionHandler {
                     new ArkTSExpression.VariableExpression("v" + reg);
             ArkTSExpression result =
                     OperatorHandler.tryFoldConstants(left, op, right);
+            // Try merging string literals for "+" (only if folding didn't
+            // already produce a literal)
+            if ("+".equals(op)
+                    && result instanceof ArkTSExpression.BinaryExpression) {
+                ArkTSExpression merged =
+                        OperatorHandler.tryMergeStringLiterals(
+                                left, op, right);
+                if (merged != result) {
+                    result = merged;
+                }
+            }
+            // Simplify boolean comparisons: x === true -> x
+            result = OperatorHandler.simplifyBooleanComparison(result);
             // Attempt string concatenation -> template literal for +
             if ("+".equals(op) && accValue != null) {
                 ArkTSExpression tmpl =

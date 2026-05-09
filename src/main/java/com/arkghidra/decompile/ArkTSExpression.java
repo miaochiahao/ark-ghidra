@@ -189,6 +189,14 @@ public abstract class ArkTSExpression {
             String rightStr = right.toArkTS();
             boolean leftParens = needsParensLeft(left, prec);
             boolean rightParens = needsParensRight(right, prec);
+            // Avoid redundant parentheses: if the rendered string already
+            // starts with '(' and ends with ')', don't wrap again.
+            if (leftParens && isAlreadyParenthesized(leftStr)) {
+                leftParens = false;
+            }
+            if (rightParens && isAlreadyParenthesized(rightStr)) {
+                rightParens = false;
+            }
             StringBuilder sb = new StringBuilder();
             if (leftParens) {
                 sb.append("(").append(leftStr).append(")");
@@ -202,6 +210,28 @@ public abstract class ArkTSExpression {
                 sb.append(rightStr);
             }
             return sb.toString();
+        }
+
+        private static boolean isAlreadyParenthesized(String s) {
+            if (s.length() < 2 || s.charAt(0) != '('
+                    || s.charAt(s.length() - 1) != ')') {
+                return false;
+            }
+            // Verify the closing ')' matches the opening '(' by checking
+            // that no unmatched ')' appears before the final character.
+            int depth = 0;
+            for (int i = 0; i < s.length(); i++) {
+                char c = s.charAt(i);
+                if (c == '(') {
+                    depth++;
+                } else if (c == ')') {
+                    depth--;
+                    if (depth == 0 && i < s.length() - 1) {
+                        return false;
+                    }
+                }
+            }
+            return depth == 0;
         }
 
         private static boolean needsParensLeft(ArkTSExpression expr,
@@ -287,12 +317,32 @@ public abstract class ArkTSExpression {
                 }
                 boolean needParens = operand instanceof BinaryExpression;
                 String inner = operand.toArkTS();
-                if (needParens) {
+                if (needParens && !isAlreadyParenthesized(inner)) {
                     return operator + "(" + inner + ")";
                 }
                 return operator + inner;
             }
             return operand.toArkTS() + operator;
+        }
+
+        private static boolean isAlreadyParenthesized(String s) {
+            if (s.length() < 2 || s.charAt(0) != '('
+                    || s.charAt(s.length() - 1) != ')') {
+                return false;
+            }
+            int depth = 0;
+            for (int i = 0; i < s.length(); i++) {
+                char c = s.charAt(i);
+                if (c == '(') {
+                    depth++;
+                } else if (c == ')') {
+                    depth--;
+                    if (depth == 0 && i < s.length() - 1) {
+                        return false;
+                    }
+                }
+            }
+            return depth == 0;
         }
     }
 

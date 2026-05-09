@@ -12761,4 +12761,116 @@ class ArkTSDecompilerTest {
         assertTrue(result.contains("break outer"),
                 "Expected labeled break, got: " + result);
     }
+
+    // --- Type inference tests (#89) ---
+
+    @Test
+    void testInferArrayElementType_allNumbers() {
+        List<ArkTSExpression> elements = List.of(
+                new ArkTSExpression.LiteralExpression("1",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER),
+                new ArkTSExpression.LiteralExpression("2",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER),
+                new ArkTSExpression.LiteralExpression("3",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER));
+        assertEquals("number",
+                TypeInference.inferArrayElementType(elements));
+    }
+
+    @Test
+    void testInferArrayElementType_allStrings() {
+        List<ArkTSExpression> elements = List.of(
+                new ArkTSExpression.LiteralExpression("\"a\"",
+                        ArkTSExpression.LiteralExpression.LiteralKind.STRING),
+                new ArkTSExpression.LiteralExpression("\"b\"",
+                        ArkTSExpression.LiteralExpression.LiteralKind.STRING));
+        assertEquals("string",
+                TypeInference.inferArrayElementType(elements));
+    }
+
+    @Test
+    void testInferArrayElementType_mixedReturnsNull() {
+        List<ArkTSExpression> elements = List.of(
+                new ArkTSExpression.LiteralExpression("1",
+                        ArkTSExpression.LiteralExpression.LiteralKind.NUMBER),
+                new ArkTSExpression.LiteralExpression("\"hello\"",
+                        ArkTSExpression.LiteralExpression.LiteralKind.STRING));
+        assertNull(TypeInference.inferArrayElementType(elements));
+    }
+
+    @Test
+    void testInferArrayElementType_emptyReturnsNull() {
+        assertNull(TypeInference.inferArrayElementType(
+                Collections.emptyList()));
+    }
+
+    @Test
+    void testFormatArrayType_withInferredNumberElement() {
+        assertEquals("number[]", TypeInference.formatArrayType("number"));
+        assertEquals("string[]", TypeInference.formatArrayType("string"));
+        assertEquals("Array<unknown>",
+                TypeInference.formatArrayType(null));
+    }
+
+    // --- Output quality tests (#91) ---
+
+    @Test
+    void testStringLiteralMerge_twoStrings() {
+        ArkTSExpression left = new ArkTSExpression.LiteralExpression(
+                "\"hello\"",
+                ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        ArkTSExpression right = new ArkTSExpression.LiteralExpression(
+                "\" world\"",
+                ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        ArkTSExpression result =
+                OperatorHandler.tryMergeStringLiterals(left, "+", right);
+        assertEquals("\"hello world\"", result.toArkTS());
+    }
+
+    @Test
+    void testStringLiteralMerge_nonStringOperands() {
+        ArkTSExpression left = new ArkTSExpression.LiteralExpression("1",
+                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSExpression right = new ArkTSExpression.LiteralExpression(
+                "\"hello\"",
+                ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        ArkTSExpression result =
+                OperatorHandler.tryMergeStringLiterals(left, "+", right);
+        assertTrue(result instanceof ArkTSExpression.BinaryExpression,
+                "Should not merge number + string");
+    }
+
+    @Test
+    void testStringLiteralMerge_nonPlusOperator() {
+        ArkTSExpression left = new ArkTSExpression.LiteralExpression(
+                "\"hello\"",
+                ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        ArkTSExpression right = new ArkTSExpression.LiteralExpression(
+                "\" world\"",
+                ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        ArkTSExpression result =
+                OperatorHandler.tryMergeStringLiterals(left, "-", right);
+        assertTrue(result instanceof ArkTSExpression.BinaryExpression,
+                "Should not merge with non-plus operator");
+    }
+
+    // --- Error recovery tests (#90) ---
+
+    @Test
+    void testEmptyMethodBody_returnsEmptyStatements() {
+        ArkTSDecompiler decomp = new ArkTSDecompiler();
+        AbcMethod method = new AbcMethod(0, 0, "emptyMethod",
+                0, 0, 0);
+        List<ArkTSStatement> result =
+                decomp.decompileMethodBody(method, null, null);
+        assertTrue(result.isEmpty(),
+                "Null code should produce empty statements");
+    }
+
+    @Test
+    void testFallbackOpcode_includesMnemonic() {
+        ArkTSStatement.BreakStatement breakStmt =
+                new ArkTSStatement.BreakStatement();
+        assertEquals("break;", breakStmt.toArkTS(0));
+    }
 }
