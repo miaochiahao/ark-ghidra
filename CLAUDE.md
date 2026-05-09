@@ -128,8 +128,10 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 41. ~~CallRuntime opcodes — sendable classes, lazy modules, private fields (#103)~~ DONE
 42. ~~Control flow — multi-catch try/catch, catch-without-binding (#104)~~ DONE
 43. ~~Switch fall-through grouping, labeled break/continue (#105)~~ DONE
-44. feat: test with real HarmonyOS .abc files from Ark compiler #25
-45. Performance: large file handling and incremental decompilation
+44. ~~CallRuntime output quality — sendable class names, NO_OP (#107)~~ DONE
+45. ~~Const vs let differentiation for single-assignment variables (#108)~~ DONE
+46. feat: test with real HarmonyOS .abc files from Ark compiler #25
+47. Performance: large file handling and incremental decompilation
 
 ### Rules for the loop
 
@@ -210,7 +212,11 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Try/catch decompilation:** Use `AbcCode.getTryBlocks()` → `AbcTryBlock.getCatchBlocks()` → `AbcCatchBlock` to reconstruct exception handling. Map try start/end PC ranges to CFG block addresses. Catch-all blocks (typeIdx=0) map to `finally`.
 - **Jump offset calculation:** `jmp +0` at offset 0 with instruction length 2 gives target = 0+2+0 = 2 (not 0). For infinite loop (jmp to self), need negative offset = -instruction_length (e.g., `0xFE` for 2-byte jmp).
 - **Parameter naming convention:** Use `param_0`, `param_1` etc. (not `p0`/`p1`) for better readability. Falls back to untyped when no proto info available.
-- **Test count tracking:** 1390 tests across 22 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
+- **Test count tracking:** 1393 tests across 22 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
+- **AST node immutability:** `BlockStatement.body`, `SwitchCase.body`, `VariableDeclaration` fields use `Collections.unmodifiableList` or `final`. Don't use `List.set()` to modify — use mutable fields (`setKind()`) or rebuild nodes. `VariableDeclaration.kind` is now mutable via `setKind()` for const/let optimization.
+- **Post-processing pattern:** `applyConstOptimization()` in ArkTSDecompiler traverses all AST statement types recursively. When adding new AST node types, add them to both `collectVarUsage` and `rewriteLetToConst`. Must handle `IfStatement.getThenBlock()`/`getElseBlock()` (returns `ArkTSStatement`, not List) — use `extractBodyList()` helper.
+- **Opcode values for tests:** STA=0x61, LDA=0x60, LDAI=0x62, RETURN=0x64, RETURNUNDEFINED=0x65. Always verify against `ArkOpcodes` constants — NOT 0x06 for STA.
+- **Three decompiler entry points:** `decompileInstructions()` (raw bytecode), `decompileMethod()` (method-level), `decompileFile()` (full ABC). All three must call `applyConstOptimization()` — changes to post-processing must be added to all three.
 - **ABC debug info parsing:** Tags 0x07 (SOURCE_FILE), 0x03 (DEBUG_INFO) in class/method tag values. Debug info contains line_start, num_params, param name string offsets, constant pool. LNP uses DWARF v3 state machine with special opcodes.
 - **Realistic test fixture design:** Use 16384-byte buffer with 200-byte spacing between areas (strings at 200, classes at 800, code at 2000, protos at 6000, etc.). Encode methods with ULEB128 for vregs/args/codeSize/triesSize.
 - **Debug parameter name resolution:** `AbcFile.getDebugInfoForMethod()` → `AbcDebugInfo.getParameterNames()` → pass to `MethodSignatureBuilder.buildParams(proto, numArgs, debugNames)`. Falls back to `param_N` for unnamed.
