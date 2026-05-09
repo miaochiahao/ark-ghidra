@@ -166,6 +166,14 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 79. ~~Trailing return-if ternary — if-return + trailing return → ternary (#172)~~ DONE
 80. ~~Enable removeUnusedVariables — dead variable declaration removal (#173)~~ DONE
 81. ~~Object literal shorthand — { name: name } → { name } (#174)~~ DONE
+
+### Remaining open issues (require external resources)
+- #25 — Test with real HarmonyOS .abc files from Ark compiler (needs real .abc files)
+- #72 — UI jump/navigation capabilities (needs Ghidra runtime)
+- #73 — module.json5 highlighting and jump association (needs Ghidra runtime)
+
+### Post-processing pipeline (complete)
+`applyConstOptimization → inlineSingleUseVariables → mergeNestedIfConditions → detectSwitchExpressions → simplifyReturnIfTernary → convertIfElseChainToSwitch → removeUnusedVariables`
 71. ~~Source line number comments from debug info (#128)~~ DONE
 66. ~~Variable name inference from usage context (#133)~~ DONE
 64. ~~Comprehensive opcode decompilation tests (#134)~~ DONE
