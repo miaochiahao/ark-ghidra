@@ -492,6 +492,9 @@ class InstructionHandler {
             int level = (int) operands.get(0).getValue();
             int slot = (int) operands.get(1).getValue();
             if (accValue != null) {
+                String accType = OperatorHandler.getAccType(
+                        accValue, typeInf);
+                typeInf.setLexicalVarType(level, slot, accType);
                 return new StatementResult(
                         new ArkTSStatement.ExpressionStatement(
                                 new ArkTSExpression.AssignExpression(

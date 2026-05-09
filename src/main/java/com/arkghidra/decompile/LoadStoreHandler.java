@@ -879,7 +879,7 @@ class LoadStoreHandler {
                 // Fall through to placeholder
             }
         }
-        return "ext_mod_" + varIdx;
+        return "import_" + varIdx;
     }
 
     /**
@@ -919,7 +919,7 @@ class LoadStoreHandler {
                 // Fall through to placeholder
             }
         }
-        return "local_mod_" + varIdx;
+        return "export_" + varIdx;
     }
 
     /**
@@ -960,7 +960,7 @@ class LoadStoreHandler {
                 // Fall through to placeholder
             }
         }
-        return "module_ns_" + varIdx;
+        return "namespace_" + varIdx;
     }
 
     /**

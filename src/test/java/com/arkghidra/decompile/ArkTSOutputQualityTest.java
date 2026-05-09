@@ -1401,7 +1401,7 @@ class ArkTSOutputQualityTest {
             String result = decompiler.decompileInstructions(insns);
             assertFalse(result.isEmpty(),
                     "Should produce output without crash: " + result);
-            assertTrue(result.contains("ext_mod_3"),
+            assertTrue(result.contains("import_3"),
                     "Should reference ext_mod_3: " + result);
         }
 
@@ -1438,7 +1438,7 @@ class ArkTSOutputQualityTest {
             String result = decompiler.decompileInstructions(insns);
             assertFalse(result.isEmpty(),
                     "Should produce output without crash: " + result);
-            assertTrue(result.contains("module_ns_1"),
+            assertTrue(result.contains("namespace_1"),
                     "Should contain module_ns_1: " + result);
         }
 
@@ -1455,7 +1455,7 @@ class ArkTSOutputQualityTest {
             String result = decompiler.decompileInstructions(insns);
             assertFalse(result.isEmpty(),
                     "Should produce output without crash: " + result);
-            assertTrue(result.contains("mod_2"),
+            assertTrue(result.contains("export_2"),
                     "Should contain mod_2: " + result);
         }
 
@@ -1553,9 +1553,9 @@ class ArkTSOutputQualityTest {
             String result = decompiler.decompileInstructions(insns);
             assertFalse(result.isEmpty(),
                     "Should produce output without crash: " + result);
-            assertTrue(result.contains("ext_mod_0"),
+            assertTrue(result.contains("import_0"),
                     "Should contain ext_mod_0: " + result);
-            assertTrue(result.contains("mod_1"),
+            assertTrue(result.contains("export_1"),
                     "Should contain mod_1: " + result);
         }
 
@@ -1573,7 +1573,7 @@ class ArkTSOutputQualityTest {
             String result = decompiler.decompileInstructions(insns);
             assertFalse(result.isEmpty(),
                     "Should produce output without crash: " + result);
-            assertTrue(result.contains("module_ns_0"),
+            assertTrue(result.contains("namespace_0"),
                     "Should contain module_ns_0: " + result);
             assertTrue(result.contains("str_2"),
                     "Should contain str_2 property: " + result);

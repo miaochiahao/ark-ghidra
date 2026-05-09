@@ -8509,7 +8509,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("ext_mod_0"),
+        assertTrue(result.contains("import_0"),
                 "Should contain external module variable: " + result);
     }
 
@@ -8523,7 +8523,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("local_mod_0"),
+        assertTrue(result.contains("export_0"),
                 "Should contain local module variable: " + result);
     }
 
@@ -8552,7 +8552,7 @@ class ArkTSDecompilerTest {
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("module_ns_0"),
+        assertTrue(result.contains("namespace_0"),
                 "Should contain module namespace variable: " + result);
     }
 
@@ -10416,8 +10416,8 @@ class ArkTSDecompilerTest {
         assertEquals("callruntime.ldsendableexternalmodulevar",
                 insns.get(0).getMnemonic());
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("ext_mod_1"),
-                "Should contain module variable via import table: " + result);
+        assertTrue(result.contains("sendable_ext_mod_1"),
+                "Should contain module variable: " + result);
     }
 
     @Test

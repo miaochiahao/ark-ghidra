@@ -20,6 +20,7 @@ public class TypeInference {
 
     private final Map<String, String> registerTypes;
     private final Map<String, String> methodReturnTypes;
+    private final Map<String, String> lexicalVarTypes;
 
     /**
      * Constructs a new type inference engine with empty state.
@@ -27,6 +28,7 @@ public class TypeInference {
     public TypeInference() {
         this.registerTypes = new HashMap<>(16);
         this.methodReturnTypes = new HashMap<>(8);
+        this.lexicalVarTypes = new HashMap<>(8);
     }
 
     /**
@@ -35,6 +37,7 @@ public class TypeInference {
     public void reset() {
         registerTypes.clear();
         methodReturnTypes.clear();
+        lexicalVarTypes.clear();
     }
 
     /**
@@ -117,7 +120,38 @@ public class TypeInference {
         if (isPropertyLoadOpcode(opcode)) {
             return inferPropertyLoadType(insn, ctx);
         }
+        if (opcode == ArkOpcodesCompat.LDSYMBOL) {
+            return "symbol";
+        }
+        if (opcode == ArkOpcodesCompat.LDBIGINT) {
+            return "bigint";
+        }
+        if (opcode == ArkOpcodesCompat.LDNEWTARGET) {
+            return "Function";
+        }
+        if (opcode == ArkOpcodesCompat.LDLEXVAR) {
+            if (operands.size() >= 2) {
+                String key = "lex_" + operands.get(0).getValue()
+                        + "_" + operands.get(1).getValue();
+                return lexicalVarTypes.get(key);
+            }
+        }
         return null;
+    }
+
+    /**
+     * Records the type of a lexical variable after a store.
+     *
+     * @param level the lexical scope level
+     * @param slot the slot index within the scope
+     * @param typeName the inferred type name
+     */
+    public void setLexicalVarType(int level, int slot,
+            String typeName) {
+        if (typeName != null) {
+            lexicalVarTypes.put(
+                    "lex_" + level + "_" + slot, typeName);
+        }
     }
 
     /**
@@ -338,12 +372,46 @@ public class TypeInference {
         if (ctx == null) {
             return null;
         }
+        int opcode = insn.getOpcode();
         List<ArkOperand> operands = insn.getOperands();
+
+        // Index-based access: try to extract element type from tracked
+        // array type on the accumulator.
+        if (opcode == ArkOpcodesCompat.LDOBJBYINDEX) {
+            return inferIndexAccessType(ctx);
+        }
+
+        // Value-based loads have dynamic keys — cannot infer type
+        if (opcode == ArkOpcodesCompat.LDOBJBYVALUE
+                || opcode == ArkOpcodesCompat.LDTHISBYVALUE) {
+            return null;
+        }
+
+        // Name-based loads: resolve property name from string table
         if (operands.size() >= 2) {
             int stringIdx = (int) operands.get(1).getValue();
             String propName = ctx.resolveString(stringIdx);
             if (propName != null && !propName.startsWith("str_")) {
                 return PROPERTY_TYPE_MAP.get(propName);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Infers the element type when accessing an array by index via the
+     * accumulator. Returns the element type if the accumulator holds a
+     * tracked array variable, otherwise null.
+     */
+    private String inferIndexAccessType(DecompilationContext ctx) {
+        ArkTSExpression accExpr = ctx.currentAccValue;
+        if (accExpr instanceof ArkTSExpression.VariableExpression) {
+            String varName =
+                    ((ArkTSExpression.VariableExpression) accExpr)
+                            .getName();
+            String varType = registerTypes.get(varName);
+            if (isArrayType(varType)) {
+                return extractArrayElementType(varType);
             }
         }
         return null;
