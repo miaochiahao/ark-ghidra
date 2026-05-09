@@ -967,9 +967,249 @@ public class ArkTSDecompiler {
                     ((ArkTSAccessExpressions.BuiltInNewExpression) expr)
                             .getClassName(), newArgs);
         }
+        // --- ArkTSPropertyExpressions types ---
+
+        // PrivateMemberExpression: replace in object
+        if (expr instanceof ArkTSPropertyExpressions.PrivateMemberExpression) {
+            ArkTSExpression obj = replaceVariable(
+                    ((ArkTSPropertyExpressions.PrivateMemberExpression) expr)
+                            .getObject(), varName, replacement);
+            if (obj == null) {
+                return null;
+            }
+            return new ArkTSPropertyExpressions.PrivateMemberExpression(
+                    obj,
+                    ((ArkTSPropertyExpressions.PrivateMemberExpression) expr)
+                            .getPropertyName());
+        }
+        // InExpression: replace in property and object
+        if (expr instanceof ArkTSPropertyExpressions.InExpression) {
+            ArkTSPropertyExpressions.InExpression ie =
+                    (ArkTSPropertyExpressions.InExpression) expr;
+            ArkTSExpression prop =
+                    replaceVariable(ie.getProperty(), varName, replacement);
+            ArkTSExpression obj =
+                    replaceVariable(ie.getObject(), varName, replacement);
+            if (prop == null || obj == null) {
+                return null;
+            }
+            return new ArkTSPropertyExpressions.InExpression(prop, obj);
+        }
+        // InstanceofExpression: replace in expression and targetType
+        if (expr instanceof ArkTSPropertyExpressions.InstanceofExpression) {
+            ArkTSPropertyExpressions.InstanceofExpression ie =
+                    (ArkTSPropertyExpressions.InstanceofExpression) expr;
+            ArkTSExpression e =
+                    replaceVariable(ie.getExpression(), varName, replacement);
+            ArkTSExpression t =
+                    replaceVariable(ie.getTargetType(), varName, replacement);
+            if (e == null || t == null) {
+                return null;
+            }
+            return new ArkTSPropertyExpressions.InstanceofExpression(e, t);
+        }
+        // DeleteExpression: replace in target
+        if (expr instanceof ArkTSPropertyExpressions.DeleteExpression) {
+            ArkTSExpression t = replaceVariable(
+                    ((ArkTSPropertyExpressions.DeleteExpression) expr)
+                            .getTarget(), varName, replacement);
+            if (t == null) {
+                return null;
+            }
+            return new ArkTSPropertyExpressions.DeleteExpression(t);
+        }
+        // CopyDataPropertiesExpression: replace in target and source
+        if (expr instanceof ArkTSPropertyExpressions
+                .CopyDataPropertiesExpression) {
+            ArkTSPropertyExpressions.CopyDataPropertiesExpression cd =
+                    (ArkTSPropertyExpressions.CopyDataPropertiesExpression)
+                            expr;
+            ArkTSExpression t =
+                    replaceVariable(cd.getTarget(), varName, replacement);
+            ArkTSExpression s =
+                    replaceVariable(cd.getSource(), varName, replacement);
+            if (t == null || s == null) {
+                return null;
+            }
+            return new ArkTSPropertyExpressions
+                    .CopyDataPropertiesExpression(t, s);
+        }
+        // GeneratorStateExpression: replace in value
+        if (expr instanceof ArkTSPropertyExpressions
+                .GeneratorStateExpression) {
+            ArkTSExpression v = replaceVariable(
+                    ((ArkTSPropertyExpressions.GeneratorStateExpression) expr)
+                            .getValue(), varName, replacement);
+            if (v == null) {
+                return null;
+            }
+            return new ArkTSPropertyExpressions.GeneratorStateExpression(v);
+        }
+        // NullishCoalescingExpression: replace in left and right
+        if (expr instanceof ArkTSPropertyExpressions
+                .NullishCoalescingExpression) {
+            ArkTSPropertyExpressions.NullishCoalescingExpression nc =
+                    (ArkTSPropertyExpressions.NullishCoalescingExpression)
+                            expr;
+            ArkTSExpression l =
+                    replaceVariable(nc.getLeft(), varName, replacement);
+            ArkTSExpression r =
+                    replaceVariable(nc.getRight(), varName, replacement);
+            if (l == null || r == null) {
+                return null;
+            }
+            return new ArkTSPropertyExpressions
+                    .NullishCoalescingExpression(l, r);
+        }
+        // DefinePropertyExpression: replace in object, property, value
+        if (expr instanceof ArkTSPropertyExpressions
+                .DefinePropertyExpression) {
+            ArkTSPropertyExpressions.DefinePropertyExpression dp =
+                    (ArkTSPropertyExpressions.DefinePropertyExpression) expr;
+            ArkTSExpression o =
+                    replaceVariable(dp.getObject(), varName, replacement);
+            ArkTSExpression p =
+                    replaceVariable(dp.getProperty(), varName, replacement);
+            ArkTSExpression v =
+                    replaceVariable(dp.getValue(), varName, replacement);
+            if (o == null || p == null || v == null) {
+                return null;
+            }
+            return new ArkTSPropertyExpressions.DefinePropertyExpression(
+                    o, p, v);
+        }
+        // TypePredicateExpression: replace in expression
+        if (expr instanceof ArkTSPropertyExpressions
+                .TypePredicateExpression) {
+            ArkTSExpression e = replaceVariable(
+                    ((ArkTSPropertyExpressions.TypePredicateExpression) expr)
+                            .getExpression(), varName, replacement);
+            if (e == null) {
+                return null;
+            }
+            return new ArkTSPropertyExpressions.TypePredicateExpression(
+                    e,
+                    ((ArkTSPropertyExpressions.TypePredicateExpression) expr)
+                            .getTypeName());
+        }
+        // ConstAssertionExpression: replace in expression
+        if (expr instanceof ArkTSPropertyExpressions
+                .ConstAssertionExpression) {
+            ArkTSExpression e = replaceVariable(
+                    ((ArkTSPropertyExpressions.ConstAssertionExpression) expr)
+                            .getExpression(), varName, replacement);
+            if (e == null) {
+                return null;
+            }
+            return new ArkTSPropertyExpressions.ConstAssertionExpression(e);
+        }
+        // SatisfiesExpression: replace in expression
+        if (expr instanceof ArkTSPropertyExpressions.SatisfiesExpression) {
+            ArkTSExpression e = replaceVariable(
+                    ((ArkTSPropertyExpressions.SatisfiesExpression) expr)
+                            .getExpression(), varName, replacement);
+            if (e == null) {
+                return null;
+            }
+            return new ArkTSPropertyExpressions.SatisfiesExpression(
+                    e,
+                    ((ArkTSPropertyExpressions.SatisfiesExpression) expr)
+                            .getTypeName());
+        }
+        // StaticFieldExpression: replace in target and value
+        if (expr instanceof ArkTSPropertyExpressions.StaticFieldExpression) {
+            ArkTSPropertyExpressions.StaticFieldExpression sf =
+                    (ArkTSPropertyExpressions.StaticFieldExpression) expr;
+            ArkTSExpression t =
+                    replaceVariable(sf.getTarget(), varName, replacement);
+            ArkTSExpression v =
+                    replaceVariable(sf.getValue(), varName, replacement);
+            if (t == null || v == null) {
+                return null;
+            }
+            return new ArkTSPropertyExpressions.StaticFieldExpression(t, v);
+        }
+        // ArrayDestructuringExpression: replace in source and defaults
+        if (expr instanceof ArkTSPropertyExpressions
+                .ArrayDestructuringExpression) {
+            ArkTSPropertyExpressions.ArrayDestructuringExpression ad =
+                    (ArkTSPropertyExpressions.ArrayDestructuringExpression)
+                            expr;
+            ArkTSExpression src = ad.getSource() != null
+                    ? replaceVariable(ad.getSource(), varName, replacement)
+                    : null;
+            if (ad.getSource() != null && src == null) {
+                return null;
+            }
+            List<ArkTSPropertyExpressions.ArrayDestructuringExpression
+                    .ArrayBinding> newBindings = new ArrayList<>();
+            for (ArkTSPropertyExpressions.ArrayDestructuringExpression
+                    .ArrayBinding b : ad.getBindings()) {
+                if (b.getDefaultValue() != null) {
+                    ArkTSExpression dv = replaceVariable(
+                            b.getDefaultValue(), varName, replacement);
+                    if (dv == null) {
+                        return null;
+                    }
+                    newBindings.add(
+                            new ArkTSPropertyExpressions
+                                    .ArrayDestructuringExpression
+                                    .ArrayBinding(b.getName(), dv));
+                } else {
+                    newBindings.add(
+                            new ArkTSPropertyExpressions
+                                    .ArrayDestructuringExpression
+                                    .ArrayBinding(b.getName()));
+                }
+            }
+            return new ArkTSPropertyExpressions.ArrayDestructuringExpression(
+                    newBindings, ad.getRestBinding(), src,
+                    ad.getRestBinding() != null);
+        }
+        // ObjectDestructuringExpression: replace in source and defaults
+        if (expr instanceof ArkTSPropertyExpressions
+                .ObjectDestructuringExpression) {
+            ArkTSPropertyExpressions.ObjectDestructuringExpression od =
+                    (ArkTSPropertyExpressions.ObjectDestructuringExpression)
+                            expr;
+            ArkTSExpression src = od.getSource() != null
+                    ? replaceVariable(od.getSource(), varName, replacement)
+                    : null;
+            if (od.getSource() != null && src == null) {
+                return null;
+            }
+            List<ArkTSPropertyExpressions.ObjectDestructuringExpression
+                    .DestructuringBinding> newBindings = new ArrayList<>();
+            for (ArkTSPropertyExpressions.ObjectDestructuringExpression
+                    .DestructuringBinding b : od.getBindings()) {
+                if (b.getDefaultValue() != null) {
+                    ArkTSExpression dv = replaceVariable(
+                            b.getDefaultValue(), varName, replacement);
+                    if (dv == null) {
+                        return null;
+                    }
+                    newBindings.add(
+                            new ArkTSPropertyExpressions
+                                    .ObjectDestructuringExpression
+                                    .DestructuringBinding(
+                                    b.getProperty(), b.getAlias(), dv));
+                } else {
+                    newBindings.add(
+                            new ArkTSPropertyExpressions
+                                    .ObjectDestructuringExpression
+                                    .DestructuringBinding(
+                                    b.getProperty(), b.getAlias()));
+                }
+            }
+            return new ArkTSPropertyExpressions
+                    .ObjectDestructuringExpression(newBindings, src);
+        }
         // Leaf expressions that never contain variables — return as-is
         if (expr instanceof ArkTSExpression.LiteralExpression
-                || expr instanceof ArkTSExpression.ThisExpression) {
+                || expr instanceof ArkTSExpression.ThisExpression
+                || expr instanceof ArkTSPropertyExpressions.SuperExpression
+                || expr instanceof ArkTSPropertyExpressions
+                        .TemplateObjectExpression) {
             return expr;
         }
         // For unknown expression types, don't attempt replacement
