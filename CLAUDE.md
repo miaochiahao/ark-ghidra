@@ -135,8 +135,9 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 48. ~~Parameter type annotations from proto shorty descriptors (#111)~~ DONE
 49. ~~Template literal improvements — $-escaping, multi-segment (#112)~~ DONE
 50. ~~Abstract class detection, constructor parameter properties (#113)~~ DONE
-51. feat: test with real HarmonyOS .abc files from Ark compiler #25
-52. Performance: large file handling and incremental decompilation
+51. ~~Loose boolean comparison simplification, nullish coalescing (#114)~~ DONE
+52. feat: test with real HarmonyOS .abc files from Ark compiler #25
+53. Performance: large file handling and incremental decompilation
 
 ### Rules for the loop
 
@@ -217,7 +218,7 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Try/catch decompilation:** Use `AbcCode.getTryBlocks()` → `AbcTryBlock.getCatchBlocks()` → `AbcCatchBlock` to reconstruct exception handling. Map try start/end PC ranges to CFG block addresses. Catch-all blocks (typeIdx=0) map to `finally`.
 - **Jump offset calculation:** `jmp +0` at offset 0 with instruction length 2 gives target = 0+2+0 = 2 (not 0). For infinite loop (jmp to self), need negative offset = -instruction_length (e.g., `0xFE` for 2-byte jmp).
 - **Parameter naming convention:** Use `param_0`, `param_1` etc. (not `p0`/`p1`) for better readability. Falls back to untyped when no proto info available.
-- **Test count tracking:** 1440 tests across 22 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
+- **Test count tracking:** 1452 tests across 22 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
 - **AST node immutability:** `BlockStatement.body`, `SwitchCase.body`, `VariableDeclaration` fields use `Collections.unmodifiableList` or `final`. Don't use `List.set()` to modify — use mutable fields (`setKind()`) or rebuild nodes. `VariableDeclaration.kind` is now mutable via `setKind()` for const/let optimization.
 - **Post-processing pattern:** `applyConstOptimization()` in ArkTSDecompiler traverses all AST statement types recursively. When adding new AST node types, add them to both `collectVarUsage` and `rewriteLetToConst`. Must handle `IfStatement.getThenBlock()`/`getElseBlock()` (returns `ArkTSStatement`, not List) — use `extractBodyList()` helper.
 - **Opcode values for tests:** STA=0x61, LDA=0x60, LDAI=0x62, RETURN=0x64, RETURNUNDEFINED=0x65. Always verify against `ArkOpcodes` constants — NOT 0x06 for STA.
@@ -227,6 +228,8 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Template literal escaping:** `escapeTemplateQuasi()` only escapes `$` when followed by `{` (producing `\${`). Standalone `$` (e.g., `$5`, `$100`) renders unescaped. Backticks always escaped.
 - **Abstract class rendering:** `ClassDeclaration` has `isAbstract` flag. When true, renders `abstract class Foo`. Wired from `AbcAccessFlags.ACC_ABSTRACT` in DeclarationBuilder. Placed before `sendable` and `class` keywords.
 - **Constructor parameter properties:** `DeclarationBuilder.buildConstructorDeclaration()` detects when ALL constructor params are stored to `this.propName`. When detected, renders as shorthand: `constructor(public name: string)`. Access modifiers resolved from matching field's `ACC_PUBLIC`/`ACC_PRIVATE`/`ACC_PROTECTED` flags.
+- **Boolean comparison simplification:** `simplifyBooleanComparison()` handles both strict (`===`/`!==`) and loose (`==`/`!=`) equality with boolean literals. `x == true` → `x`, `x == false` → `!x`, `x != true` → `!x`, `x != false` → `x`. Commutative (both orderings handled).
+- **Nullish coalescing detection:** `tryDetectNullishCoalescing()` in ObjectCreationHandler handles equality (`=== null`, `=== undefined`) and inequality (`!== null`, `!== undefined`) ternary patterns. `x !== null ? x : y` → `x ?? y`, `x === null ? y : x` → `x ?? y`.
 - **ABC debug info parsing:** Tags 0x07 (SOURCE_FILE), 0x03 (DEBUG_INFO) in class/method tag values. Debug info contains line_start, num_params, param name string offsets, constant pool. LNP uses DWARF v3 state machine with special opcodes.
 - **Realistic test fixture design:** Use 16384-byte buffer with 200-byte spacing between areas (strings at 200, classes at 800, code at 2000, protos at 6000, etc.). Encode methods with ULEB128 for vregs/args/codeSize/triesSize.
 - **Debug parameter name resolution:** `AbcFile.getDebugInfoForMethod()` → `AbcDebugInfo.getParameterNames()` → pass to `MethodSignatureBuilder.buildParams(proto, numArgs, debugNames)`. Falls back to `param_N` for unnamed.
