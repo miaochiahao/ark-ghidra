@@ -158,6 +158,7 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 71. ~~Expression simplification — unary negation folding, redundant ternary, comparison normalization (#160)~~ DONE
 72. ~~Enum member value extraction from field INT_VALUE tags (#161)~~ DONE
 73. ~~Nested if-merge — collapse sequential if-only into && conditions (#162)~~ DONE
+74. ~~Switch expression detection — convert switch-in-assignment to switch expression (#163)~~ DONE
 71. ~~Source line number comments from debug info (#128)~~ DONE
 66. ~~Variable name inference from usage context (#133)~~ DONE
 64. ~~Comprehensive opcode decompilation tests (#134)~~ DONE
@@ -247,7 +248,7 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Try/catch decompilation:** Use `AbcCode.getTryBlocks()` → `AbcTryBlock.getCatchBlocks()` → `AbcCatchBlock` to reconstruct exception handling. Map try start/end PC ranges to CFG block addresses. Catch-all blocks (typeIdx=0) map to `finally`.
 - **Jump offset calculation:** `jmp +0` at offset 0 with instruction length 2 gives target = 0+2+0 = 2 (not 0). For infinite loop (jmp to self), need negative offset = -instruction_length (e.g., `0xFE` for 2-byte jmp).
 - **Parameter naming convention:** Use `param_0`, `param_1` etc. (not `p0`/`p1`) for better readability. Falls back to untyped when no proto info available.
-- **Test count tracking:** 1756 tests across 34 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
+- **Test count tracking:** 1762 tests across 35 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
 - **AST node immutability:** `BlockStatement.body`, `SwitchCase.body`, `VariableDeclaration` fields use `Collections.unmodifiableList` or `final`. Don't use `List.set()` to modify — use mutable fields (`setKind()`) or rebuild nodes. `VariableDeclaration.kind` is now mutable via `setKind()` for const/let optimization.
 - **Post-processing pattern:** `applyConstOptimization()` in ArkTSDecompiler traverses all AST statement types recursively. When adding new AST node types, add them to both `collectVarUsage` and `rewriteLetToConst`. Must handle `IfStatement.getThenBlock()`/`getElseBlock()` (returns `ArkTSStatement`, not List) — use `extractBodyList()` helper.
 - **Opcode values for tests:** STA=0x61, LDA=0x60, LDAI=0x62, RETURN=0x64, RETURNUNDEFINED=0x65. Always verify against `ArkOpcodes` constants — NOT 0x06 for STA.
@@ -366,6 +367,9 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Expression simplification pipeline:** `InstructionHandler` applies simplifications in order: constant folding → string merging → boolean comparison → comparison normalization → typeof/null → identity → template literal. Unary: double negation → unary negation. Ternary: redundant ternary in BranchProcessor.
 - **ConditionalExpression API:** Located in `ArkTSAccessExpressions.ConditionalExpression` (not `ArkTSExpression`). Methods: `getTest()`, `getConsequent()`, `getAlternate()`. Not `getCondition()`, `getThenExpression()`, `getElseExpression()`.
 - **Comparison normalization:** `OperatorHandler.normalizeComparison()` swaps constant-LHS comparisons to variable-LHS: `0 < x` → `x > 0`, `null === x` → `x === null`. Equality operators (`===`, `!==`, `==`, `!=`) keep same operator; ordering operators flip. Does NOT swap `instanceof` or `in` (non-commutative).
+- **Post-processing pipeline order:** All three entry points apply: const optimization → single-use inlining → nested if merge → switch expression detection. Order matters — const optimization before inlining, merging before switch detection.
+- **Switch expression detection:** `detectSwitchExpressions()` looks for `VariableDeclaration(null init)` immediately before `SwitchStatement` where every case body is `targetVar = value; break;`. Converts to `let result = switch (x) { case 1: "one" }`. `SwitchExpression` AST in `ArkTSAccessExpressions`.
+- **Nested if merging:** `mergeNestedIfConditions()` detects `if (a) { if (b) { ... } }` and merges to `if (a && b) { ... }`. Handles arbitrary depth. Only merges when inner if has no else block and then-body is a single statement.
 - **Map.of() size limit:** Java's `Map.of()` supports max 10 key-value pairs (20 args). For larger maps, use `Map.ofEntries(Map.entry(...), ...)` instead. Applies to `BUILTIN_CLASS_VAR_NAMES` (15 entries) and `STATIC_CALL_RESULT_NAMES` (12 entries) in InstructionHandler.
 - **Variable name inference maps:** `BUILTIN_CLASS_VAR_NAMES` maps class names to variable names (Error→error, Map→map, Array→arr). `STATIC_CALL_RESULT_NAMES` maps static calls to result names (JSON.parse→parsed, Object.keys→keys). Both in InstructionHandler.
 - **Object key resolution:** `parseLiteralToString()` in LoadStoreHandler accepts `DecompilationContext` to resolve string table offsets. Key tags 0x02/0x03 contain int32 string table index, resolved via `ctx.resolveString()`.
