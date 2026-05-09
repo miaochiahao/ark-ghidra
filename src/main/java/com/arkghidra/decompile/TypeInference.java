@@ -183,34 +183,64 @@ public class TypeInference {
      */
     static boolean isTypeObviousFromLiteral(String type,
             ArkTSExpression expr) {
-        if (!(expr instanceof ArkTSExpression.LiteralExpression)) {
-            return false;
+        if (expr instanceof ArkTSExpression.LiteralExpression) {
+            ArkTSExpression.LiteralExpression.LiteralKind kind =
+                    ((ArkTSExpression.LiteralExpression) expr).getKind();
+            switch (type) {
+                case "number":
+                    return kind == ArkTSExpression.LiteralExpression
+                            .LiteralKind.NUMBER
+                            || kind == ArkTSExpression.LiteralExpression
+                                    .LiteralKind.NAN
+                            || kind == ArkTSExpression.LiteralExpression
+                                    .LiteralKind.INFINITY;
+                case "boolean":
+                    return kind == ArkTSExpression.LiteralExpression
+                            .LiteralKind.BOOLEAN;
+                case "string":
+                    return kind == ArkTSExpression.LiteralExpression
+                            .LiteralKind.STRING;
+                case "null":
+                    return kind == ArkTSExpression.LiteralExpression
+                            .LiteralKind.NULL;
+                case "undefined":
+                    return kind == ArkTSExpression.LiteralExpression
+                            .LiteralKind.UNDEFINED;
+                default:
+                    return false;
+            }
         }
-        ArkTSExpression.LiteralExpression.LiteralKind kind =
-                ((ArkTSExpression.LiteralExpression) expr).getKind();
-        switch (type) {
-            case "number":
-                return kind == ArkTSExpression.LiteralExpression
-                        .LiteralKind.NUMBER
-                        || kind == ArkTSExpression.LiteralExpression
-                                .LiteralKind.NAN
-                        || kind == ArkTSExpression.LiteralExpression
-                                .LiteralKind.INFINITY;
-            case "boolean":
-                return kind == ArkTSExpression.LiteralExpression
-                        .LiteralKind.BOOLEAN;
-            case "string":
-                return kind == ArkTSExpression.LiteralExpression
-                        .LiteralKind.STRING;
-            case "null":
-                return kind == ArkTSExpression.LiteralExpression
-                        .LiteralKind.NULL;
-            case "undefined":
-                return kind == ArkTSExpression.LiteralExpression
-                        .LiteralKind.UNDEFINED;
-            default:
-                return false;
+        // Empty array literal → type is obvious
+        if ("Array".equals(type)
+                && expr instanceof ArkTSAccessExpressions.ArrayLiteralExpression) {
+            ArkTSAccessExpressions.ArrayLiteralExpression arr =
+                    (ArkTSAccessExpressions.ArrayLiteralExpression) expr;
+            return arr.getElements().isEmpty();
         }
+        // Empty object literal → type is obvious
+        if ("Object".equals(type)
+                && expr instanceof ArkTSAccessExpressions.ObjectLiteralExpression) {
+            ArkTSAccessExpressions.ObjectLiteralExpression obj =
+                    (ArkTSAccessExpressions.ObjectLiteralExpression) expr;
+            return obj.getProperties().isEmpty();
+        }
+        // New expression → type is obvious from constructor name
+        if (expr instanceof ArkTSExpression.NewExpression) {
+            ArkTSExpression.NewExpression newExpr =
+                    (ArkTSExpression.NewExpression) expr;
+            ArkTSExpression callee = newExpr.getCallee();
+            if (callee instanceof ArkTSExpression.VariableExpression) {
+                String name =
+                        ((ArkTSExpression.VariableExpression) callee)
+                                .getName();
+                // Only obvious for well-known constructors
+                return "Error".equals(name) || "Array".equals(name)
+                        || "Map".equals(name) || "Set".equals(name)
+                        || "Promise".equals(name)
+                        || name.startsWith("Error");
+            }
+        }
+        return false;
     }
 
     /**

@@ -141,64 +141,39 @@ class TryCatchProcessor {
         ArkTSStatement tryBody =
                 new ArkTSStatement.BlockStatement(tryBodyStmts);
 
-        // Build catch body from handler blocks
         ArkTSStatement catchBody = null;
+        ArkTSStatement finallyBody = null;
         String catchParam = "e";
         String catchParamType = null;
+
+        // Build catch body from typed handler blocks
         if (!tcr.handlers.isEmpty()) {
             ControlFlowReconstructor.CatchHandler firstHandler =
                     tcr.handlers.get(0);
-            if (firstHandler.typeName != null) {
-                catchParamType = firstHandler.typeName;
-            }
-            List<ArkTSStatement> catchBodyStmts = new ArrayList<>();
-            BasicBlock handlerBlock =
-                    cfg.getBlockAt(firstHandler.handlerPc);
-            if (handlerBlock != null
-                    && !visited.contains(handlerBlock)) {
-                visited.add(handlerBlock);
-                catchBodyStmts.addAll(
-                        reconstructor.processBlockInstructions(
-                                handlerBlock, ctx));
-            }
-            // Process additional handler blocks for multi-catch
-            for (int i = 1; i < tcr.handlers.size(); i++) {
-                ControlFlowReconstructor.CatchHandler handler =
-                        tcr.handlers.get(i);
-                BasicBlock extraBlock =
-                        cfg.getBlockAt(handler.handlerPc);
-                if (extraBlock != null
-                        && !visited.contains(extraBlock)) {
-                    visited.add(extraBlock);
-                    catchBodyStmts.addAll(
-                            reconstructor.processBlockInstructions(
-                                    extraBlock, ctx));
-                }
-            }
-            if (!catchBodyStmts.isEmpty()) {
-                catchBody = new ArkTSStatement.BlockStatement(
-                        catchBodyStmts);
-            }
+            catchParamType = filterTypeName(
+                    firstHandler.typeName);
+            catchBody = buildHandlerBody(tcr.handlers, ctx, cfg,
+                    visited);
         }
 
         // Build finally body from catch-all handler if present
-        ArkTSStatement finallyBody = null;
+        // and distinct from typed handlers (try-catch-finally)
         ControlFlowReconstructor.CatchHandler finallyHandler =
                 tcr.getFinallyHandler();
         if (finallyHandler != null && !tcr.isFinallyOnly()) {
-            List<ArkTSStatement> finallyBodyStmts = new ArrayList<>();
             BasicBlock finallyBlock =
                     cfg.getBlockAt(finallyHandler.handlerPc);
             if (finallyBlock != null
                     && !visited.contains(finallyBlock)) {
                 visited.add(finallyBlock);
-                finallyBodyStmts.addAll(
+                List<ArkTSStatement> finallyStmts =
                         reconstructor.processBlockInstructions(
-                                finallyBlock, ctx));
-            }
-            if (!finallyBodyStmts.isEmpty()) {
-                finallyBody = new ArkTSStatement.BlockStatement(
-                        finallyBodyStmts);
+                                finallyBlock, ctx);
+                if (!finallyStmts.isEmpty()) {
+                    finallyBody =
+                            new ArkTSStatement.BlockStatement(
+                                    finallyStmts);
+                }
             }
         }
 
@@ -208,5 +183,53 @@ class TryCatchProcessor {
                         catchBody, finallyBody);
         stmts.add(tryCatch);
         return stmts;
+    }
+
+    // --- Helpers ---
+
+    /**
+     * Builds a block statement from handler blocks. Processes the first
+     * handler block and any additional handler blocks for multi-catch.
+     */
+    private ArkTSStatement buildHandlerBody(
+            List<ControlFlowReconstructor.CatchHandler> handlers,
+            DecompilationContext ctx, ControlFlowGraph cfg,
+            Set<BasicBlock> visited) {
+        List<ArkTSStatement> bodyStmts = new ArrayList<>();
+        for (ControlFlowReconstructor.CatchHandler handler : handlers) {
+            BasicBlock handlerBlock =
+                    cfg.getBlockAt(handler.handlerPc);
+            if (handlerBlock != null
+                    && !visited.contains(handlerBlock)) {
+                visited.add(handlerBlock);
+                bodyStmts.addAll(
+                        reconstructor.processBlockInstructions(
+                                handlerBlock, ctx));
+            }
+        }
+        if (!bodyStmts.isEmpty()) {
+            return new ArkTSStatement.BlockStatement(bodyStmts);
+        }
+        return null;
+    }
+
+    /**
+     * Filters type names for catch parameter annotations.
+     * Returns null for generic types like "Object" that provide
+     * no useful information, or for null/empty type names.
+     *
+     * @param typeName the resolved type name (may be null)
+     * @return the type name if informative, null otherwise
+     */
+    private static String filterTypeName(String typeName) {
+        if (typeName == null || typeName.isEmpty()) {
+            return null;
+        }
+        // "Object" is the default catch-all type and provides
+        // no useful information in a catch clause
+        if ("Object".equals(typeName)) {
+            return null;
+        }
+        return typeName;
     }
 }
