@@ -1314,9 +1314,17 @@ class InstructionHandler {
 
         // --- definesendableclass: define a sendable class ---
         if (subOpcode == ArkOpcodesCompat.CRT_DEFINESENDABLECLASS) {
-            return new StatementResult(null,
-                    new ArkTSExpression.VariableExpression(
-                            "/* definesendableclass */"));
+            if (operands.size() >= 1) {
+                int methodIdx = (int) operands.get(0).getValue();
+                String className = resolveClassLikeName(methodIdx, ctx);
+                return new StatementResult(null,
+                        new ArkTSExpression.VariableExpression(
+                                "/* sendable class: "
+                                        + (className != null
+                                                ? className : "method_" + methodIdx)
+                                        + " */"));
+            }
+            return StatementResult.NO_OP;
         }
 
         // --- ldsendableclass: load sendable class ---
@@ -1328,9 +1336,7 @@ class InstructionHandler {
 
         // --- notifyconcurrentresult: concurrent result notification ---
         if (subOpcode == ArkOpcodesCompat.CRT_NOTIFYCONCURRENTRESULT) {
-            return new StatementResult(null,
-                    new ArkTSExpression.VariableExpression(
-                            "/* notifyconcurrentresult */"));
+            return StatementResult.NO_OP;
         }
 
         // --- Generic fallback for unknown callruntime sub-opcodes ---
@@ -1341,6 +1347,26 @@ class InstructionHandler {
     }
 
     // --- Delegates for external callers ---
+
+    private static String resolveClassLikeName(int methodIdx,
+            DecompilationContext ctx) {
+        if (ctx == null || ctx.abcFile == null) {
+            return null;
+        }
+        try {
+            if (methodIdx >= 0
+                    && methodIdx < ctx.abcFile.getMethods().size()) {
+                AbcMethod m = ctx.abcFile.getMethods().get(methodIdx);
+                String name = m.getName();
+                if (name != null && !name.isEmpty()) {
+                    return DeclarationBuilder.sanitizeClassName(name);
+                }
+            }
+        } catch (Exception e) {
+            // Fall through
+        }
+        return null;
+    }
 
     ArkTSExpression tryReconstructTemplateLiteral(
             ArkTSExpression accValue) {
