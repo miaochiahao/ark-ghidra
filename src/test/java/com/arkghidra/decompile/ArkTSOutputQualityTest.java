@@ -363,14 +363,16 @@ class ArkTSOutputQualityTest {
         @Test
         void testSingleAssignment_usesConst() {
             // ldai 42 -> sta v2 -> lda v2 -> return
+            // Single-use variable inlining removes v2 and returns 42 directly
             byte[] code = concat(bytes(0x62), le32(42),
                     bytes(0x61, 0x02),
                     bytes(0x60, 0x02),
                     bytes(0x64));
             List<ArkInstruction> insns = dis(code);
             String result = decompiler.decompileInstructions(insns);
-            assertTrue(result.contains("const v2 = 42"),
-                    "Single-assignment should use const: " + result);
+            assertTrue(result.contains("return 42"),
+                    "Single-use variable should be inlined into return: "
+                            + result);
         }
 
         @Test

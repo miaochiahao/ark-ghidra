@@ -809,8 +809,7 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileMethod(method, code, null);
         assertNotNull(result);
         assertTrue(result.contains("function getAnswer()"));
-        assertTrue(result.contains("const v0 = 42"));
-        assertTrue(result.contains("return v0"));
+        assertTrue(result.contains("return 42"));
     }
 
     // --- Edge cases ---
@@ -1072,7 +1071,7 @@ class ArkTSDecompilerTest {
         assertTrue(result.contains("const v0 = 2"));
         assertTrue(result.contains("const v1 = 3"));
         assertTrue(result.contains("v0 + v1"));
-        assertTrue(result.contains("return v2"));
+        assertTrue(result.contains("return v0 + v1"));
     }
 
     // --- String escape test ---
@@ -6419,10 +6418,8 @@ class ArkTSDecompilerTest {
         assertTrue(result.contains("const v1 = 20;"),
                 "Second declaration should have no type annotation: "
                         + result);
-        assertTrue(result.contains("v0 + v1"),
-                "Computed result should contain addition: " + result);
-        assertTrue(result.contains("return v2;"),
-                "Return should have semicolon: " + result);
+        assertTrue(result.contains("return v0 + v1"),
+                "Return should inline single-use variable: " + result);
     }
 
     @Test
@@ -8334,6 +8331,27 @@ class ArkTSDecompilerTest {
     }
 
     @Test
+    void testNewobjrange_resolvesClassNameFromRegister() {
+        // When newobjrange follows defineclasswithbuffer + lda, the callee
+        // should use the resolved class name instead of the register name.
+        // defineclasswithbuffer format: IMM8_IMM16_IMM16_V8 (7 bytes)
+        byte[] code = concat(
+                bytes(0x35, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00),
+                        // defineclasswithbuffer 0, 0, 0, v0
+                bytes(0x60, 0x00),                  // lda v0
+                bytes(0x08, 0x02, 0x00, 0x01),      // newobjrange 2, 0, v1
+                bytes(0x61, 0x02),                   // sta v2
+                bytes(0x64)                          // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("new class_0"),
+                "Should use resolved class name, not register: " + result);
+        assertFalse(result.contains("new v0"),
+                "Should not use raw register name as callee: " + result);
+    }
+
+    @Test
     void testWideDefinefunc() {
         // 0xFD 0x74 = wide definefunc, WIDE_IMM16_IMM16_IMM8 format (7 bytes)
         // wide definefunc 0x0100, 0x0001, 0
@@ -9411,8 +9429,8 @@ class ArkTSDecompilerTest {
                 List.of(ldaV0, awaitInsn, staV1, ldaV1, ret));
         assertTrue(result.contains("await"),
                 "Should contain 'await': " + result);
-        assertTrue(result.contains("const v1"),
-                "Should declare v1: " + result);
+        assertTrue(result.contains("return await"),
+                "Should inline single-use v1 into return: " + result);
     }
 
     @Test
@@ -14165,7 +14183,7 @@ class ArkTSDecompilerTest {
 
     @Test
     void testInferReturnType_variableReturn() {
-        // ldai 42; sta v0; lda v0; return -> return v0 (variable) -> no inference
+        // ldai 42; sta v0; lda v0; return -> return 42 (inlined) -> number
         byte[] codeBytes = concat(
             bytes(0x62), le32(42),
             bytes(0x61, 0x00),
@@ -14178,10 +14196,11 @@ class ArkTSDecompilerTest {
                 AbcAccessFlags.ACC_PUBLIC, 0, 0);
         String result = decompiler.decompileMethod(method, code, null);
         assertTrue(result.contains("function compute()"),
-                "Expected no return type annotation for variable return, got: "
-                        + result);
-        assertFalse(result.contains("): number"),
-                "Should not annotate return type for variable return, got: "
+                "Expected function declaration, got: " + result);
+        // After single-use inlining, the return is inlined to `return 42`
+        // so the return type can now be inferred as `number`
+        assertTrue(result.contains("): number"),
+                "Should annotate return type as number after inlining, got: "
                         + result);
     }
 

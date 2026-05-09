@@ -1106,9 +1106,7 @@ class InstructionHandler {
             args.add(new ArkTSExpression.VariableExpression(
                     ctx.resolveRegisterName(firstReg + a)));
         }
-        ArkTSExpression callee = accValue != null
-                ? accValue
-                : new ArkTSExpression.VariableExpression(ACC);
+        ArkTSExpression callee = resolveCallee(accValue, ctx);
 
         // Detect built-in class construction (Map, Set, Promise, etc.)
         if (callee instanceof ArkTSExpression.VariableExpression) {
@@ -1124,6 +1122,43 @@ class InstructionHandler {
 
         return new StatementResult(null,
                 new ArkTSExpression.NewExpression(callee, args));
+    }
+
+    /**
+     * Resolves the callee expression for newobjrange by checking if the
+     * accumulator holds a register reference with a stored expression
+     * (e.g., a class name resolved from defineclasswithbuffer).
+     *
+     * <p>When the accumulator value is a VariableExpression with a
+     * register-style name (v0, v1, etc.), this method checks if a more
+     * descriptive expression was stored to that register. This allows
+     * {@code new MyClass(args)} instead of {@code new v0(args)}.
+     */
+    private static ArkTSExpression resolveCallee(
+            ArkTSExpression accValue, DecompilationContext ctx) {
+        if (accValue == null) {
+            return new ArkTSExpression.VariableExpression(ACC);
+        }
+        if (!(accValue instanceof ArkTSExpression.VariableExpression)) {
+            return accValue;
+        }
+        String name = ((ArkTSExpression.VariableExpression) accValue)
+                .getName();
+        // Check if this is a register-style name (v0, v1, etc.)
+        // that might have a stored expression from defineclasswithbuffer
+        if (name.startsWith("v") && name.length() > 1) {
+            try {
+                int reg = Integer.parseInt(name.substring(1));
+                ArkTSExpression stored =
+                        ctx.getRegisterExpression(reg);
+                if (stored != null) {
+                    return stored;
+                }
+            } catch (NumberFormatException e) {
+                // Not a register-style name, use as-is
+            }
+        }
+        return accValue;
     }
 
     private static StatementResult handleDefineByName(int opcode,

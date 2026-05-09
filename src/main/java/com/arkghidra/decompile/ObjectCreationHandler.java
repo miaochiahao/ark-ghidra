@@ -53,6 +53,10 @@ class ObjectCreationHandler {
         ArkTSExpression classExpr =
                 new ArkTSExpression.VariableExpression(className);
 
+        // Track the class expression in the register so that later
+        // newobjrange can resolve the class name from the register.
+        ctx.setRegisterExpression(lastReg, classExpr);
+
         String varName = ctx.resolveRegisterName(lastReg);
         ArkTSStatement stmt = new ArkTSStatement.VariableDeclaration(
                 "let", varName, className, classExpr);

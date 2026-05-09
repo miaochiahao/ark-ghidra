@@ -125,7 +125,8 @@ public class ArkTSDecompiler {
 
         List<ArkTSStatement> bodyStmts;
         try {
-            bodyStmts = applyConstOptimization(generateStatements(ctx));
+            bodyStmts = inlineSingleUseVariables(
+                    applyConstOptimization(generateStatements(ctx)));
         } catch (Exception e) {
             List<ArkTSStatement> fallbackStmts = new ArrayList<>();
             fallbackStmts.add(new ArkTSStatement.ExpressionStatement(
@@ -175,6 +176,7 @@ public class ArkTSDecompiler {
         try {
             stmts = generateStatements(ctx);
             stmts = applyConstOptimization(stmts);
+            stmts = inlineSingleUseVariables(stmts);
         } catch (Exception e) {
             return buildFallbackInstructionListing(instructions,
                     "statement generation failed: " + e);
@@ -404,7 +406,7 @@ public class ArkTSDecompiler {
 
         try {
             List<ArkTSStatement> stmts = generateStatements(ctx);
-            return applyConstOptimization(stmts);
+            return inlineSingleUseVariables(applyConstOptimization(stmts));
         } catch (Exception e) {
             ctx.warnings.add("Statement generation failed: "
                     + e.getMessage());
@@ -454,6 +456,558 @@ public class ArkTSDecompiler {
         Set<BasicBlock> visited = new HashSet<>();
         return cfReconstructor.reconstructControlFlow(
                 cfg, blocks, ctx, visited);
+    }
+
+    // --- Single-use variable inlining ---
+
+    /**
+     * Inlines single-use variables at the top level of a statement list.
+     *
+     * <p>Scans from the end of the list backwards looking for the pattern:
+     * {@code let/const var = expr; return var;}. When found, replaces both
+     * statements with {@code return expr;}. Only applies when the variable
+     * is used exactly once (in the return statement immediately following
+     * the declaration).
+     *
+     * @param stmts the statement list (may be modified)
+     * @return the statement list with single-use variables inlined
+     */
+    static List<ArkTSStatement> inlineSingleUseVariables(
+            List<ArkTSStatement> stmts) {
+        if (stmts == null || stmts.size() < 2) {
+            return stmts;
+        }
+        // Scan backwards to find var decl + return var patterns
+        List<ArkTSStatement> result = new ArrayList<>(stmts);
+        for (int i = result.size() - 2; i >= 0; i--) {
+            ArkTSStatement current = result.get(i);
+            ArkTSStatement next = result.get(i + 1);
+            if (!(current instanceof ArkTSStatement.VariableDeclaration)) {
+                continue;
+            }
+            if (!(next instanceof ArkTSStatement.ReturnStatement)) {
+                continue;
+            }
+            ArkTSStatement.VariableDeclaration varDecl =
+                    (ArkTSStatement.VariableDeclaration) current;
+            ArkTSStatement.ReturnStatement retStmt =
+                    (ArkTSStatement.ReturnStatement) next;
+            ArkTSExpression retValue = retStmt.getValue();
+            if (retValue == null) {
+                continue;
+            }
+            // Check that the return value is exactly this variable
+            if (!(retValue instanceof ArkTSExpression.VariableExpression)) {
+                continue;
+            }
+            String varName = varDecl.getName();
+            String retVarName =
+                    ((ArkTSExpression.VariableExpression) retValue).getName();
+            if (!varName.equals(retVarName)) {
+                continue;
+            }
+            // Must have an initializer to inline
+            ArkTSExpression init = varDecl.getInitializer();
+            if (init == null) {
+                continue;
+            }
+            // Check that the variable is not used in its own initializer
+            // (e.g. recursive expressions) and count total usage in init
+            if (countVariableUsage(init, varName) > 0) {
+                continue;
+            }
+            // Check that no earlier statement references this variable
+            boolean usedElsewhere = false;
+            for (int j = 0; j < i; j++) {
+                if (stmtReferencesVariable(result.get(j), varName)) {
+                    usedElsewhere = true;
+                    break;
+                }
+            }
+            if (usedElsewhere) {
+                continue;
+            }
+            // Inline: remove the declaration and replace the return
+            ArkTSStatement newReturn =
+                    new ArkTSStatement.ReturnStatement(init);
+            result.set(i + 1, newReturn);
+            result.remove(i);
+        }
+        return result;
+    }
+
+    /**
+     * Checks whether a statement contains a reference to the given variable.
+     * Only checks top-level expression statements and variable declarations.
+     *
+     * @param stmt the statement to check
+     * @param varName the variable name to look for
+     * @return true if the variable is referenced
+     */
+    private static boolean stmtReferencesVariable(ArkTSStatement stmt,
+            String varName) {
+        if (stmt instanceof ArkTSStatement.ExpressionStatement) {
+            return countVariableUsage(
+                    ((ArkTSStatement.ExpressionStatement) stmt)
+                            .getExpression(), varName) > 0;
+        }
+        if (stmt instanceof ArkTSStatement.VariableDeclaration) {
+            ArkTSStatement.VariableDeclaration vd =
+                    (ArkTSStatement.VariableDeclaration) stmt;
+            if (varName.equals(vd.getName())) {
+                return true;
+            }
+            if (vd.getInitializer() != null
+                    && countVariableUsage(vd.getInitializer(), varName) > 0) {
+                return true;
+            }
+        }
+        if (stmt instanceof ArkTSStatement.ReturnStatement) {
+            ArkTSExpression val =
+                    ((ArkTSStatement.ReturnStatement) stmt).getValue();
+            if (val != null && countVariableUsage(val, varName) > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Recursively counts how many times a variable name appears as a
+     * VariableExpression in an expression tree. Returns
+     * {@link Integer#MAX_VALUE} for function expressions to prevent
+     * inlining across function boundaries.
+     *
+     * @param expr the expression to search
+     * @param varName the variable name to count
+     * @return the number of occurrences, or MAX_VALUE for closures
+     */
+    static int countVariableUsage(ArkTSExpression expr, String varName) {
+        if (expr == null) {
+            return 0;
+        }
+        // Variable reference
+        if (expr instanceof ArkTSExpression.VariableExpression) {
+            return varName.equals(
+                    ((ArkTSExpression.VariableExpression) expr).getName())
+                    ? 1 : 0;
+        }
+        // Function boundaries — don't cross
+        if (expr instanceof ArkTSAccessExpressions.ArrowFunctionExpression
+                || expr instanceof ArkTSAccessExpressions
+                        .AnonymousFunctionExpression
+                || expr instanceof ArkTSAccessExpressions
+                        .GeneratorFunctionExpression
+                || expr instanceof ArkTSAccessExpressions.ClosureExpression) {
+            return Integer.MAX_VALUE;
+        }
+        // Literals — no variables
+        if (expr instanceof ArkTSExpression.LiteralExpression
+                || expr instanceof ArkTSExpression.ThisExpression
+                || expr instanceof ArkTSAccessExpressions
+                        .RegExpLiteralExpression
+                || expr instanceof ArkTSAccessExpressions
+                        .TypeReferenceExpression
+                || expr instanceof ArkTSPropertyExpressions
+                        .SuperExpression
+                || expr instanceof ArkTSPropertyExpressions
+                        .PrivateFieldDeclarationExpression) {
+            return 0;
+        }
+        // Binary
+        if (expr instanceof ArkTSExpression.BinaryExpression) {
+            ArkTSExpression.BinaryExpression bin =
+                    (ArkTSExpression.BinaryExpression) expr;
+            return countVariableUsage(bin.getLeft(), varName)
+                    + countVariableUsage(bin.getRight(), varName);
+        }
+        // Unary
+        if (expr instanceof ArkTSExpression.UnaryExpression) {
+            return countVariableUsage(
+                    ((ArkTSExpression.UnaryExpression) expr).getOperand(),
+                    varName);
+        }
+        // Call
+        if (expr instanceof ArkTSExpression.CallExpression) {
+            ArkTSExpression.CallExpression call =
+                    (ArkTSExpression.CallExpression) expr;
+            int count = countVariableUsage(call.getCallee(), varName);
+            for (ArkTSExpression arg : call.getArguments()) {
+                count += countVariableUsage(arg, varName);
+            }
+            return count;
+        }
+        // Member
+        if (expr instanceof ArkTSExpression.MemberExpression) {
+            ArkTSExpression.MemberExpression mem =
+                    (ArkTSExpression.MemberExpression) expr;
+            int count = countVariableUsage(mem.getObject(), varName);
+            if (mem.isComputed()) {
+                count += countVariableUsage(mem.getProperty(), varName);
+            }
+            return count;
+        }
+        // Assign
+        if (expr instanceof ArkTSExpression.AssignExpression) {
+            ArkTSExpression.AssignExpression assign =
+                    (ArkTSExpression.AssignExpression) expr;
+            return countVariableUsage(assign.getTarget(), varName)
+                    + countVariableUsage(assign.getValue(), varName);
+        }
+        // Compound assign
+        if (expr instanceof ArkTSExpression.CompoundAssignExpression) {
+            ArkTSExpression.CompoundAssignExpression ca =
+                    (ArkTSExpression.CompoundAssignExpression) expr;
+            return countVariableUsage(ca.getTarget(), varName)
+                    + countVariableUsage(ca.getValue(), varName);
+        }
+        // Logical assign
+        if (expr instanceof ArkTSExpression.LogicalAssignExpression) {
+            ArkTSExpression.LogicalAssignExpression la =
+                    (ArkTSExpression.LogicalAssignExpression) expr;
+            return countVariableUsage(la.getTarget(), varName)
+                    + countVariableUsage(la.getValue(), varName);
+        }
+        // Increment/decrement
+        if (expr instanceof ArkTSExpression.IncrementExpression) {
+            return countVariableUsage(
+                    ((ArkTSExpression.IncrementExpression) expr).getTarget(),
+                    varName);
+        }
+        // New
+        if (expr instanceof ArkTSExpression.NewExpression) {
+            ArkTSExpression.NewExpression ne =
+                    (ArkTSExpression.NewExpression) expr;
+            int count = countVariableUsage(ne.getCallee(), varName);
+            for (ArkTSExpression arg : ne.getArguments()) {
+                count += countVariableUsage(arg, varName);
+            }
+            return count;
+        }
+        // Conditional (ternary)
+        if (expr instanceof ArkTSAccessExpressions.ConditionalExpression) {
+            ArkTSAccessExpressions.ConditionalExpression cond =
+                    (ArkTSAccessExpressions.ConditionalExpression) expr;
+            return countVariableUsage(cond.getTest(), varName)
+                    + countVariableUsage(cond.getConsequent(), varName)
+                    + countVariableUsage(cond.getAlternate(), varName);
+        }
+        // Array literal
+        if (expr instanceof ArkTSAccessExpressions.ArrayLiteralExpression) {
+            int count = 0;
+            for (ArkTSExpression elem :
+                    ((ArkTSAccessExpressions.ArrayLiteralExpression) expr)
+                            .getElements()) {
+                count += countVariableUsage(elem, varName);
+            }
+            return count;
+        }
+        // Object literal
+        if (expr instanceof ArkTSAccessExpressions.ObjectLiteralExpression) {
+            int count = 0;
+            for (ArkTSAccessExpressions.ObjectLiteralExpression.ObjectProperty
+                    prop :
+                    ((ArkTSAccessExpressions.ObjectLiteralExpression) expr)
+                            .getProperties()) {
+                count += countVariableUsage(prop.getValue(), varName);
+                if (prop.isComputed()) {
+                    count += countVariableUsage(
+                            prop.getComputedKey(), varName);
+                }
+            }
+            return count;
+        }
+        // Template literal
+        if (expr instanceof ArkTSAccessExpressions
+                .TemplateLiteralExpression) {
+            int count = 0;
+            for (ArkTSExpression interp :
+                    ((ArkTSAccessExpressions.TemplateLiteralExpression) expr)
+                            .getExpressions()) {
+                count += countVariableUsage(interp, varName);
+            }
+            return count;
+        }
+        // Tagged template literal
+        if (expr instanceof ArkTSAccessExpressions
+                .TaggedTemplateExpression) {
+            ArkTSAccessExpressions.TaggedTemplateExpression tte =
+                    (ArkTSAccessExpressions.TaggedTemplateExpression) expr;
+            int count = 0;
+            for (ArkTSExpression interp : tte.getExpressions()) {
+                count += countVariableUsage(interp, varName);
+            }
+            return count;
+        }
+        // Spread
+        if (expr instanceof ArkTSAccessExpressions.SpreadExpression) {
+            return countVariableUsage(
+                    ((ArkTSAccessExpressions.SpreadExpression) expr)
+                            .getArgument(), varName);
+        }
+        // Spread call
+        if (expr instanceof ArkTSAccessExpressions.SpreadCallExpression) {
+            ArkTSAccessExpressions.SpreadCallExpression sc =
+                    (ArkTSAccessExpressions.SpreadCallExpression) expr;
+            int count = countVariableUsage(sc.getCallee(), varName);
+            for (ArkTSExpression arg : sc.getArguments()) {
+                count += countVariableUsage(arg, varName);
+            }
+            return count;
+        }
+        // Spread new
+        if (expr instanceof ArkTSAccessExpressions.SpreadNewExpression) {
+            ArkTSAccessExpressions.SpreadNewExpression sn =
+                    (ArkTSAccessExpressions.SpreadNewExpression) expr;
+            int count = countVariableUsage(sn.getCallee(), varName);
+            for (ArkTSExpression arg : sn.getArguments()) {
+                count += countVariableUsage(arg, varName);
+            }
+            return count;
+        }
+        // Spread array
+        if (expr instanceof ArkTSAccessExpressions.SpreadArrayExpression) {
+            int count = 0;
+            for (ArkTSExpression elem :
+                    ((ArkTSAccessExpressions.SpreadArrayExpression) expr)
+                            .getElements()) {
+                count += countVariableUsage(elem, varName);
+            }
+            return count;
+        }
+        // Spread object
+        if (expr instanceof ArkTSAccessExpressions.SpreadObjectExpression) {
+            int count = 0;
+            for (ArkTSExpression prop :
+                    ((ArkTSAccessExpressions.SpreadObjectExpression) expr)
+                            .getProperties()) {
+                count += countVariableUsage(prop, varName);
+            }
+            return count;
+        }
+        // Optional chain
+        if (expr instanceof ArkTSAccessExpressions.OptionalChainExpression) {
+            ArkTSAccessExpressions.OptionalChainExpression oc =
+                    (ArkTSAccessExpressions.OptionalChainExpression) expr;
+            int count = countVariableUsage(oc.getObject(), varName);
+            if (oc.isComputed()) {
+                count += countVariableUsage(oc.getProperty(), varName);
+            }
+            return count;
+        }
+        // Optional chain call
+        if (expr instanceof ArkTSAccessExpressions
+                .OptionalChainCallExpression) {
+            ArkTSAccessExpressions.OptionalChainCallExpression occ =
+                    (ArkTSAccessExpressions.OptionalChainCallExpression) expr;
+            int count = countVariableUsage(occ.getObject(), varName);
+            if (occ.isComputed()) {
+                count += countVariableUsage(occ.getProperty(), varName);
+            }
+            for (ArkTSExpression arg : occ.getArguments()) {
+                count += countVariableUsage(arg, varName);
+            }
+            return count;
+        }
+        // Await
+        if (expr instanceof ArkTSAccessExpressions.AwaitExpression) {
+            return countVariableUsage(
+                    ((ArkTSAccessExpressions.AwaitExpression) expr)
+                            .getArgument(), varName);
+        }
+        // Yield
+        if (expr instanceof ArkTSAccessExpressions.YieldExpression) {
+            ArkTSExpression arg =
+                    ((ArkTSAccessExpressions.YieldExpression) expr)
+                            .getArgument();
+            return arg != null ? countVariableUsage(arg, varName) : 0;
+        }
+        // As (type cast)
+        if (expr instanceof ArkTSAccessExpressions.AsExpression) {
+            return countVariableUsage(
+                    ((ArkTSAccessExpressions.AsExpression) expr)
+                            .getExpression(), varName);
+        }
+        // Non-null assertion
+        if (expr instanceof ArkTSAccessExpressions.NonNullExpression) {
+            return countVariableUsage(
+                    ((ArkTSAccessExpressions.NonNullExpression) expr)
+                            .getExpression(), varName);
+        }
+        // IIFE
+        if (expr instanceof ArkTSAccessExpressions.IifeExpression) {
+            ArkTSAccessExpressions.IifeExpression iife =
+                    (ArkTSAccessExpressions.IifeExpression) expr;
+            int count = countVariableUsage(
+                    iife.getFunctionExpression(), varName);
+            for (ArkTSExpression arg : iife.getArguments()) {
+                count += countVariableUsage(arg, varName);
+            }
+            return count;
+        }
+        // Dynamic import
+        if (expr instanceof ArkTSAccessExpressions.DynamicImportExpression) {
+            return countVariableUsage(
+                    ((ArkTSAccessExpressions.DynamicImportExpression) expr)
+                            .getSpecifier(), varName);
+        }
+        // Built-in new
+        if (expr instanceof ArkTSAccessExpressions.BuiltInNewExpression) {
+            int count = 0;
+            for (ArkTSExpression arg :
+                    ((ArkTSAccessExpressions.BuiltInNewExpression) expr)
+                            .getArguments()) {
+                count += countVariableUsage(arg, varName);
+            }
+            return count;
+        }
+        // Runtime call
+        if (expr instanceof ArkTSAccessExpressions.RuntimeCallExpression) {
+            int count = 0;
+            for (ArkTSExpression arg :
+                    ((ArkTSAccessExpressions.RuntimeCallExpression) expr)
+                            .getArguments()) {
+                count += countVariableUsage(arg, varName);
+            }
+            return count;
+        }
+        // Rest parameter
+        if (expr instanceof ArkTSAccessExpressions.RestParameterExpression) {
+            return 0;
+        }
+        // Private member access
+        if (expr instanceof ArkTSPropertyExpressions
+                .PrivateMemberExpression) {
+            return countVariableUsage(
+                    ((ArkTSPropertyExpressions.PrivateMemberExpression) expr)
+                            .getObject(), varName);
+        }
+        // In expression
+        if (expr instanceof ArkTSPropertyExpressions.InExpression) {
+            ArkTSPropertyExpressions.InExpression ie =
+                    (ArkTSPropertyExpressions.InExpression) expr;
+            return countVariableUsage(ie.getProperty(), varName)
+                    + countVariableUsage(ie.getObject(), varName);
+        }
+        // Instanceof
+        if (expr instanceof ArkTSPropertyExpressions.InstanceofExpression) {
+            ArkTSPropertyExpressions.InstanceofExpression ie =
+                    (ArkTSPropertyExpressions.InstanceofExpression) expr;
+            return countVariableUsage(ie.getExpression(), varName)
+                    + countVariableUsage(ie.getTargetType(), varName);
+        }
+        // Delete
+        if (expr instanceof ArkTSPropertyExpressions.DeleteExpression) {
+            return countVariableUsage(
+                    ((ArkTSPropertyExpressions.DeleteExpression) expr)
+                            .getTarget(), varName);
+        }
+        // Copy data properties
+        if (expr instanceof ArkTSPropertyExpressions
+                .CopyDataPropertiesExpression) {
+            ArkTSPropertyExpressions.CopyDataPropertiesExpression cd =
+                    (ArkTSPropertyExpressions.CopyDataPropertiesExpression)
+                            expr;
+            return countVariableUsage(cd.getTarget(), varName)
+                    + countVariableUsage(cd.getSource(), varName);
+        }
+        // Generator state
+        if (expr instanceof ArkTSPropertyExpressions
+                .GeneratorStateExpression) {
+            return countVariableUsage(
+                    ((ArkTSPropertyExpressions.GeneratorStateExpression) expr)
+                            .getValue(), varName);
+        }
+        // Array destructuring
+        if (expr instanceof ArkTSPropertyExpressions
+                .ArrayDestructuringExpression) {
+            ArkTSPropertyExpressions.ArrayDestructuringExpression ad =
+                    (ArkTSPropertyExpressions.ArrayDestructuringExpression)
+                            expr;
+            int count = 0;
+            for (ArkTSPropertyExpressions.ArrayDestructuringExpression
+                    .ArrayBinding binding : ad.getBindings()) {
+                if (binding.getDefaultValue() != null) {
+                    count += countVariableUsage(
+                            binding.getDefaultValue(), varName);
+                }
+            }
+            if (ad.getSource() != null) {
+                count += countVariableUsage(ad.getSource(), varName);
+            }
+            return count;
+        }
+        // Object destructuring
+        if (expr instanceof ArkTSPropertyExpressions
+                .ObjectDestructuringExpression) {
+            ArkTSPropertyExpressions.ObjectDestructuringExpression od =
+                    (ArkTSPropertyExpressions.ObjectDestructuringExpression)
+                            expr;
+            int count = 0;
+            for (ArkTSPropertyExpressions.ObjectDestructuringExpression
+                    .DestructuringBinding binding : od.getBindings()) {
+                if (binding.getDefaultValue() != null) {
+                    count += countVariableUsage(
+                            binding.getDefaultValue(), varName);
+                }
+            }
+            if (od.getSource() != null) {
+                count += countVariableUsage(od.getSource(), varName);
+            }
+            return count;
+        }
+        // Nullish coalescing
+        if (expr instanceof ArkTSPropertyExpressions
+                .NullishCoalescingExpression) {
+            ArkTSPropertyExpressions.NullishCoalescingExpression nc =
+                    (ArkTSPropertyExpressions.NullishCoalescingExpression)
+                            expr;
+            return countVariableUsage(nc.getLeft(), varName)
+                    + countVariableUsage(nc.getRight(), varName);
+        }
+        // Define property
+        if (expr instanceof ArkTSPropertyExpressions
+                .DefinePropertyExpression) {
+            ArkTSPropertyExpressions.DefinePropertyExpression dp =
+                    (ArkTSPropertyExpressions.DefinePropertyExpression) expr;
+            return countVariableUsage(dp.getObject(), varName)
+                    + countVariableUsage(dp.getProperty(), varName)
+                    + countVariableUsage(dp.getValue(), varName);
+        }
+        // Template object
+        if (expr instanceof ArkTSPropertyExpressions
+                .TemplateObjectExpression) {
+            return 0;
+        }
+        // Type predicate
+        if (expr instanceof ArkTSPropertyExpressions
+                .TypePredicateExpression) {
+            return countVariableUsage(
+                    ((ArkTSPropertyExpressions.TypePredicateExpression) expr)
+                            .getExpression(), varName);
+        }
+        // Const assertion
+        if (expr instanceof ArkTSPropertyExpressions
+                .ConstAssertionExpression) {
+            return countVariableUsage(
+                    ((ArkTSPropertyExpressions.ConstAssertionExpression) expr)
+                            .getExpression(), varName);
+        }
+        // Satisfies
+        if (expr instanceof ArkTSPropertyExpressions.SatisfiesExpression) {
+            return countVariableUsage(
+                    ((ArkTSPropertyExpressions.SatisfiesExpression) expr)
+                            .getExpression(), varName);
+        }
+        // Static field
+        if (expr instanceof ArkTSPropertyExpressions.StaticFieldExpression) {
+            ArkTSPropertyExpressions.StaticFieldExpression sf =
+                    (ArkTSPropertyExpressions.StaticFieldExpression) expr;
+            return countVariableUsage(sf.getTarget(), varName)
+                    + countVariableUsage(sf.getValue(), varName);
+        }
+        // Unknown expression type — conservatively return MAX_VALUE
+        return Integer.MAX_VALUE;
     }
 
     // --- Const vs let optimization ---
