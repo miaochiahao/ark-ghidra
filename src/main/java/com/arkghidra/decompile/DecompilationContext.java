@@ -87,6 +87,12 @@ public class DecompilationContext {
     private final Map<Integer, String> stringResolveCache = new HashMap<>();
 
     /**
+     * Maps register numbers to debug variable names.
+     * Populated from {@link com.arkghidra.format.AbcLocalVariable} entries.
+     */
+    private final Map<Integer, String> registerNames = new HashMap<>();
+
+    /**
      * Constructs a decompilation context.
      *
      * @param method the method being decompiled
@@ -275,6 +281,38 @@ public class DecompilationContext {
             }
         }
         return "str_" + stringIdx;
+    }
+
+    /**
+     * Sets the debug name for a register.
+     *
+     * @param reg the register number
+     * @param name the variable name from debug info
+     */
+    public void setRegisterName(int reg, String name) {
+        registerNames.put(reg, name);
+    }
+
+    /**
+     * Returns the debug name for a register, or null if not available.
+     *
+     * @param reg the register number
+     * @return the variable name, or null
+     */
+    public String getRegisterName(int reg) {
+        return registerNames.get(reg);
+    }
+
+    /**
+     * Returns the variable name for a register: debug name if available,
+     * otherwise "v" + reg.
+     *
+     * @param reg the register number
+     * @return the variable name to use in output
+     */
+    public String resolveRegisterName(int reg) {
+        String name = registerNames.get(reg);
+        return name != null ? name : "v" + reg;
     }
 
     /**

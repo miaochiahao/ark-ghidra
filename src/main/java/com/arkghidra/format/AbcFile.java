@@ -1054,6 +1054,73 @@ public class AbcFile {
         return entries;
     }
 
+    /**
+     * Extracts local variable debug info from a line number program.
+     *
+     * <p>Parses the LNP state machine, collecting START_LOCAL and
+     * START_LOCAL_EXTENDED entries as {@link AbcLocalVariable} objects.
+     *
+     * @param lnpOff the offset of the line number program data
+     * @return the list of local variables (may be empty)
+     */
+    public List<AbcLocalVariable> parseLocalVariables(long lnpOff) {
+        if (lnpOff <= 0 || lnpOff >= rawData.length) {
+            return Collections.emptyList();
+        }
+        AbcReader r = new AbcReader(rawData);
+        r.position((int) lnpOff);
+        List<AbcLocalVariable> locals = new ArrayList<>();
+        long address = 0;
+
+        while (r.remaining() > 0) {
+            int opcode = r.readU8() & 0xFF;
+
+            if (opcode == 0x00) {
+                break;
+            } else if (opcode == 0x01) {
+                address += r.readUleb128();
+            } else if (opcode == 0x02) {
+                r.readSleb128();
+            } else if (opcode == 0x03) {
+                int reg = (int) r.readUleb128();
+                long nameIdx = r.readUleb128();
+                long typeIdx = r.readUleb128();
+                String name = nameIdx > 0
+                        ? readStringAt(r, (int) nameIdx) : null;
+                String typeName = typeIdx > 0
+                        ? readStringAt(r, (int) typeIdx) : null;
+                locals.add(new AbcLocalVariable(address, -1, reg,
+                        name, typeName, null));
+            } else if (opcode == 0x04) {
+                int reg = (int) r.readUleb128();
+                long nameIdx = r.readUleb128();
+                long typeIdx = r.readUleb128();
+                long sigIdx = r.readUleb128();
+                String name = nameIdx > 0
+                        ? readStringAt(r, (int) nameIdx) : null;
+                String typeName = typeIdx > 0
+                        ? readStringAt(r, (int) typeIdx) : null;
+                String sig = sigIdx > 0
+                        ? readStringAt(r, (int) sigIdx) : null;
+                locals.add(new AbcLocalVariable(address, -1, reg,
+                        name, typeName, sig));
+            } else if (opcode == 0x05 || opcode == 0x06) {
+                r.readUleb128();
+            } else if (opcode == 0x07 || opcode == 0x08) {
+                // SET_PROLOGUE_END / SET_EPILOGUE_BEGIN — no operands
+                continue;
+            } else if (opcode == 0x09 || opcode == 0x0A
+                    || opcode == 0x0B) {
+                r.readUleb128();
+            } else if (opcode >= 0x0C) {
+                int adjusted = opcode - 0x0C;
+                address += adjusted / 15;
+            }
+        }
+
+        return locals;
+    }
+
     // --- Module record access ---
 
     /**
