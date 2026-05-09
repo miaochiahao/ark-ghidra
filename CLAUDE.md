@@ -170,6 +170,7 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 83. ~~Type narrowing improvements — MemberExpression type inference, else-if chain rendering (#177)~~ DONE
 84. ~~Logical ternary simplification — cond ? value : undefined → cond && value (#178)~~ DONE
 85. ~~void 0 → undefined normalization, ternary-to-OR (x ? x : value → x || value) (#179)~~ DONE
+86. ~~Number literal hex formatting — bitmask patterns >= 255 (#180)~~ DONE
 
 ### Remaining open issues (require external resources)
 - #25 — Test with real HarmonyOS .abc files from Ark compiler (needs real .abc files)
@@ -413,6 +414,7 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Logical ternary simplification:** `simplifyLogicalTernary()` converts `cond ? value : undefined` → `cond && value` and `cond ? undefined : value` → `!cond && value`. Called after `simplifyRedundantTernary()` in BranchProcessor.
 - **void 0 normalization:** `simplifyVoidZero()` converts `UnaryExpression("void", LiteralExpression("0", NUMBER))` → `LiteralExpression("undefined", UNDEFINED)`. Wired into InstructionHandler unary expression pipeline.
 - **Ternary-to-OR:** `simplifyTernaryToOr()` converts `x ? x : value` → `x || value` when condition and consequent are the same variable. Wired in BranchProcessor after simplifyLogicalTernary.
+- **Number hex formatting:** `LiteralExpression.formatNumberLiteral()` renders numbers >= 255 as hex when they match power-of-2 (isPowerOfTwo) or all-ones bitmask (isAllOnes) patterns. Threshold is 255 to include 0xFF. All other numbers stay decimal.
 - **Post-processing pipeline order:** `applyConstOptimization → inlineSingleUseVariables → mergeNestedIfConditions → detectSwitchExpressions → simplifyReturnIfTernary → convertIfElseChainToSwitch → removeUnusedVariables`. Order matters — switch expression detection needs const-optimized vars; ternary conversion needs switch expressions resolved; if-else chain needs ternary resolved; unused var removal is last because it depends on all prior transforms.
 - **Return-if ternary conversion:** `simplifyReturnIfTernary()` converts `if (cond) { return a; } else { return b; }` → `return cond ? a : b;`. Also handles throw variants. Mixed return/throw not converted. Only triggers when both branches have single return/throw.
 - **If-else chain to switch:** `convertIfElseChainToSwitch()` detects 3+ branch if/else-if chains where all conditions are strict equality (`===`) comparing the same variable against constants. Requires ChainEntry helper class. Non-===, mixed variables, or <3 branches stay as if/else.
