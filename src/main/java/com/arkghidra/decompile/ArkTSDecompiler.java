@@ -1188,14 +1188,14 @@ public class ArkTSDecompiler {
 
     String resolveClassNameFromMethod(int methodIdx,
             AbcFile abcFile) {
-        for (AbcClass cls : abcFile.getClasses()) {
-            for (AbcMethod m : cls.getMethods()) {
-                if (declBuilder.isConstructorMethod(m,
-                        DeclarationBuilder.sanitizeClassName(
-                                cls.getName()))) {
-                    return DeclarationBuilder.sanitizeClassName(
-                            cls.getName());
-                }
+        // Use O(1) method lookup + classIdx to find the owning class
+        AbcMethod method = abcFile.getMethodByFlatIndex(methodIdx);
+        if (method != null) {
+            int classIdx = method.getClassIdx();
+            List<AbcClass> classes = abcFile.getClasses();
+            if (classIdx >= 0 && classIdx < classes.size()) {
+                AbcClass cls = classes.get(classIdx);
+                return DeclarationBuilder.sanitizeClassName(cls.getName());
             }
         }
         return "class_" + methodIdx;

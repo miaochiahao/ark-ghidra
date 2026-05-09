@@ -1042,4 +1042,33 @@ class ArkTSOutputQualityTest {
             assertEquals("string | null", result);
         }
     }
+
+    @Nested
+    @DisplayName("Class name resolution")
+    class ClassNameResolutionTests {
+        @Test
+        void testLogicalAssignExpression_rendering() {
+            ArkTSExpression target =
+                    new ArkTSExpression.VariableExpression("x");
+            ArkTSExpression value =
+                    new ArkTSExpression.LiteralExpression("42",
+                            ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+            ArkTSExpression expr =
+                    new ArkTSExpression.LogicalAssignExpression(
+                            target, "&&=", value);
+            assertEquals("x &&= 42", expr.toArkTS());
+        }
+
+        @Test
+        void testLogicalAssignExpression_orEquals() {
+            ArkTSExpression target =
+                    new ArkTSExpression.VariableExpression("name");
+            ArkTSExpression value =
+                    new ArkTSExpression.VariableExpression("fallback");
+            ArkTSExpression expr =
+                    new ArkTSExpression.LogicalAssignExpression(
+                            target, "||=", value);
+            assertEquals("name ||= fallback", expr.toArkTS());
+        }
+    }
 }
