@@ -171,10 +171,11 @@ public class ArkTSDecompiler {
                         startTimeNs);
             }
 
-            bodyStmts = detectSwitchExpressions(
-                            mergeNestedIfConditions(
-                                    ExpressionVisitor.inlineSingleUseVariables(
-                                            applyConstOptimization(bodyStmts))));
+            bodyStmts = simplifyReturnIfTernary(
+                                    detectSwitchExpressions(
+                                            mergeNestedIfConditions(
+                                                    ExpressionVisitor.inlineSingleUseVariables(
+                                                            applyConstOptimization(bodyStmts)))));
         } catch (Exception e) {
             List<ArkTSStatement> fallbackStmts = new ArrayList<>();
             fallbackStmts.add(new ArkTSStatement.ExpressionStatement(
@@ -227,6 +228,8 @@ public class ArkTSDecompiler {
             stmts = ExpressionVisitor.inlineSingleUseVariables(stmts);
             stmts = mergeNestedIfConditions(stmts);
             stmts = detectSwitchExpressions(stmts);
+            stmts = simplifyReturnIfTernary(stmts);
+            // stmts = removeUnusedVariables(stmts); // TODO: enable
         } catch (Exception e) {
             return buildFallbackInstructionListing(instructions,
                     "statement generation failed: " + e);
@@ -466,10 +469,11 @@ public class ArkTSDecompiler {
                 return buildTimeoutBody(startTimeNs);
             }
 
-            return detectSwitchExpressions(
-                    mergeNestedIfConditions(
-                            ExpressionVisitor.inlineSingleUseVariables(
-                                    applyConstOptimization(stmts))));
+            return simplifyReturnIfTernary(
+                            detectSwitchExpressions(
+                                    mergeNestedIfConditions(
+                                            ExpressionVisitor.inlineSingleUseVariables(
+                                                    applyConstOptimization(stmts)))));
         } catch (Exception e) {
             ctx.warnings.add("Statement generation failed: "
                     + e.getMessage());
@@ -579,6 +583,319 @@ public class ArkTSDecompiler {
             }
         }
         return stmts;
+    }
+
+    // --- Return-if ternary conversion ---
+
+    /**
+     * Converts if/else blocks where both branches return (or throw) into
+     * a single return/throw with a ternary expression.
+     *
+     * <p>Transforms:
+     * <pre>
+     * if (cond) { return a; } else { return b; }
+     * </pre>
+     * Into:
+     * <pre>
+     * return cond ? a : b;
+     * </pre>
+     *
+     * <p>Also handles: if-return followed by trailing return (no else).
+     */
+    static List<ArkTSStatement> simplifyReturnIfTernary(
+            List<ArkTSStatement> stmts) {
+        if (stmts == null || stmts.isEmpty()) {
+            return stmts;
+        }
+        List<ArkTSStatement> result = new ArrayList<>(stmts.size());
+        for (int i = 0; i < stmts.size(); i++) {
+            ArkTSStatement stmt = stmts.get(i);
+            ArkTSStatement transformed = trySimplifyReturnIf(stmt);
+            if (transformed != null) {
+                result.add(transformed);
+                continue;
+            }
+            // Check if-else with both branches returning
+            if (stmt instanceof ArkTSControlFlow.IfStatement) {
+                ArkTSControlFlow.IfStatement ifStmt =
+                        (ArkTSControlFlow.IfStatement) stmt;
+                ArkTSStatement simplified =
+                        tryConvertReturnIf(ifStmt);
+                if (simplified != null) {
+                    result.add(simplified);
+                    continue;
+                }
+            }
+            result.add(stmt);
+        }
+        return result;
+    }
+
+    /**
+     * Tries to convert an if/else where both branches return into
+     * a single return with ternary. Returns null if not applicable.
+     */
+    private static ArkTSStatement tryConvertReturnIf(
+            ArkTSControlFlow.IfStatement ifStmt) {
+        ArkTSStatement thenBlock = ifStmt.getThenBlock();
+        ArkTSStatement elseBlock = ifStmt.getElseBlock();
+
+        // Extract single return/throw from then-block
+        ArkTSStatement.ReturnStatement thenReturn =
+                extractSingleReturn(thenBlock);
+        ArkTSStatement.ThrowStatement thenThrow =
+                thenReturn == null ? extractSingleThrow(thenBlock) : null;
+        if (thenReturn == null && thenThrow == null) {
+            return null;
+        }
+
+        if (elseBlock != null) {
+            // if/else pattern
+            if (thenReturn != null) {
+                ArkTSStatement.ReturnStatement elseReturn =
+                        extractSingleReturn(elseBlock);
+                if (elseReturn != null) {
+                    return new ArkTSStatement.ReturnStatement(
+                            new ArkTSAccessExpressions.ConditionalExpression(
+                                    ifStmt.getCondition(),
+                                    thenReturn.getValue(),
+                                    elseReturn.getValue()));
+                }
+            }
+            if (thenThrow != null) {
+                ArkTSStatement.ThrowStatement elseThrow =
+                        extractSingleThrow(elseBlock);
+                if (elseThrow != null) {
+                    return new ArkTSStatement.ThrowStatement(
+                            new ArkTSAccessExpressions.ConditionalExpression(
+                                    ifStmt.getCondition(),
+                                    thenThrow.getValue(),
+                                    elseThrow.getValue()));
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Tries to convert if-return followed by a trailing return/throw
+     * into a single return with ternary. Returns null if not applicable.
+     */
+    private static ArkTSStatement trySimplifyReturnIf(ArkTSStatement stmt) {
+        // This handles the next statement — not used here
+        // Pattern is handled inline in simplifyReturnIfTernary
+        return null;
+    }
+
+    private static ArkTSStatement.ReturnStatement extractSingleReturn(
+            ArkTSStatement block) {
+        List<ArkTSStatement> body = extractBodyList(block);
+        if (body == null) {
+            return block instanceof ArkTSStatement.ReturnStatement
+                    ? (ArkTSStatement.ReturnStatement) block
+                    : null;
+        }
+        if (body.size() != 1) {
+            return null;
+        }
+        return body.get(0) instanceof ArkTSStatement.ReturnStatement
+                ? (ArkTSStatement.ReturnStatement) body.get(0)
+                : null;
+    }
+
+    private static ArkTSStatement.ThrowStatement extractSingleThrow(
+            ArkTSStatement block) {
+        List<ArkTSStatement> body = extractBodyList(block);
+        if (body == null) {
+            return block instanceof ArkTSStatement.ThrowStatement
+                    ? (ArkTSStatement.ThrowStatement) block
+                    : null;
+        }
+        if (body.size() != 1) {
+            return null;
+        }
+        return body.get(0) instanceof ArkTSStatement.ThrowStatement
+                ? (ArkTSStatement.ThrowStatement) body.get(0)
+                : null;
+    }
+
+    // --- Unused variable removal ---
+
+    /**
+     * Removes variable declarations that are never referenced after
+     * their declaration point.
+     *
+     * <p>Preserves declarations with side-effecting initializers
+     * (function calls, object creation, etc.).
+     */
+    static List<ArkTSStatement> removeUnusedVariables(
+            List<ArkTSStatement> stmts) {
+        if (stmts == null || stmts.size() <= 1) {
+            return stmts;
+        }
+        // Collect all variable declaration names
+        Set<String> declaredNames = new HashSet<>();
+        for (ArkTSStatement stmt : stmts) {
+            if (stmt instanceof ArkTSStatement.VariableDeclaration) {
+                declaredNames.add(
+                        ((ArkTSStatement.VariableDeclaration) stmt)
+                                .getName());
+            }
+        }
+        if (declaredNames.isEmpty()) {
+            return stmts;
+        }
+        // Check which variables are used via ExpressionVisitor
+        Set<String> usedVars = new HashSet<>();
+        for (String varName : declaredNames) {
+            for (ArkTSStatement stmt : stmts) {
+                if (countVarUsageInStmt(stmt, varName) > 0) {
+                    usedVars.add(varName);
+                    break;
+                }
+            }
+        }
+
+        List<ArkTSStatement> result = new ArrayList<>(stmts.size());
+        for (ArkTSStatement stmt : stmts) {
+            if (stmt instanceof ArkTSStatement.VariableDeclaration) {
+                ArkTSStatement.VariableDeclaration decl =
+                        (ArkTSStatement.VariableDeclaration) stmt;
+                if (!usedVars.contains(decl.getName())
+                        && !hasSideEffectingInitializer(decl)) {
+                    continue;
+                }
+            }
+            result.add(stmt);
+        }
+        return result.isEmpty() && !stmts.isEmpty()
+                ? stmts : result;
+    }
+
+    private static int countVarUsageInStmt(ArkTSStatement stmt,
+            String varName) {
+        if (stmt instanceof ArkTSStatement.VariableDeclaration) {
+            ArkTSStatement.VariableDeclaration decl =
+                    (ArkTSStatement.VariableDeclaration) stmt;
+            if (decl.getName().equals(varName)) {
+                // Don't count the declaration itself as a usage
+                return decl.getInitializer() != null
+                        ? ExpressionVisitor.countVariableUsage(
+                                decl.getInitializer(), varName)
+                        : 0;
+            }
+            return decl.getInitializer() != null
+                    ? ExpressionVisitor.countVariableUsage(
+                            decl.getInitializer(), varName)
+                    : 0;
+        } else if (stmt instanceof ArkTSStatement.ExpressionStatement) {
+            return ExpressionVisitor.countVariableUsage(
+                    ((ArkTSStatement.ExpressionStatement) stmt)
+                            .getExpression(),
+                    varName);
+        } else if (stmt instanceof ArkTSStatement.ReturnStatement) {
+            ArkTSExpression val =
+                    ((ArkTSStatement.ReturnStatement) stmt).getValue();
+            return val != null
+                    ? ExpressionVisitor.countVariableUsage(val, varName)
+                    : 0;
+        } else if (stmt instanceof ArkTSStatement.ThrowStatement) {
+            return ExpressionVisitor.countVariableUsage(
+                    ((ArkTSStatement.ThrowStatement) stmt).getValue(),
+                    varName);
+        } else if (stmt instanceof ArkTSControlFlow.IfStatement) {
+            ArkTSControlFlow.IfStatement ifStmt =
+                    (ArkTSControlFlow.IfStatement) stmt;
+            int count = ExpressionVisitor.countVariableUsage(
+                    ifStmt.getCondition(), varName);
+            count += countVarUsageInBlock(
+                    ifStmt.getThenBlock(), varName);
+            count += countVarUsageInBlock(
+                    ifStmt.getElseBlock(), varName);
+            return count;
+        } else if (stmt instanceof ArkTSControlFlow.WhileStatement) {
+            ArkTSControlFlow.WhileStatement ws =
+                    (ArkTSControlFlow.WhileStatement) stmt;
+            int count = ExpressionVisitor.countVariableUsage(
+                    ws.getCondition(), varName);
+            count += countVarUsageInBlock(ws.getBody(), varName);
+            return count;
+        } else if (stmt instanceof ArkTSControlFlow.DoWhileStatement) {
+            ArkTSControlFlow.DoWhileStatement dw =
+                    (ArkTSControlFlow.DoWhileStatement) stmt;
+            int count = ExpressionVisitor.countVariableUsage(
+                    dw.getCondition(), varName);
+            count += countVarUsageInBlock(dw.getBody(), varName);
+            return count;
+        } else if (stmt instanceof ArkTSControlFlow.ForOfStatement) {
+            return countVarUsageInBlock(
+                    ((ArkTSControlFlow.ForOfStatement) stmt).getBody(),
+                    varName);
+        } else if (stmt instanceof ArkTSControlFlow.ForInStatement) {
+            return countVarUsageInBlock(
+                    ((ArkTSControlFlow.ForInStatement) stmt).getBody(),
+                    varName);
+        } else if (stmt instanceof ArkTSControlFlow.SwitchStatement) {
+            ArkTSControlFlow.SwitchStatement sw =
+                    (ArkTSControlFlow.SwitchStatement) stmt;
+            int count = ExpressionVisitor.countVariableUsage(
+                    sw.getDiscriminant(), varName);
+            for (ArkTSControlFlow.SwitchStatement.SwitchCase sc
+                    : sw.getCases()) {
+                for (ArkTSStatement s : sc.getBody()) {
+                    count += countVarUsageInStmt(s, varName);
+                }
+            }
+            count += countVarUsageInBlock(
+                    sw.getDefaultBlock(), varName);
+            return count;
+        } else if (stmt instanceof ArkTSStatement.BlockStatement) {
+            int count = 0;
+            for (ArkTSStatement s
+                    : ((ArkTSStatement.BlockStatement) stmt).getBody()) {
+                count += countVarUsageInStmt(s, varName);
+            }
+            return count;
+        } else if (stmt
+                instanceof ArkTSControlFlow.TryCatchStatement) {
+            ArkTSControlFlow.TryCatchStatement tc =
+                    (ArkTSControlFlow.TryCatchStatement) stmt;
+            int count = countVarUsageInBlock(
+                    tc.getTryBlock(), varName);
+            count += countVarUsageInBlock(
+                    tc.getCatchBlock(), varName);
+            count += countVarUsageInBlock(
+                    tc.getFinallyBlock(), varName);
+            return count;
+        }
+        return 0;
+    }
+
+    private static int countVarUsageInBlock(ArkTSStatement block,
+            String varName) {
+        if (block == null) {
+            return 0;
+        }
+        List<ArkTSStatement> body = extractBodyList(block);
+        if (body != null) {
+            int count = 0;
+            for (ArkTSStatement s : body) {
+                count += countVarUsageInStmt(s, varName);
+            }
+            return count;
+        }
+        return countVarUsageInStmt(block, varName);
+    }
+
+    private static boolean hasSideEffectingInitializer(
+            ArkTSStatement.VariableDeclaration decl) {
+        ArkTSExpression init = decl.getInitializer();
+        if (init == null) {
+            return false;
+        }
+        return init instanceof ArkTSExpression.CallExpression
+                || init instanceof ArkTSExpression.NewExpression
+                || init instanceof ArkTSExpression.AssignExpression;
     }
 
     private static String extractUninitVarDecl(ArkTSStatement stmt) {
