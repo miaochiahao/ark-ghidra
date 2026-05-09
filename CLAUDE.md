@@ -142,6 +142,7 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 55. feat: test with real HarmonyOS .abc files from Ark compiler #25
 56. ~~Performance: large file handling and incremental decompilation (#129)~~ DONE
 57. ~~Source line number comments from debug info (#128)~~ DONE
+58. ~~Variable name inference from usage context (#133)~~ DONE
 
 ### Rules for the loop
 
@@ -320,6 +321,7 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **LiteralExpression test values:** String literal values in tests should NOT include surrounding quotes. `LiteralExpression("hello", STRING)` renders as `"hello"` — the `toArkTS()` method adds quotes. Test assertions should use the already-quoted form in expected strings.
 - **Performance — reusable instances:** `ArkDisassembler` and `TypeInference` are reusable across method decompilations. `TypeInference.reset()` clears state between blocks. Pre-size collections with estimated capacities (`new ArrayList<>(estimatedSize)`) in hot paths (ControlFlowGraph, decompileFile, ArkDisassembler).
 - **Source line number comments:** `LineCommentStatement` in ArkTSStatement renders `// line N`. `DecompilationContext.lineNumberMap` maps bytecode offsets to source lines from `AbcLineNumberEntry`. `checkAndMarkLineEmitted()` tracks transitions to avoid duplicate comments. Populated via `populateLineNumbers()` from `AbcDebugInfo.getLineNumProgramIdx()`.
+- **Variable name inference:** `DecompilationContext.inferredNames` maps registers to context-inferred names (fallback when no debug info). `inferNameFromExpression()` in InstructionHandler extracts names from: method calls (getName → name), property access (obj.length → length), constructors (new Error → error). `sanitizeName()` strips get/set/is prefixes. Debug names always take priority over inferred names.
 - **Single-use variable inlining:** `inlineSingleUseVariables()` runs after `applyConstOptimization()` in all three entry points. Cascades up to 3 passes. Handles return, throw, and expression statements. When adding new inline targets, update tests that check for `const vN = expr; return vN` patterns — they now produce `return expr` instead.
 - **Dead store elimination is too aggressive:** Attempting to remove unused variable declarations broke 25+ tests because many patterns legitimately declare variables that aren't directly returned (e.g., setup for side effects, debugging). Only inline into terminal statements (return/throw) and expression statements with exactly one usage.
 - **replaceVariable guard for assignment targets:** Never replace a variable in the LHS of an assignment (`v0 = expr` where v0 is the target). The `isSingleVarRef(assign.getTarget(), varName)` check prevents transforming `v0 = 2` into `42 = 2`. Leaf expressions (LiteralExpression, ThisExpression) must return themselves in replaceVariable to allow traversal through member/assign chains.
