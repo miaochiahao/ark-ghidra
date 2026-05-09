@@ -1,5 +1,7 @@
 package com.arkghidra.decompile;
 
+import java.util.List;
+
 /**
  * Handles operator-related classification and translation for ArkTS
  * decompilation.
@@ -12,6 +14,197 @@ class OperatorHandler {
 
     private OperatorHandler() {
         // utility class
+    }
+
+    // --- Double negation simplification ---
+
+    /**
+     * Simplifies double negation and related patterns in expressions.
+     *
+     * <p>Patterns recognized:
+     * <ul>
+     *   <li>{@code !(a == b)} -> {@code a != b}</li>
+     *   <li>{@code !(a != b)} -> {@code a == b}</li>
+     *   <li>{@code !(a === b)} -> {@code a !== b}</li>
+     *   <li>{@code !(a !== b)} -> {@code a === b}</li>
+     *   <li>{@code !!x} -> {@code Boolean(x)}</li>
+     * </ul>
+     *
+     * @param expr the expression to simplify
+     * @return the simplified expression, or the original if no simplification
+     *         applies
+     */
+    static ArkTSExpression simplifyDoubleNegation(ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.UnaryExpression)) {
+            return expr;
+        }
+        ArkTSExpression.UnaryExpression outer =
+                (ArkTSExpression.UnaryExpression) expr;
+        if (!"!".equals(outer.getOperator()) || !outer.isPrefix()) {
+            return expr;
+        }
+        ArkTSExpression inner = outer.getOperand();
+
+        // !!x -> Boolean(x)
+        if (inner instanceof ArkTSExpression.UnaryExpression) {
+            ArkTSExpression.UnaryExpression innerUnary =
+                    (ArkTSExpression.UnaryExpression) inner;
+            if ("!".equals(innerUnary.getOperator())
+                    && innerUnary.isPrefix()) {
+                return new ArkTSExpression.CallExpression(
+                        new ArkTSExpression.VariableExpression("Boolean"),
+                        List.of(innerUnary.getOperand()));
+            }
+        }
+
+        // !(a == b) -> a != b, !(a === b) -> a !== b, etc.
+        if (inner instanceof ArkTSExpression.BinaryExpression) {
+            ArkTSExpression.BinaryExpression bin =
+                    (ArkTSExpression.BinaryExpression) inner;
+            String negatedOp = negateComparisonOperator(bin.getOperator());
+            if (negatedOp != null) {
+                return new ArkTSExpression.BinaryExpression(
+                        bin.getLeft(), negatedOp, bin.getRight());
+            }
+        }
+
+        return expr;
+    }
+
+    /**
+     * Returns the negated form of a comparison operator, or null if the
+     * operator is not a comparison that has a direct negation.
+     */
+    private static String negateComparisonOperator(String op) {
+        return switch (op) {
+            case "==" -> "!=";
+            case "!=" -> "==";
+            case "===" -> "!==";
+            case "!==" -> "===";
+            default -> null;
+        };
+    }
+
+    // --- Constant folding ---
+
+    /**
+     * Attempts to fold a binary expression with two constant operands.
+     *
+     * <p>If both operands are numeric literals and the operator is an
+     * arithmetic operator, evaluates the expression at compile time
+     * and returns a new literal. Returns the original expression if
+     * folding is not possible or would lose precision.
+     *
+     * @param left the left operand
+     * @param op the operator string
+     * @param right the right operand
+     * @return the folded literal expression, or a BinaryExpression
+     */
+    static ArkTSExpression tryFoldConstants(ArkTSExpression left,
+            String op, ArkTSExpression right) {
+        if (!isFoldableOperator(op)) {
+            return new ArkTSExpression.BinaryExpression(left, op, right);
+        }
+        Double leftVal = extractNumericValue(left);
+        Double rightVal = extractNumericValue(right);
+        if (leftVal == null || rightVal == null) {
+            return new ArkTSExpression.BinaryExpression(left, op, right);
+        }
+        double result;
+        switch (op) {
+            case "+":
+                result = leftVal + rightVal;
+                break;
+            case "-":
+                result = leftVal - rightVal;
+                break;
+            case "*":
+                result = leftVal * rightVal;
+                break;
+            case "/":
+                if (rightVal == 0.0) {
+                    return new ArkTSExpression.BinaryExpression(
+                            left, op, right);
+                }
+                result = leftVal / rightVal;
+                break;
+            case "%":
+                if (rightVal == 0.0) {
+                    return new ArkTSExpression.BinaryExpression(
+                            left, op, right);
+                }
+                result = leftVal % rightVal;
+                break;
+            case "**":
+                result = Math.pow(leftVal, rightVal);
+                break;
+            case "<<":
+                result = (int) leftVal.doubleValue()
+                        << (int) rightVal.doubleValue();
+                break;
+            case ">>":
+                result = (int) leftVal.doubleValue()
+                        >> (int) rightVal.doubleValue();
+                break;
+            case ">>>":
+                result = (int) leftVal.doubleValue()
+                        >>> (int) rightVal.doubleValue();
+                break;
+            case "&":
+                result = (int) leftVal.doubleValue()
+                        & (int) rightVal.doubleValue();
+                break;
+            case "|":
+                result = (int) leftVal.doubleValue()
+                        | (int) rightVal.doubleValue();
+                break;
+            case "^":
+                result = (int) leftVal.doubleValue()
+                        ^ (int) rightVal.doubleValue();
+                break;
+            default:
+                return new ArkTSExpression.BinaryExpression(left, op, right);
+        }
+        // Only fold if the result is a clean integer or finite number
+        if (Double.isNaN(result) || Double.isInfinite(result)) {
+            return new ArkTSExpression.BinaryExpression(left, op, right);
+        }
+        if (result == Math.floor(result) && !Double.isInfinite(result)
+                && Math.abs(result) <= Integer.MAX_VALUE) {
+            int intResult = (int) result;
+            return new ArkTSExpression.LiteralExpression(
+                    String.valueOf(intResult),
+                    ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        }
+        return new ArkTSExpression.LiteralExpression(
+                String.valueOf(result),
+                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+    }
+
+    private static boolean isFoldableOperator(String op) {
+        return "+".equals(op) || "-".equals(op)
+                || "*".equals(op) || "/".equals(op)
+                || "%".equals(op) || "**".equals(op)
+                || "<<".equals(op) || ">>".equals(op)
+                || ">>>".equals(op) || "&".equals(op)
+                || "|".equals(op) || "^".equals(op);
+    }
+
+    private static Double extractNumericValue(ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.LiteralExpression)) {
+            return null;
+        }
+        ArkTSExpression.LiteralExpression lit =
+                (ArkTSExpression.LiteralExpression) expr;
+        if (lit.getKind()
+                != ArkTSExpression.LiteralExpression.LiteralKind.NUMBER) {
+            return null;
+        }
+        try {
+            return Double.parseDouble(lit.getValue());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     // --- Type inference helper ---
