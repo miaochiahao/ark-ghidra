@@ -15,6 +15,7 @@ import com.arkghidra.format.AbcClass;
 import com.arkghidra.format.AbcCode;
 import com.arkghidra.format.AbcDebugInfo;
 import com.arkghidra.format.AbcFile;
+import com.arkghidra.format.AbcLocalVariable;
 import com.arkghidra.format.AbcMethod;
 import com.arkghidra.format.AbcModuleRecord;
 import com.arkghidra.format.AbcProto;
@@ -114,6 +115,8 @@ public class ArkTSDecompiler {
         AbcProto proto = resolveProto(method, abcFile);
         DecompilationContext ctx = new DecompilationContext(
                 method, code, proto, abcFile, cfg, instructions);
+
+        populateRegisterNames(method, abcFile, ctx);
 
         // Detect rest parameter from COPYRESTARGS instruction
         int restParamIndex = detectRestParamIndex(instructions,
@@ -396,6 +399,8 @@ public class ArkTSDecompiler {
         AbcProto proto = resolveProto(method, abcFile);
         DecompilationContext ctx = new DecompilationContext(
                 method, code, proto, abcFile, cfg, instructions);
+
+        populateRegisterNames(method, abcFile, ctx);
 
         try {
             List<ArkTSStatement> stmts = generateStatements(ctx);
@@ -867,6 +872,44 @@ public class ArkTSDecompiler {
     }
 
     // --- Resolver helpers ---
+
+    /**
+     * Populates register-to-name mappings from debug info into the
+     * decompilation context. Iterates over each line number program
+     * index in the debug info and parses local variables, then
+     * registers each variable's name via
+     * {@link DecompilationContext#setRegisterName}.
+     *
+     * @param method the method being decompiled
+     * @param abcFile the parent ABC file (may be null)
+     * @param ctx the decompilation context (may be null)
+     */
+    private static void populateRegisterNames(AbcMethod method,
+            AbcFile abcFile, DecompilationContext ctx) {
+        if (abcFile == null || ctx == null) {
+            return;
+        }
+        AbcDebugInfo debugInfo =
+                abcFile.getDebugInfoForMethod(method);
+        if (debugInfo == null) {
+            return;
+        }
+        List<Long> lnpIndices = debugInfo.getLineNumProgramIdx();
+        for (Long lnpIdx : lnpIndices) {
+            if (lnpIdx == null || lnpIdx <= 0) {
+                continue;
+            }
+            List<AbcLocalVariable> locals =
+                    abcFile.parseLocalVariables(lnpIdx);
+            for (AbcLocalVariable local : locals) {
+                if (local.getName() != null
+                        && !local.getName().isEmpty()) {
+                    ctx.setRegisterName(local.getRegisterNum(),
+                            local.getName());
+                }
+            }
+        }
+    }
 
     /**
      * Detects the rest parameter index by scanning instructions for

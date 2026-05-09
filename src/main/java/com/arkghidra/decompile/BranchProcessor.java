@@ -31,7 +31,8 @@ class BranchProcessor {
 
     ControlFlowReconstructor.ControlFlowPattern detectTernaryPattern(
             BasicBlock condBlock, BasicBlock trueBranch,
-            BasicBlock falseBranch, ControlFlowGraph cfg) {
+            BasicBlock falseBranch, ControlFlowGraph cfg,
+            DecompilationContext ctx) {
 
         ArkInstruction trueLast = trueBranch.getLastInstruction();
         if (trueLast == null
@@ -75,7 +76,8 @@ class BranchProcessor {
                 break;
             }
             if (insn.getOpcode() == ArkOpcodesCompat.STA) {
-                targetVar = "v" + insn.getOperands().get(0).getValue();
+                targetVar = ctx.resolveRegisterName(
+                        (int) insn.getOperands().get(0).getValue());
             }
         }
 
@@ -91,8 +93,8 @@ class BranchProcessor {
                 break;
             }
             if (insn.getOpcode() == ArkOpcodesCompat.STA) {
-                String falseVar =
-                        "v" + insn.getOperands().get(0).getValue();
+                String falseVar = ctx.resolveRegisterName(
+                        (int) insn.getOperands().get(0).getValue());
                 if (falseVar.equals(targetVar)) {
                     hasMatchingSta = true;
                 }

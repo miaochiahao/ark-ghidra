@@ -97,7 +97,8 @@ class InstructionHandler {
             case ArkOpcodesCompat.LDA: {
                 int reg = (int) operands.get(0).getValue();
                 ArkTSExpression expr =
-                        new ArkTSExpression.VariableExpression("v" + reg);
+                        new ArkTSExpression.VariableExpression(
+                                ctx.resolveRegisterName(reg));
                 return new StatementResult(null, expr);
             }
             case ArkOpcodesCompat.LDUNDEFINED:
@@ -157,12 +158,13 @@ class InstructionHandler {
         // --- Generator operations ---
         if (opcode == ArkOpcodesCompat.CREATEGENERATOROBJ) {
             return handleCreateGeneratorObj(operands, accValue,
-                    declaredVars);
+                    declaredVars, ctx);
         }
         if (opcode == ArkOpcodesCompat.SUSPENDGENERATOR) {
             int reg = (int) operands.get(0).getValue();
             ArkTSExpression value =
-                    new ArkTSExpression.VariableExpression("v" + reg);
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(reg));
             boolean isDelegate = isYieldDelegate(value);
             return new StatementResult(
                     new ArkTSStatement.ExpressionStatement(
@@ -185,14 +187,14 @@ class InstructionHandler {
             return new StatementResult(null,
                     new ArkTSAccessExpressions.AwaitExpression(
                             new ArkTSExpression.VariableExpression(
-                                    "v" + reg)));
+                                    ctx.resolveRegisterName(reg))));
         }
         if (opcode == ArkOpcodesCompat.ASYNCFUNCTIONRESOLVE) {
             int reg = (int) operands.get(0).getValue();
             return new StatementResult(
                     new ArkTSStatement.ReturnStatement(
                             new ArkTSExpression.VariableExpression(
-                                    "v" + reg)),
+                                    ctx.resolveRegisterName(reg))),
                     null);
         }
         if (opcode == ArkOpcodesCompat.ASYNCFUNCTIONREJECT) {
@@ -200,20 +202,21 @@ class InstructionHandler {
             return new StatementResult(
                     new ArkTSStatement.ThrowStatement(
                             new ArkTSExpression.VariableExpression(
-                                    "v" + reg)),
+                                    ctx.resolveRegisterName(reg))),
                     null);
         }
 
         // --- Async generator operations ---
         if (opcode == ArkOpcodesCompat.CREATEASYNCGENERATOROBJ) {
-            return handleCreateAsyncGeneratorObj(operands, declaredVars);
+            return handleCreateAsyncGeneratorObj(operands, declaredVars,
+                    ctx);
         }
         if (opcode == ArkOpcodesCompat.ASYNCGENERATORRESOLVE) {
             int valueReg = (int) operands.get(1).getValue();
             return new StatementResult(
                     new ArkTSStatement.ReturnStatement(
                             new ArkTSExpression.VariableExpression(
-                                    "v" + valueReg)),
+                                    ctx.resolveRegisterName(valueReg))),
                     null);
         }
         if (opcode == ArkOpcodesCompat.ASYNCGENERATORREJECT) {
@@ -221,7 +224,7 @@ class InstructionHandler {
             return new StatementResult(
                     new ArkTSStatement.ThrowStatement(
                             new ArkTSExpression.VariableExpression(
-                                    "v" + valueReg)),
+                                    ctx.resolveRegisterName(valueReg))),
                     null);
         }
         if (opcode == ArkOpcodesCompat.SETGENERATORSTATE) {
@@ -263,7 +266,7 @@ class InstructionHandler {
             ArkTSExpression spreadExpr =
                     new ArkTSAccessExpressions.SpreadExpression(
                             new ArkTSExpression.VariableExpression(
-                                    "v" + srcReg));
+                                    ctx.resolveRegisterName(srcReg)));
             List<ArkTSExpression> props = new ArrayList<>();
             props.add(spreadExpr);
             return new StatementResult(null,
@@ -281,9 +284,11 @@ class InstructionHandler {
             int getterReg = (int) operands.get(
                     operands.size() - 1).getValue();
             ArkTSExpression prop =
-                    new ArkTSExpression.VariableExpression("v" + keyReg);
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(keyReg));
             ArkTSExpression getter =
-                    new ArkTSExpression.VariableExpression("v" + getterReg);
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(getterReg));
             ArkTSExpression getterPair =
                     new ArkTSExpression.MemberExpression(
                             new ArkTSExpression.LiteralExpression("get",
@@ -302,7 +307,7 @@ class InstructionHandler {
                                             ArkTSExpression.LiteralExpression
                                                     .LiteralKind.STRING),
                                     new ArkTSExpression.VariableExpression(
-                                            "v" + setterReg),
+                                            ctx.resolveRegisterName(setterReg)),
                                     false);
                 }
             }
@@ -328,7 +333,8 @@ class InstructionHandler {
         if (opcode == ArkOpcodesCompat.COPYDATAPROPERTIES) {
             int srcReg = (int) operands.get(0).getValue();
             ArkTSExpression source =
-                    new ArkTSExpression.VariableExpression("v" + srcReg);
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(srcReg));
             ArkTSExpression target = accValue != null
                     ? accValue
                     : new ArkTSExpression.VariableExpression(ACC);
@@ -389,7 +395,8 @@ class InstructionHandler {
                     ? accValue
                     : new ArkTSExpression.VariableExpression(ACC);
             ArkTSExpression right =
-                    new ArkTSExpression.VariableExpression("v" + reg);
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(reg));
             ArkTSExpression result =
                     OperatorHandler.tryFoldConstants(left, op, right);
             // Try merging string literals for "+" (only if folding didn't
@@ -495,7 +502,7 @@ class InstructionHandler {
 
         // --- New object range ---
         if (opcode == ArkOpcodesCompat.NEWOBJRANGE) {
-            return handleNewObjRange(operands, accValue);
+            return handleNewObjRange(operands, accValue, ctx);
         }
 
         // --- Define function ---
@@ -562,9 +569,9 @@ class InstructionHandler {
 
     private StatementResult handleCreateGeneratorObj(
             List<ArkOperand> operands, ArkTSExpression accValue,
-            Set<String> declaredVars) {
+            Set<String> declaredVars, DecompilationContext ctx) {
         int reg = (int) operands.get(0).getValue();
-        String varName = "v" + reg;
+        String varName = ctx.resolveRegisterName(reg);
         ArkTSExpression expr =
                 new ArkTSExpression.VariableExpression("generator");
         if (accValue != null) {
@@ -587,9 +594,10 @@ class InstructionHandler {
     }
 
     private StatementResult handleCreateAsyncGeneratorObj(
-            List<ArkOperand> operands, Set<String> declaredVars) {
+            List<ArkOperand> operands, Set<String> declaredVars,
+            DecompilationContext ctx) {
         int reg = (int) operands.get(0).getValue();
-        String varName = "v" + reg;
+        String varName = ctx.resolveRegisterName(reg);
         ArkTSExpression expr =
                 new ArkTSExpression.VariableExpression("asyncGenerator");
         if (!declaredVars.contains(varName)) {
@@ -638,7 +646,7 @@ class InstructionHandler {
             DecompilationContext ctx, Set<String> declaredVars,
             TypeInference typeInf) {
         int reg = (int) operands.get(0).getValue();
-        String varName = "v" + reg;
+        String varName = ctx.resolveRegisterName(reg);
         if (accValue != null) {
             // Track expression stored to register for later inlining
             ctx.setRegisterExpression(reg, accValue);
@@ -1058,8 +1066,8 @@ class InstructionHandler {
             TypeInference typeInf) {
         int dstReg = (int) operands.get(0).getValue();
         int srcReg = (int) operands.get(1).getValue();
-        String dstName = "v" + dstReg;
-        String srcName = "v" + srcReg;
+        String dstName = ctx.resolveRegisterName(dstReg);
+        String srcName = ctx.resolveRegisterName(srcReg);
         ArkTSExpression srcExpr =
                 new ArkTSExpression.VariableExpression(srcName);
         String srcType = typeInf.getRegisterType(srcName);
@@ -1085,14 +1093,15 @@ class InstructionHandler {
     }
 
     private static StatementResult handleNewObjRange(
-            List<ArkOperand> operands, ArkTSExpression accValue) {
+            List<ArkOperand> operands, ArkTSExpression accValue,
+            DecompilationContext ctx) {
         int numArgs = (int) operands.get(0).getValue();
         List<ArkTSExpression> args = new ArrayList<>();
         int firstReg = (int) operands.get(
                 operands.size() - 1).getValue();
         for (int a = 0; a < numArgs; a++) {
             args.add(new ArkTSExpression.VariableExpression(
-                    "v" + (firstReg + a)));
+                    ctx.resolveRegisterName(firstReg + a)));
         }
         ArkTSExpression callee = accValue != null
                 ? accValue
@@ -1125,7 +1134,8 @@ class InstructionHandler {
         boolean isStaticField = (flags & 0x01) != 0;
         ArkTSExpression target =
                 new ArkTSExpression.MemberExpression(
-                        new ArkTSExpression.VariableExpression("v" + objReg),
+                        new ArkTSExpression.VariableExpression(
+                                ctx.resolveRegisterName(objReg)),
                         new ArkTSExpression.VariableExpression(fieldName),
                         false);
         ArkTSExpression value = accValue != null
@@ -1158,7 +1168,8 @@ class InstructionHandler {
         int objReg = (int) operands.get(
                 operands.size() - 1).getValue();
         ArkTSExpression obj =
-                new ArkTSExpression.VariableExpression("v" + objReg);
+                new ArkTSExpression.VariableExpression(
+                        ctx.resolveRegisterName(objReg));
         ArkTSExpression prop =
                 new ArkTSExpression.LiteralExpression(propName,
                         ArkTSExpression.LiteralExpression.LiteralKind.STRING);
@@ -1204,7 +1215,8 @@ class InstructionHandler {
         if (subOpcode == ArkOpcodesCompat.CRT_DEFINEFIELDBYVALUE) {
             int objReg = (int) operands.get(0).getValue();
             ArkTSExpression obj =
-                    new ArkTSExpression.VariableExpression("v" + objReg);
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(objReg));
             // The key is in the accumulator, value from context
             ArkTSExpression key = accValue != null
                     ? accValue
@@ -1218,7 +1230,8 @@ class InstructionHandler {
         if (subOpcode == ArkOpcodesCompat.CRT_DEFINEFIELDBYINDEX) {
             int objReg = (int) operands.get(0).getValue();
             ArkTSExpression obj =
-                    new ArkTSExpression.VariableExpression("v" + objReg);
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(objReg));
             return new StatementResult(null,
                     new ArkTSExpression.MemberExpression(
                             obj, new ArkTSExpression.VariableExpression(ACC),

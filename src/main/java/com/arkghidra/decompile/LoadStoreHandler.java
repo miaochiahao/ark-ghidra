@@ -45,7 +45,7 @@ class LoadStoreHandler {
             List<ArkTSExpression> args = new ArrayList<>();
             for (int a = 0; a < numArgs; a++) {
                 args.add(new ArkTSExpression.VariableExpression(
-                        "v" + (firstReg + a)));
+                        ctx.resolveRegisterName(firstReg + a)));
             }
             ArkTSStatement superCall =
                     new ArkTSControlFlow.SuperCallStatement(args);
@@ -61,7 +61,7 @@ class LoadStoreHandler {
             ArkTSExpression spreadArg =
                     new ArkTSAccessExpressions.SpreadExpression(
                             new ArkTSExpression.VariableExpression(
-                                    "v" + spreadReg));
+                                    ctx.resolveRegisterName(spreadReg)));
             List<ArkTSExpression> args = new ArrayList<>();
             args.add(spreadArg);
             ArkTSStatement superCall =
@@ -197,7 +197,8 @@ class LoadStoreHandler {
             int dstReg = (int) operands.get(0).getValue();
             int srcReg = (int) operands.get(1).getValue();
             ArkTSExpression spreadArg =
-                    new ArkTSExpression.VariableExpression("v" + srcReg);
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(srcReg));
             ArkTSExpression spread =
                     new ArkTSAccessExpressions.SpreadExpression(spreadArg);
             return new InstructionHandler.StatementResult(
@@ -314,10 +315,10 @@ class LoadStoreHandler {
 
         // --- Apply/call ---
         if (opcode == ArkOpcodesCompat.APPLY) {
-            return handleApply(operands, accValue);
+            return handleApply(operands, accValue, ctx);
         }
         if (opcode == ArkOpcodesCompat.NEWOBJAPPLY) {
-            return handleNewObjApply(operands, accValue);
+            return handleNewObjApply(operands, accValue, ctx);
         }
 
         // --- RegExp ---
@@ -347,7 +348,8 @@ class LoadStoreHandler {
             int objReg = (int) operands.get(
                     operands.size() - 1).getValue();
             ArkTSExpression obj =
-                    new ArkTSExpression.VariableExpression("v" + objReg);
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(objReg));
             ArkTSExpression proto = accValue != null
                     ? accValue
                     : new ArkTSExpression.VariableExpression(ACC);
@@ -381,15 +383,16 @@ class LoadStoreHandler {
 
         // --- Super by value ---
         if (opcode == ArkOpcodesCompat.LDSUPERBYVALUE) {
-            return handleLdSuperByValue(operands);
+            return handleLdSuperByValue(operands, ctx);
         }
         if (opcode == ArkOpcodesCompat.STSUPERBYVALUE) {
-            return handleStSuperByValue(operands, accValue);
+            return handleStSuperByValue(operands, accValue, ctx);
         }
 
         // --- Own property stores with name set ---
         if (opcode == ArkOpcodesCompat.STOWNBYVALUEWITHNAMESET) {
-            return handleStOwnByValueWithNameSet(operands, accValue);
+            return handleStOwnByValueWithNameSet(operands, accValue,
+                    ctx);
         }
         if (opcode == ArkOpcodesCompat.STOWNBYNAMEWITHNAMESET) {
             return handleStOwnByNameWithNameSet(operands, accValue, ctx);
@@ -399,7 +402,8 @@ class LoadStoreHandler {
     }
 
     private static InstructionHandler.StatementResult handleApply(
-            List<ArkOperand> operands, ArkTSExpression accValue) {
+            List<ArkOperand> operands, ArkTSExpression accValue,
+            DecompilationContext ctx) {
         ArkTSExpression func = accValue != null
                 ? accValue
                 : new ArkTSExpression.VariableExpression(ACC);
@@ -408,7 +412,7 @@ class LoadStoreHandler {
         List<ArkTSExpression> applyArgs = new ArrayList<>();
         for (int a = 0; a < numArgs; a++) {
             applyArgs.add(new ArkTSExpression.VariableExpression(
-                    "v" + (firstReg + a)));
+                    ctx.resolveRegisterName(firstReg + a)));
         }
         // When apply has a single array arg, emit fn(...args)
         if (applyArgs.size() == 1) {
@@ -428,7 +432,8 @@ class LoadStoreHandler {
     }
 
     private static InstructionHandler.StatementResult handleNewObjApply(
-            List<ArkOperand> operands, ArkTSExpression accValue) {
+            List<ArkOperand> operands, ArkTSExpression accValue,
+            DecompilationContext ctx) {
         ArkTSExpression ctor = accValue != null
                 ? accValue
                 : new ArkTSExpression.VariableExpression(ACC);
@@ -437,7 +442,7 @@ class LoadStoreHandler {
         List<ArkTSExpression> applyArgs = new ArrayList<>();
         for (int a = 0; a < numArgs; a++) {
             applyArgs.add(new ArkTSExpression.VariableExpression(
-                    "v" + (firstReg + a)));
+                    ctx.resolveRegisterName(firstReg + a)));
         }
         // When apply has a single arg, emit new Ctor(...args)
         if (applyArgs.size() == 1) {
@@ -457,11 +462,12 @@ class LoadStoreHandler {
     }
 
     private static InstructionHandler.StatementResult handleLdSuperByValue(
-            List<ArkOperand> operands) {
+            List<ArkOperand> operands, DecompilationContext ctx) {
         int keyReg = (int) operands.get(
                 operands.size() - 1).getValue();
         ArkTSExpression prop =
-                new ArkTSExpression.VariableExpression("v" + keyReg);
+                new ArkTSExpression.VariableExpression(
+                        ctx.resolveRegisterName(keyReg));
         return new InstructionHandler.StatementResult(null,
                 new ArkTSExpression.MemberExpression(
                         new ArkTSPropertyExpressions.SuperExpression(),
@@ -469,11 +475,13 @@ class LoadStoreHandler {
     }
 
     private static InstructionHandler.StatementResult handleStSuperByValue(
-            List<ArkOperand> operands, ArkTSExpression accValue) {
+            List<ArkOperand> operands, ArkTSExpression accValue,
+            DecompilationContext ctx) {
         int keyReg = (int) operands.get(
                 operands.size() - 2).getValue();
         ArkTSExpression prop =
-                new ArkTSExpression.VariableExpression("v" + keyReg);
+                new ArkTSExpression.VariableExpression(
+                        ctx.resolveRegisterName(keyReg));
         return new InstructionHandler.StatementResult(
                 new ArkTSStatement.ExpressionStatement(
                         new ArkTSExpression.AssignExpression(
@@ -489,15 +497,18 @@ class LoadStoreHandler {
 
     private static InstructionHandler.StatementResult
             handleStOwnByValueWithNameSet(
-                    List<ArkOperand> operands, ArkTSExpression accValue) {
+                    List<ArkOperand> operands, ArkTSExpression accValue,
+                    DecompilationContext ctx) {
         int keyReg = (int) operands.get(
                 operands.size() - 2).getValue();
         int objReg = (int) operands.get(
                 operands.size() - 1).getValue();
         ArkTSExpression obj =
-                new ArkTSExpression.VariableExpression("v" + objReg);
+                new ArkTSExpression.VariableExpression(
+                        ctx.resolveRegisterName(objReg));
         ArkTSExpression prop =
-                new ArkTSExpression.VariableExpression("v" + keyReg);
+                new ArkTSExpression.VariableExpression(
+                        ctx.resolveRegisterName(keyReg));
         return new InstructionHandler.StatementResult(
                 new ArkTSStatement.ExpressionStatement(
                         new ArkTSExpression.AssignExpression(
@@ -516,7 +527,8 @@ class LoadStoreHandler {
         int objReg = (int) operands.get(
                 operands.size() - 1).getValue();
         ArkTSExpression obj =
-                new ArkTSExpression.VariableExpression("v" + objReg);
+                new ArkTSExpression.VariableExpression(
+                        ctx.resolveRegisterName(objReg));
         String pn = ctx.resolveString(
                 (int) operands.get(1).getValue());
         ArkTSExpression prop =

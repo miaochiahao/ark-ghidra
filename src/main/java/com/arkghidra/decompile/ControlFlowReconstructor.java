@@ -222,7 +222,7 @@ class ControlFlowReconstructor {
             }
 
             ControlFlowPattern pattern = detectPattern(
-                    block, cfg, visited);
+                    block, cfg, visited, ctx);
 
             switch (pattern.type) {
                 case IF_ELSE:
@@ -339,7 +339,8 @@ class ControlFlowReconstructor {
     // --- Pattern detection (delegates to sub-processors) ---
 
     private ControlFlowPattern detectPattern(BasicBlock block,
-            ControlFlowGraph cfg, Set<BasicBlock> visited) {
+            ControlFlowGraph cfg, Set<BasicBlock> visited,
+            DecompilationContext ctx) {
 
         List<CFGEdge> successors = block.getSuccessors();
 
@@ -375,25 +376,25 @@ class ControlFlowReconstructor {
                                 : falseBranch);
                 ControlFlowPattern forOfP =
                         loopProcessor.detectForOfPattern(
-                                block, loopBody, cfg);
+                                block, loopBody, cfg, ctx);
                 if (forOfP != null) {
                     return forOfP;
                 }
                 ControlFlowPattern forInP =
                         loopProcessor.detectForInPattern(
-                                block, loopBody, cfg);
+                                block, loopBody, cfg, ctx);
                 if (forInP != null) {
                     return forInP;
                 }
                 ControlFlowPattern forAwaitOfP =
                         loopProcessor.detectForAwaitOfPattern(
-                                block, loopBody, cfg);
+                                block, loopBody, cfg, ctx);
                 if (forAwaitOfP != null) {
                     return forAwaitOfP;
                 }
                 ControlFlowPattern forP =
                         loopProcessor.detectClassicForLoopPattern(
-                                block, loopBody, cfg);
+                                block, loopBody, cfg, ctx);
                 if (forP != null) {
                     return forP;
                 }
@@ -406,14 +407,14 @@ class ControlFlowReconstructor {
 
             ControlFlowPattern switchP =
                     switchProcessor.detectSwitchPattern(
-                            block, trueBranch, falseBranch, cfg);
+                            block, trueBranch, falseBranch, cfg, ctx);
             if (switchP != null) {
                 return switchP;
             }
 
             ControlFlowPattern ternaryP =
                     branchProcessor.detectTernaryPattern(
-                            block, trueBranch, falseBranch, cfg);
+                            block, trueBranch, falseBranch, cfg, ctx);
             if (ternaryP != null) {
                 return ternaryP;
             }
@@ -538,7 +539,8 @@ class ControlFlowReconstructor {
                             ? ctx.currentAccValue
                             : new ArkTSExpression.VariableExpression(ACC),
                     "==",
-                    new ArkTSExpression.VariableExpression("v" + reg));
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(reg)));
         }
         if (opcode == ArkOpcodesCompat.JNE_IMM8
                 || opcode == ArkOpcodesCompat.JNE_IMM16) {
@@ -548,7 +550,8 @@ class ControlFlowReconstructor {
                             ? ctx.currentAccValue
                             : new ArkTSExpression.VariableExpression(ACC),
                     "!=",
-                    new ArkTSExpression.VariableExpression("v" + reg));
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(reg)));
         }
         if (opcode == ArkOpcodesCompat.JSTRICTEQZ_IMM8
                 || opcode == ArkOpcodesCompat.JSTRICTEQZ_IMM16) {
@@ -628,7 +631,8 @@ class ControlFlowReconstructor {
                             ? ctx.currentAccValue
                             : new ArkTSExpression.VariableExpression(ACC),
                     "===",
-                    new ArkTSExpression.VariableExpression("v" + reg));
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(reg)));
         }
         if (opcode == ArkOpcodesCompat.JNSTRICTEQ_IMM8
                 || opcode == ArkOpcodesCompat.JNSTRICTEQ_IMM16) {
@@ -638,7 +642,8 @@ class ControlFlowReconstructor {
                             ? ctx.currentAccValue
                             : new ArkTSExpression.VariableExpression(ACC),
                     "!==",
-                    new ArkTSExpression.VariableExpression("v" + reg));
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(reg)));
         }
 
         return ctx.currentAccValue;

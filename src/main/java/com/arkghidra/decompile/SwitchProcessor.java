@@ -30,7 +30,8 @@ class SwitchProcessor {
 
     ControlFlowReconstructor.ControlFlowPattern detectSwitchPattern(
             BasicBlock block, BasicBlock trueBranch,
-            BasicBlock falseBranch, ControlFlowGraph cfg) {
+            BasicBlock falseBranch, ControlFlowGraph cfg,
+            DecompilationContext ctx) {
 
         ArkInstruction lastInsn = block.getLastInstruction();
         if (lastInsn == null) {
@@ -127,7 +128,7 @@ class SwitchProcessor {
 
         ArkTSExpression discriminant =
                 new ArkTSExpression.VariableExpression(
-                        "v" + compareReg);
+                        ctx.resolveRegisterName(compareReg));
 
         BasicBlock defaultBlock = current;
         BasicBlock endBlock = findSwitchEndBlock(

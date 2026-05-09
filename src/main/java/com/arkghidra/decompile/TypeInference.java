@@ -36,6 +36,19 @@ public class TypeInference {
      * @return the inferred ArkTS type name, or null if unknown
      */
     public String inferTypeForInstruction(ArkInstruction insn) {
+        return inferTypeForInstruction(insn, null);
+    }
+
+    /**
+     * Infers the ArkTS type for an instruction with optional context
+     * for register name resolution.
+     *
+     * @param insn the instruction
+     * @param ctx the decompilation context (may be null)
+     * @return the inferred ArkTS type name, or null if unknown
+     */
+    public String inferTypeForInstruction(ArkInstruction insn,
+            DecompilationContext ctx) {
         int opcode = insn.getOpcode();
         List<ArkOperand> operands = insn.getOperands();
 
@@ -64,7 +77,9 @@ public class TypeInference {
         }
         if (opcode == ArkOpcodesCompat.LDA) {
             int reg = (int) operands.get(0).getValue();
-            return registerTypes.getOrDefault("v" + reg, null);
+            String regName = ctx != null
+                    ? ctx.resolveRegisterName(reg) : "v" + reg;
+            return registerTypes.getOrDefault(regName, null);
         }
         if (opcode == ArkOpcodesCompat.LDTHIS) {
             return "Object";

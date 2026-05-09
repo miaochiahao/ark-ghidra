@@ -53,7 +53,7 @@ class ObjectCreationHandler {
         ArkTSExpression classExpr =
                 new ArkTSExpression.VariableExpression(className);
 
-        String varName = "v" + lastReg;
+        String varName = ctx.resolveRegisterName(lastReg);
         ArkTSStatement stmt = new ArkTSStatement.VariableDeclaration(
                 "let", varName, className, classExpr);
 
@@ -221,13 +221,15 @@ class ObjectCreationHandler {
                                 == ArkOpcodesCompat.STA) {
                     int srcReg = (int) insn.getOperands().get(0)
                             .getValue();
-                    String currentSource = "v" + srcReg;
+                    String currentSource =
+                            ctx.resolveRegisterName(srcReg);
                     List<ArkOperand> ldOps = nextInsn.getOperands();
                     int index = (int) ldOps.get(
                             ldOps.size() - 1).getValue();
                     int targetReg = (int) afterNext.getOperands()
                             .get(0).getValue();
-                    String targetVar = "v" + targetReg;
+                    String targetVar =
+                            ctx.resolveRegisterName(targetReg);
 
                     if (sourceVar == null) {
                         sourceVar = currentSource;
@@ -240,7 +242,7 @@ class ObjectCreationHandler {
                                 new ArkTSExpression[1];
                         int defaultConsumed = tryDetectDefaultValue(
                                 instructions, scanIdx + 3,
-                                targetReg, defaultOut);
+                                targetReg, defaultOut, ctx);
 
                         if (defaultOut[0] != null) {
                             bindings.add(
@@ -270,7 +272,7 @@ class ObjectCreationHandler {
                             consecutiveIdx);
                     if (restResult >= 0) {
                         String restVar = findRestTarget(
-                                instructions, scanIdx, restResult);
+                                instructions, scanIdx, restResult, ctx);
                         if (restVar != null) {
                             restBinding = restVar;
                             declaredVars.add(restVar);
@@ -336,13 +338,13 @@ class ObjectCreationHandler {
      * Finds the target variable from the last STA in a rest pattern.
      */
     private String findRestTarget(List<ArkInstruction> instructions,
-            int startIdx, int count) {
+            int startIdx, int count, DecompilationContext ctx) {
         for (int i = startIdx; i < startIdx + count
                 && i < instructions.size(); i++) {
             ArkInstruction insn = instructions.get(i);
             if (insn.getOpcode() == ArkOpcodesCompat.STA) {
                 int reg = (int) insn.getOperands().get(0).getValue();
-                return "v" + reg;
+                return ctx.resolveRegisterName(reg);
             }
         }
         return null;
@@ -375,7 +377,7 @@ class ObjectCreationHandler {
      */
     private int tryDetectDefaultValue(List<ArkInstruction> instructions,
             int scanIdx, int targetReg,
-            ArkTSExpression[] defaultOut) {
+            ArkTSExpression[] defaultOut, DecompilationContext ctx) {
 
         if (scanIdx + 3 >= instructions.size()) {
             return 0;
@@ -401,7 +403,8 @@ class ObjectCreationHandler {
                     // Skip over the branch, look for default value + STA
                     int valueIdx = scanIdx + 2;
                     ArkTSExpression defaultExpr =
-                            extractLoadExpression(instructions, valueIdx);
+                            extractLoadExpression(instructions, valueIdx,
+                                    ctx);
                     if (defaultExpr != null) {
                         // Find the STA to same target reg
                         int staIdx = findStaAfterLoad(
@@ -438,7 +441,8 @@ class ObjectCreationHandler {
      * ldundefined, ldnan, ldinfinity.
      */
     private static ArkTSExpression extractLoadExpression(
-            List<ArkInstruction> instructions, int idx) {
+            List<ArkInstruction> instructions, int idx,
+            DecompilationContext ctx) {
         if (idx >= instructions.size()) {
             return null;
         }
@@ -480,7 +484,8 @@ class ObjectCreationHandler {
         }
         if (opcode == ArkOpcodesCompat.LDA) {
             int reg = (int) insn.getOperands().get(0).getValue();
-            return new ArkTSExpression.VariableExpression("v" + reg);
+            return new ArkTSExpression.VariableExpression(
+                    ctx.resolveRegisterName(reg));
         }
         return null;
     }
@@ -551,13 +556,15 @@ class ObjectCreationHandler {
                                 == ArkOpcodesCompat.STA) {
                     int srcReg = (int) insn.getOperands().get(0)
                             .getValue();
-                    String currentSource = "v" + srcReg;
+                    String currentSource =
+                            ctx.resolveRegisterName(srcReg);
                     String propName = ctx.resolveString(
                             (int) nextInsn.getOperands().get(1)
                                     .getValue());
                     int targetReg = (int) afterNext.getOperands()
                             .get(0).getValue();
-                    String targetVar = "v" + targetReg;
+                    String targetVar =
+                            ctx.resolveRegisterName(targetReg);
 
                     if (sourceVar == null) {
                         sourceVar = currentSource;
@@ -581,7 +588,7 @@ class ObjectCreationHandler {
                                 new ArkTSExpression[1];
                         int defaultConsumed = tryDetectDefaultValue(
                                 instructions, scanIdx + 3,
-                                targetReg, defaultOut);
+                                targetReg, defaultOut, ctx);
 
                         bindings.add(
                                 new ArkTSPropertyExpressions

@@ -153,7 +153,7 @@ class LoopProcessor {
      */
     ControlFlowReconstructor.ControlFlowPattern detectClassicForLoopPattern(
             BasicBlock condBlock, BasicBlock loopBody,
-            ControlFlowGraph cfg) {
+            ControlFlowGraph cfg, DecompilationContext ctx) {
 
         ArkInstruction lastInsn = condBlock.getLastInstruction();
         if (lastInsn == null) {
@@ -375,7 +375,7 @@ class LoopProcessor {
 
     ControlFlowReconstructor.ControlFlowPattern detectForOfPattern(
             BasicBlock condBlock, BasicBlock loopBody,
-            ControlFlowGraph cfg) {
+            ControlFlowGraph cfg, DecompilationContext ctx) {
         boolean hasGetIterator = false;
         BasicBlock setupBlock = null;
         for (ArkInstruction insn : condBlock.getInstructions()) {
@@ -442,8 +442,9 @@ class LoopProcessor {
                     ArkInstruction nextInsn = searchInsns.get(i + 1);
                     if (nextInsn.getOpcode()
                             == ArkOpcodesCompat.STA) {
-                        iterVarName = "v" + nextInsn.getOperands()
-                                .get(0).getValue();
+                        iterVarName = ctx.resolveRegisterName(
+                                (int) nextInsn.getOperands()
+                                        .get(0).getValue());
                     }
                 }
                 break;
@@ -460,8 +461,9 @@ class LoopProcessor {
                             condBlock.getInstructions().get(i + 1);
                     if (nextInsn.getOpcode()
                             == ArkOpcodesCompat.STA) {
-                        itemVarName = "v" + nextInsn.getOperands()
-                                .get(0).getValue();
+                        itemVarName = ctx.resolveRegisterName(
+                                (int) nextInsn.getOperands()
+                                        .get(0).getValue());
                     }
                 }
             }
@@ -478,8 +480,9 @@ class LoopProcessor {
                                 loopBody.getInstructions().get(i + 1);
                         if (nextInsn.getOpcode()
                                 == ArkOpcodesCompat.STA) {
-                            itemVarName = "v" + nextInsn.getOperands()
-                                    .get(0).getValue();
+                            itemVarName = ctx.resolveRegisterName(
+                                    (int) nextInsn.getOperands()
+                                            .get(0).getValue());
                         }
                     }
                     break;
@@ -507,7 +510,7 @@ class LoopProcessor {
 
     ControlFlowReconstructor.ControlFlowPattern detectForInPattern(
             BasicBlock condBlock, BasicBlock loopBody,
-            ControlFlowGraph cfg) {
+            ControlFlowGraph cfg, DecompilationContext ctx) {
         boolean hasPropIterator = false;
         BasicBlock setupBlock = null;
         for (CFGEdge pred : condBlock.getPredecessors()) {
@@ -566,8 +569,9 @@ class LoopProcessor {
                         ArkInstruction nextInsn = setupInsns.get(i + 1);
                         if (nextInsn.getOpcode()
                                 == ArkOpcodesCompat.STA) {
-                            iterVarName = "v" + nextInsn.getOperands()
-                                    .get(0).getValue();
+                            iterVarName = ctx.resolveRegisterName(
+                                    (int) nextInsn.getOperands()
+                                            .get(0).getValue());
                         }
                     }
                     break;
@@ -585,8 +589,9 @@ class LoopProcessor {
                             condBlock.getInstructions().get(i + 1);
                     if (nextInsn.getOpcode()
                             == ArkOpcodesCompat.STA) {
-                        keyVarName = "v" + nextInsn.getOperands()
-                                .get(0).getValue();
+                        keyVarName = ctx.resolveRegisterName(
+                                (int) nextInsn.getOperands()
+                                        .get(0).getValue());
                     }
                 }
                 break;
@@ -604,8 +609,9 @@ class LoopProcessor {
                                 loopBody.getInstructions().get(i + 1);
                         if (nextInsn.getOpcode()
                                 == ArkOpcodesCompat.STA) {
-                            keyVarName = "v" + nextInsn.getOperands()
-                                    .get(0).getValue();
+                            keyVarName = ctx.resolveRegisterName(
+                                    (int) nextInsn.getOperands()
+                                            .get(0).getValue());
                         }
                     }
                     break;
@@ -954,7 +960,7 @@ class LoopProcessor {
      */
     ControlFlowReconstructor.ControlFlowPattern detectForAwaitOfPattern(
             BasicBlock condBlock, BasicBlock loopBody,
-            ControlFlowGraph cfg) {
+            ControlFlowGraph cfg, DecompilationContext ctx) {
         boolean hasAsyncIterator = false;
         BasicBlock setupBlock = null;
         for (ArkInstruction insn : condBlock.getInstructions()) {
@@ -1021,8 +1027,9 @@ class LoopProcessor {
                     ArkInstruction nextInsn = searchInsns.get(i + 1);
                     if (nextInsn.getOpcode()
                             == ArkOpcodesCompat.STA) {
-                        iterVarName = "v" + nextInsn.getOperands()
-                                .get(0).getValue();
+                        iterVarName = ctx.resolveRegisterName(
+                                (int) nextInsn.getOperands()
+                                        .get(0).getValue());
                     }
                 }
                 break;
@@ -1039,8 +1046,9 @@ class LoopProcessor {
                             condBlock.getInstructions().get(i + 1);
                     if (nextInsn.getOpcode()
                             == ArkOpcodesCompat.STA) {
-                        itemVarName = "v" + nextInsn.getOperands()
-                                .get(0).getValue();
+                        itemVarName = ctx.resolveRegisterName(
+                                (int) nextInsn.getOperands()
+                                        .get(0).getValue());
                     }
                 }
             }
@@ -1057,8 +1065,9 @@ class LoopProcessor {
                                 loopBody.getInstructions().get(i + 1);
                         if (nextInsn.getOpcode()
                                 == ArkOpcodesCompat.STA) {
-                            itemVarName = "v" + nextInsn.getOperands()
-                                    .get(0).getValue();
+                            itemVarName = ctx.resolveRegisterName(
+                                    (int) nextInsn.getOperands()
+                                            .get(0).getValue());
                         }
                     }
                     break;

@@ -64,7 +64,8 @@ class PropertyAccessHandler {
             case ArkOpcodesCompat.CALLTHIS0: {
                 ArkTSExpression thisObj =
                         new ArkTSExpression.VariableExpression(
-                                "v" + operands.get(1).getValue());
+                                ctx.resolveRegisterName(
+                                        (int) operands.get(1).getValue()));
                 callee = new ArkTSExpression.MemberExpression(
                         thisObj, callee, false);
                 break;
@@ -72,43 +73,53 @@ class PropertyAccessHandler {
             case ArkOpcodesCompat.CALLTHIS1: {
                 ArkTSExpression thisObj =
                         new ArkTSExpression.VariableExpression(
-                                "v" + operands.get(1).getValue());
+                                ctx.resolveRegisterName(
+                                        (int) operands.get(1).getValue()));
                 callee = new ArkTSExpression.MemberExpression(
                         thisObj, callee, false);
                 args.add(new ArkTSExpression.VariableExpression(
-                        "v" + operands.get(2).getValue()));
+                        ctx.resolveRegisterName(
+                                (int) operands.get(2).getValue())));
                 break;
             }
             case ArkOpcodesCompat.CALLTHIS2: {
                 ArkTSExpression thisObj =
                         new ArkTSExpression.VariableExpression(
-                                "v" + operands.get(1).getValue());
+                                ctx.resolveRegisterName(
+                                        (int) operands.get(1).getValue()));
                 callee = new ArkTSExpression.MemberExpression(
                         thisObj, callee, false);
                 args.add(new ArkTSExpression.VariableExpression(
-                        "v" + operands.get(2).getValue()));
+                        ctx.resolveRegisterName(
+                                (int) operands.get(2).getValue())));
                 args.add(new ArkTSExpression.VariableExpression(
-                        "v" + operands.get(3).getValue()));
+                        ctx.resolveRegisterName(
+                                (int) operands.get(3).getValue())));
                 break;
             }
             case ArkOpcodesCompat.CALLTHIS3: {
                 ArkTSExpression thisObj =
                         new ArkTSExpression.VariableExpression(
-                                "v" + operands.get(1).getValue());
+                                ctx.resolveRegisterName(
+                                        (int) operands.get(1).getValue()));
                 callee = new ArkTSExpression.MemberExpression(
                         thisObj, callee, false);
                 args.add(new ArkTSExpression.VariableExpression(
-                        "v" + operands.get(2).getValue()));
+                        ctx.resolveRegisterName(
+                                (int) operands.get(2).getValue())));
                 args.add(new ArkTSExpression.VariableExpression(
-                        "v" + operands.get(3).getValue()));
+                        ctx.resolveRegisterName(
+                                (int) operands.get(3).getValue())));
                 args.add(new ArkTSExpression.VariableExpression(
-                        "v" + operands.get(4).getValue()));
+                        ctx.resolveRegisterName(
+                                (int) operands.get(4).getValue())));
                 break;
             }
             case ArkOpcodesCompat.CALLTHISRANGE: {
                 ArkTSExpression thisObj =
                         new ArkTSExpression.VariableExpression(
-                                "v" + operands.get(1).getValue());
+                                ctx.resolveRegisterName(
+                                        (int) operands.get(1).getValue()));
                 callee = new ArkTSExpression.MemberExpression(
                         thisObj, callee, false);
                 if (operands.size() >= 3) {
@@ -117,7 +128,7 @@ class PropertyAccessHandler {
                             operands.size() - 1).getValue();
                     for (int a = 0; a < numRangeArgs; a++) {
                         args.add(new ArkTSExpression.VariableExpression(
-                                "v" + (firstReg + a)));
+                                ctx.resolveRegisterName(firstReg + a)));
                     }
                 }
                 break;
@@ -129,7 +140,7 @@ class PropertyAccessHandler {
                             operands.size() - 1).getValue();
                     for (int a = 0; a < numRangeArgs; a++) {
                         args.add(new ArkTSExpression.VariableExpression(
-                                "v" + (firstReg + a)));
+                                ctx.resolveRegisterName(firstReg + a)));
                     }
                 }
                 break;
@@ -168,7 +179,8 @@ class PropertyAccessHandler {
             int reg = (int) operands.get(
                     operands.size() - 1).getValue();
             ArkTSExpression prop =
-                    new ArkTSExpression.VariableExpression("v" + reg);
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(reg));
             return new ArkTSExpression.MemberExpression(obj, prop, true);
         }
 
@@ -209,7 +221,8 @@ class PropertyAccessHandler {
         } else {
             int objReg = (int) operands.get(
                     operands.size() - 1).getValue();
-            obj = new ArkTSExpression.VariableExpression("v" + objReg);
+            obj = new ArkTSExpression.VariableExpression(
+                    ctx.resolveRegisterName(objReg));
         }
 
         ArkTSExpression prop;
@@ -219,7 +232,8 @@ class PropertyAccessHandler {
                 || opcode == ArkOpcodesCompat.STSUPERBYVALUE) {
             int keyReg = (int) operands.get(
                     operands.size() - 2).getValue();
-            prop = new ArkTSExpression.VariableExpression("v" + keyReg);
+            prop = new ArkTSExpression.VariableExpression(
+                    ctx.resolveRegisterName(keyReg));
             return new ArkTSExpression.AssignExpression(
                     new ArkTSExpression.MemberExpression(obj, prop, true),
                     accValue != null ? accValue
@@ -297,7 +311,8 @@ class PropertyAccessHandler {
                 operands.size() - 1).getValue();
         ArkTSExpression target =
                 new ArkTSPropertyExpressions.PrivateMemberExpression(
-                        new ArkTSExpression.VariableExpression("v" + objReg),
+                        new ArkTSExpression.VariableExpression(
+                                ctx.resolveRegisterName(objReg)),
                         propName);
         ArkTSExpression value = accValue != null
                 ? accValue
@@ -349,7 +364,8 @@ class PropertyAccessHandler {
         String propName = ctx.resolveString(stringIdx);
         int objReg = (int) operands.get(1).getValue();
         ArkTSExpression obj =
-                new ArkTSExpression.VariableExpression("v" + objReg);
+                new ArkTSExpression.VariableExpression(
+                        ctx.resolveRegisterName(objReg));
         ArkTSExpression target =
                 new ArkTSPropertyExpressions.PrivateMemberExpression(
                         obj, propName);
@@ -397,7 +413,8 @@ class PropertyAccessHandler {
         if (stored != null && isInlineableFunction(stored)) {
             return stored;
         }
-        return new ArkTSExpression.VariableExpression("v" + reg);
+        return new ArkTSExpression.VariableExpression(
+                ctx.resolveRegisterName(reg));
     }
 
     private static boolean isInlineableFunction(ArkTSExpression expr) {

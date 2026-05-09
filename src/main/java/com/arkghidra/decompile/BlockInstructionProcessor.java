@@ -38,7 +38,7 @@ class BlockInstructionProcessor {
         List<ArkTSStatement> stmts = new ArrayList<>();
         Set<String> declaredVars = new HashSet<>();
         for (int i = 0; i < ctx.numArgs; i++) {
-            declaredVars.add("v" + i);
+            declaredVars.add(ctx.resolveRegisterName(i));
         }
 
         ArkTSExpression accValue = null;
@@ -156,7 +156,7 @@ class BlockInstructionProcessor {
         List<ArkTSStatement> stmts = new ArrayList<>();
         Set<String> declaredVars = new HashSet<>();
         for (int i = 0; i < ctx.numArgs; i++) {
-            declaredVars.add("v" + i);
+            declaredVars.add(ctx.resolveRegisterName(i));
         }
         ArkTSExpression accValue = null;
         TypeInference typeInf = new TypeInference();
@@ -284,7 +284,7 @@ class BlockInstructionProcessor {
         TypeInference typeInf = new TypeInference();
         Set<String> declaredVars = new HashSet<>();
         for (int i = 0; i < ctx.numArgs; i++) {
-            declaredVars.add("v" + i);
+            declaredVars.add(ctx.resolveRegisterName(i));
         }
 
         for (ArkInstruction insn : block.getInstructions()) {

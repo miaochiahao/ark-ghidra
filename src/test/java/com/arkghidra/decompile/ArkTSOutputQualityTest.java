@@ -321,5 +321,26 @@ class ArkTSOutputQualityTest {
             assertTrue(result.contains("let v3 = 1"),
                     "Reassigned v3 should use let: " + result);
         }
+
+        @Test
+        @DisplayName("Instruction-level decompilation uses v0, v1 without debug info")
+        void testInstructionLevel_usesVregNames() {
+            // ldai 10 -> sta v0 -> lda v0 -> sta v2 -> ldai 20 -> sta v3 -> return
+            byte[] code = concat(bytes(0x62), le32(10),
+                    bytes(0x61, 0x00),
+                    bytes(0x60, 0x00),
+                    bytes(0x61, 0x02),
+                    bytes(0x62), le32(20),
+                    bytes(0x61, 0x03),
+                    bytes(0x64));
+            List<ArkInstruction> insns = dis(code);
+            String result = decompiler.decompileInstructions(insns);
+            assertTrue(result.contains("v0"),
+                    "Should use v0 for register 0: " + result);
+            assertTrue(result.contains("v2"),
+                    "Should use v2 for register 2: " + result);
+            assertTrue(result.contains("v3"),
+                    "Should use v3 for register 3: " + result);
+        }
     }
 }
