@@ -741,6 +741,232 @@ public class ArkTSDecompiler {
             return new ArkTSExpression.IncrementExpression(
                     t, inc.isPrefix(), inc.isIncrement());
         }
+        // Await: replace in argument
+        if (expr instanceof ArkTSAccessExpressions.AwaitExpression) {
+            ArkTSExpression arg = replaceVariable(
+                    ((ArkTSAccessExpressions.AwaitExpression) expr)
+                            .getArgument(), varName, replacement);
+            if (arg == null) {
+                return null;
+            }
+            return new ArkTSAccessExpressions.AwaitExpression(arg);
+        }
+        // Yield: replace in argument
+        if (expr instanceof ArkTSAccessExpressions.YieldExpression) {
+            ArkTSAccessExpressions.YieldExpression yield =
+                    (ArkTSAccessExpressions.YieldExpression) expr;
+            ArkTSExpression yArg = yield.getArgument();
+            if (yArg == null) {
+                return expr;
+            }
+            ArkTSExpression replaced =
+                    replaceVariable(yArg, varName, replacement);
+            if (replaced == null) {
+                return null;
+            }
+            return new ArkTSAccessExpressions.YieldExpression(
+                    replaced, yield.isDelegate());
+        }
+        // Spread: replace in argument
+        if (expr instanceof ArkTSAccessExpressions.SpreadExpression) {
+            ArkTSExpression arg = replaceVariable(
+                    ((ArkTSAccessExpressions.SpreadExpression) expr)
+                            .getArgument(), varName, replacement);
+            if (arg == null) {
+                return null;
+            }
+            return new ArkTSAccessExpressions.SpreadExpression(arg);
+        }
+        // SpreadCall: replace in callee and args
+        if (expr instanceof ArkTSAccessExpressions.SpreadCallExpression) {
+            ArkTSAccessExpressions.SpreadCallExpression sc =
+                    (ArkTSAccessExpressions.SpreadCallExpression) expr;
+            ArkTSExpression callee =
+                    replaceVariable(sc.getCallee(), varName, replacement);
+            if (callee == null) {
+                return null;
+            }
+            List<ArkTSExpression> newArgs = new ArrayList<>();
+            for (ArkTSExpression a : sc.getArguments()) {
+                ArkTSExpression r =
+                        replaceVariable(a, varName, replacement);
+                if (r == null) {
+                    return null;
+                }
+                newArgs.add(r);
+            }
+            return new ArkTSAccessExpressions.SpreadCallExpression(
+                    callee, newArgs);
+        }
+        // SpreadArray: replace in elements
+        if (expr instanceof ArkTSAccessExpressions.SpreadArrayExpression) {
+            List<ArkTSExpression> newElems = new ArrayList<>();
+            for (ArkTSExpression e :
+                    ((ArkTSAccessExpressions.SpreadArrayExpression) expr)
+                            .getElements()) {
+                ArkTSExpression r =
+                        replaceVariable(e, varName, replacement);
+                if (r == null) {
+                    return null;
+                }
+                newElems.add(r);
+            }
+            return new ArkTSAccessExpressions.SpreadArrayExpression(
+                    newElems);
+        }
+        // SpreadObject: replace in properties
+        if (expr instanceof ArkTSAccessExpressions.SpreadObjectExpression) {
+            List<ArkTSExpression> newProps = new ArrayList<>();
+            for (ArkTSExpression p :
+                    ((ArkTSAccessExpressions.SpreadObjectExpression) expr)
+                            .getProperties()) {
+                ArkTSExpression r =
+                        replaceVariable(p, varName, replacement);
+                if (r == null) {
+                    return null;
+                }
+                newProps.add(r);
+            }
+            return new ArkTSAccessExpressions.SpreadObjectExpression(
+                    newProps);
+        }
+        // TemplateLiteral: replace in expressions
+        if (expr instanceof ArkTSAccessExpressions.TemplateLiteralExpression) {
+            ArkTSAccessExpressions.TemplateLiteralExpression tl =
+                    (ArkTSAccessExpressions.TemplateLiteralExpression) expr;
+            List<ArkTSExpression> newExprs = new ArrayList<>();
+            for (ArkTSExpression e : tl.getExpressions()) {
+                ArkTSExpression r =
+                        replaceVariable(e, varName, replacement);
+                if (r == null) {
+                    return null;
+                }
+                newExprs.add(r);
+            }
+            return new ArkTSAccessExpressions.TemplateLiteralExpression(
+                    tl.getQuasis(), newExprs);
+        }
+        // ArrayLiteral: replace in elements
+        if (expr instanceof ArkTSAccessExpressions.ArrayLiteralExpression) {
+            List<ArkTSExpression> newElems = new ArrayList<>();
+            for (ArkTSExpression e :
+                    ((ArkTSAccessExpressions.ArrayLiteralExpression) expr)
+                            .getElements()) {
+                ArkTSExpression r =
+                        replaceVariable(e, varName, replacement);
+                if (r == null) {
+                    return null;
+                }
+                newElems.add(r);
+            }
+            return new ArkTSAccessExpressions.ArrayLiteralExpression(
+                    newElems);
+        }
+        // ObjectLiteral: replace in property values
+        if (expr instanceof ArkTSAccessExpressions.ObjectLiteralExpression) {
+            ArkTSAccessExpressions.ObjectLiteralExpression ol =
+                    (ArkTSAccessExpressions.ObjectLiteralExpression) expr;
+            List<ArkTSAccessExpressions.ObjectLiteralExpression.ObjectProperty>
+                    newProps = new ArrayList<>();
+            for (ArkTSAccessExpressions.ObjectLiteralExpression.ObjectProperty
+                    p : ol.getProperties()) {
+                ArkTSExpression val =
+                        replaceVariable(p.getValue(), varName, replacement);
+                if (val == null) {
+                    return null;
+                }
+                if (p.isComputed()) {
+                    ArkTSExpression key =
+                            replaceVariable(p.getComputedKey(), varName,
+                                    replacement);
+                    if (key == null) {
+                        return null;
+                    }
+                    newProps.add(
+                            new ArkTSAccessExpressions.ObjectLiteralExpression
+                                    .ObjectProperty(key, val, true));
+                } else {
+                    newProps.add(
+                            new ArkTSAccessExpressions.ObjectLiteralExpression
+                                    .ObjectProperty(p.getKey(), val));
+                }
+            }
+            return new ArkTSAccessExpressions.ObjectLiteralExpression(
+                    newProps);
+        }
+        // As (type cast): replace in expression
+        if (expr instanceof ArkTSAccessExpressions.AsExpression) {
+            ArkTSExpression inner = replaceVariable(
+                    ((ArkTSAccessExpressions.AsExpression) expr)
+                            .getExpression(), varName, replacement);
+            if (inner == null) {
+                return null;
+            }
+            return new ArkTSAccessExpressions.AsExpression(inner,
+                    ((ArkTSAccessExpressions.AsExpression) expr)
+                            .getTypeName());
+        }
+        // NonNull: replace in expression
+        if (expr instanceof ArkTSAccessExpressions.NonNullExpression) {
+            ArkTSExpression inner = replaceVariable(
+                    ((ArkTSAccessExpressions.NonNullExpression) expr)
+                            .getExpression(), varName, replacement);
+            if (inner == null) {
+                return null;
+            }
+            return new ArkTSAccessExpressions.NonNullExpression(inner);
+        }
+        // OptionalChain: replace in object and property
+        if (expr instanceof ArkTSAccessExpressions.OptionalChainExpression) {
+            ArkTSAccessExpressions.OptionalChainExpression oc =
+                    (ArkTSAccessExpressions.OptionalChainExpression) expr;
+            ArkTSExpression obj =
+                    replaceVariable(oc.getObject(), varName, replacement);
+            if (obj == null) {
+                return null;
+            }
+            return new ArkTSAccessExpressions.OptionalChainExpression(
+                    obj, oc.getProperty(), oc.isComputed());
+        }
+        // OptionalChainCall: replace in object, property, and args
+        if (expr instanceof ArkTSAccessExpressions
+                .OptionalChainCallExpression) {
+            ArkTSAccessExpressions.OptionalChainCallExpression occ =
+                    (ArkTSAccessExpressions.OptionalChainCallExpression) expr;
+            ArkTSExpression obj =
+                    replaceVariable(occ.getObject(), varName, replacement);
+            if (obj == null) {
+                return null;
+            }
+            List<ArkTSExpression> newArgs = new ArrayList<>();
+            for (ArkTSExpression a : occ.getArguments()) {
+                ArkTSExpression r =
+                        replaceVariable(a, varName, replacement);
+                if (r == null) {
+                    return null;
+                }
+                newArgs.add(r);
+            }
+            return new ArkTSAccessExpressions.OptionalChainCallExpression(
+                    obj, occ.getProperty(), occ.isComputed(), newArgs);
+        }
+        // BuiltInNew: replace in arguments
+        if (expr instanceof ArkTSAccessExpressions.BuiltInNewExpression) {
+            List<ArkTSExpression> newArgs = new ArrayList<>();
+            for (ArkTSExpression a :
+                    ((ArkTSAccessExpressions.BuiltInNewExpression) expr)
+                            .getArguments()) {
+                ArkTSExpression r =
+                        replaceVariable(a, varName, replacement);
+                if (r == null) {
+                    return null;
+                }
+                newArgs.add(r);
+            }
+            return new ArkTSAccessExpressions.BuiltInNewExpression(
+                    ((ArkTSAccessExpressions.BuiltInNewExpression) expr)
+                            .getClassName(), newArgs);
+        }
         // Leaf expressions that never contain variables — return as-is
         if (expr instanceof ArkTSExpression.LiteralExpression
                 || expr instanceof ArkTSExpression.ThisExpression) {
