@@ -640,7 +640,7 @@ class LoadStoreHandler {
                     .ObjectLiteralExpression.ObjectProperty> props =
                             new ArrayList<>();
             for (int i = 0; i + 1 < la.size(); i += 2) {
-                String key = parseLiteralToString(la, i);
+                String key = parseLiteralToString(la, i, ctx);
                 ArkTSExpression value = parseLiteralToExpression(
                         la, i + 1);
                 if (key != null && value != null) {
@@ -768,7 +768,8 @@ class LoadStoreHandler {
     }
 
     private static String parseLiteralToString(
-            com.arkghidra.format.AbcLiteralArray la, int index) {
+            com.arkghidra.format.AbcLiteralArray la, int index,
+            DecompilationContext ctx) {
         if (index >= la.size()) {
             return null;
         }
@@ -777,28 +778,50 @@ class LoadStoreHandler {
         if (value == null) {
             return null;
         }
-        // String keys come as number tags with the string offset
-        // encoded as an integer
+        // String keys come as number tags with the string table index
+        // encoded as an integer value.
         if (tag == 0x02 || tag == 0x03) {
             if (value.length >= 4) {
                 int strIdx = ((value[3] & 0xFF) << 24)
                         | ((value[2] & 0xFF) << 16)
                         | ((value[1] & 0xFF) << 8)
                         | (value[0] & 0xFF);
-                if (la.getNumLiterals() > 0) {
-                    return "key_" + strIdx;
+                if (ctx != null) {
+                    String resolved = ctx.resolveString(strIdx);
+                    if (resolved != null && !resolved.isEmpty()
+                            && !resolved.startsWith("str_")) {
+                        return resolved;
+                    }
                 }
+                return "key_" + strIdx;
             }
         }
         if (tag == 0x08) {
-            return value.length > 0
-                    ? "key_" + (value[0] & 0xFF) : null;
+            if (value.length > 0) {
+                int strIdx = value[0] & 0xFF;
+                if (ctx != null) {
+                    String resolved = ctx.resolveString(strIdx);
+                    if (resolved != null && !resolved.isEmpty()
+                            && !resolved.startsWith("str_")) {
+                        return resolved;
+                    }
+                }
+                return "key_" + strIdx;
+            }
+            return null;
         }
         if (tag == 0x09) {
             if (value.length >= 2) {
-                int v = ((value[1] & 0xFF) << 8)
+                int strIdx = ((value[1] & 0xFF) << 8)
                         | (value[0] & 0xFF);
-                return "key_" + v;
+                if (ctx != null) {
+                    String resolved = ctx.resolveString(strIdx);
+                    if (resolved != null && !resolved.isEmpty()
+                            && !resolved.startsWith("str_")) {
+                        return resolved;
+                    }
+                }
+                return "key_" + strIdx;
             }
         }
         return null;

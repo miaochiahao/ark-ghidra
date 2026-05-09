@@ -1,8 +1,10 @@
 package com.arkghidra.decompile;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import com.arkghidra.disasm.ArkInstruction;
@@ -37,6 +39,8 @@ class ControlFlowReconstructor {
     private final LoopProcessor loopProcessor;
     private final SwitchProcessor switchProcessor;
     private final TryCatchProcessor tryCatchProcessor;
+
+    private final Map<String, Integer> mergeBlockCache = new HashMap<>();
 
     ControlFlowReconstructor(ArkTSDecompiler decompiler,
             InstructionHandler instrHandler) {
@@ -162,6 +166,8 @@ class ControlFlowReconstructor {
     List<ArkTSStatement> reconstructControlFlow(ControlFlowGraph cfg,
             List<BasicBlock> blocks, DecompilationContext ctx,
             Set<BasicBlock> visited) {
+
+        mergeBlockCache.clear();
 
         List<ArkTSStatement> stmts = new ArrayList<>();
 
@@ -722,6 +728,12 @@ class ControlFlowReconstructor {
 
     private BasicBlock findMergeBlock(BasicBlock a, BasicBlock b,
             ControlFlowGraph cfg) {
+        String cacheKey = a.getStartOffset() + ":" + b.getStartOffset();
+        Integer cached = mergeBlockCache.get(cacheKey);
+        if (cached != null) {
+            return cfg.getBlockAt(cached);
+        }
+
         Set<Integer> reachableFromA = new LinkedHashSet<>();
         collectReachable(a, cfg, reachableFromA, 10);
         Set<Integer> reachableFromB = new LinkedHashSet<>();
@@ -731,10 +743,12 @@ class ControlFlowReconstructor {
             if (reachableFromB.contains(offset)) {
                 BasicBlock merge = cfg.getBlockAt(offset);
                 if (merge != a && merge != b) {
+                    mergeBlockCache.put(cacheKey, offset);
                     return merge;
                 }
             }
         }
+        mergeBlockCache.put(cacheKey, -1);
         return null;
     }
 

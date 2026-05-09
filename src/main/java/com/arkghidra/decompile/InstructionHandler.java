@@ -571,9 +571,52 @@ class InstructionHandler {
     // --- Private instruction handlers ---
 
     /**
+     * Well-known built-in class names that map to special variable names
+     * rather than simple decapitalization.
+     */
+    private static final java.util.Map<String, String>
+            BUILTIN_CLASS_VAR_NAMES = java.util.Map.ofEntries(
+                    java.util.Map.entry("Error", "error"),
+                    java.util.Map.entry("TypeError", "typeError"),
+                    java.util.Map.entry("RangeError", "rangeError"),
+                    java.util.Map.entry("SyntaxError", "syntaxError"),
+                    java.util.Map.entry("ReferenceError",
+                            "referenceError"),
+                    java.util.Map.entry("URIError", "uriError"),
+                    java.util.Map.entry("EvalError", "evalError"),
+                    java.util.Map.entry("Map", "map"),
+                    java.util.Map.entry("Set", "set"),
+                    java.util.Map.entry("WeakMap", "weakMap"),
+                    java.util.Map.entry("WeakSet", "weakSet"),
+                    java.util.Map.entry("Array", "arr"),
+                    java.util.Map.entry("Promise", "promise"),
+                    java.util.Map.entry("RegExp", "regex"),
+                    java.util.Map.entry("Date", "date"));
+
+    /**
+     * Static method call patterns that produce specific variable names.
+     * Keys are "ObjectName.methodName", values are the inferred name.
+     */
+    private static final java.util.Map<String, String>
+            STATIC_CALL_RESULT_NAMES = java.util.Map.ofEntries(
+                    java.util.Map.entry("JSON.parse", "parsed"),
+                    java.util.Map.entry("JSON.stringify", "json"),
+                    java.util.Map.entry("Object.keys", "keys"),
+                    java.util.Map.entry("Object.values", "values"),
+                    java.util.Map.entry("Object.entries", "entries"),
+                    java.util.Map.entry("Object.assign", "assigned"),
+                    java.util.Map.entry("Array.from", "arr"),
+                    java.util.Map.entry("Array.of", "arr"),
+                    java.util.Map.entry("Promise.all", "results"),
+                    java.util.Map.entry("Promise.race", "result"),
+                    java.util.Map.entry("Promise.resolve", "resolved"),
+                    java.util.Map.entry("Promise.reject", "rejected"));
+
+    /**
      * Infers a variable name from the expression being stored.
      * Patterns: method call result (getName → name), property access
-     * (obj.length → length), constructor (new Foo → foo).
+     * (obj.length → length), constructor (new Foo → foo),
+     * static calls (JSON.parse → parsed), BuiltInNew expressions.
      */
     private static String inferNameFromExpression(ArkTSExpression expr,
             int reg) {
@@ -581,6 +624,11 @@ class InstructionHandler {
         if (expr instanceof ArkTSExpression.CallExpression) {
             ArkTSExpression callee =
                     ((ArkTSExpression.CallExpression) expr).getCallee();
+            // Check for static call patterns: JSON.parse → parsed
+            String staticName = tryStaticCallName(callee);
+            if (staticName != null) {
+                return staticName;
+            }
             String name = extractNameFromCallee(callee);
             if (name != null) {
                 return sanitizeName(name);
@@ -599,6 +647,13 @@ class InstructionHandler {
                 }
             }
         }
+        // BuiltInNew expression: new Map() → map, new Error() → error
+        if (expr instanceof ArkTSAccessExpressions.BuiltInNewExpression) {
+            String className =
+                    ((ArkTSAccessExpressions.BuiltInNewExpression) expr)
+                            .getClassName();
+            return inferNameFromClassName(className);
+        }
         // New expression: new ClassName() → className
         if (expr instanceof ArkTSExpression.NewExpression) {
             ArkTSExpression callee =
@@ -607,7 +662,22 @@ class InstructionHandler {
                 String className =
                         ((ArkTSExpression.VariableExpression) callee)
                                 .getName();
-                return decapitalize(className);
+                return inferNameFromClassName(className);
+            }
+            // Member expression callee: new ns.ClassName() → className
+            if (callee instanceof ArkTSExpression.MemberExpression) {
+                ArkTSExpression.MemberExpression member =
+                        (ArkTSExpression.MemberExpression) callee;
+                if (!member.isComputed()) {
+                    ArkTSExpression prop = member.getProperty();
+                    if (prop
+                            instanceof ArkTSExpression.VariableExpression) {
+                        String className =
+                                ((ArkTSExpression.VariableExpression) prop)
+                                        .getName();
+                        return inferNameFromClassName(className);
+                    }
+                }
             }
         }
         // Binary comparison: use is/has prefix for boolean results
@@ -654,6 +724,60 @@ class InstructionHandler {
         return null;
     }
 
+    /**
+     * Infers a variable name from a class name used in a constructor call.
+     * Uses a lookup table for well-known built-in types, falling back to
+     * decapitalization for custom classes.
+     *
+     * @param className the class name (e.g. "Error", "Map", "MyClass")
+     * @return the inferred variable name (e.g. "error", "map", "myClass")
+     */
+    private static String inferNameFromClassName(String className) {
+        if (className == null || className.isEmpty()) {
+            return null;
+        }
+        String mapped = BUILTIN_CLASS_VAR_NAMES.get(className);
+        if (mapped != null) {
+            return mapped;
+        }
+        return decapitalize(className);
+    }
+
+    /**
+     * Tries to match a callee expression against known static call
+     * patterns. For example, JSON.parse → "parsed",
+     * Object.keys → "keys".
+     *
+     * @param callee the callee expression from a call
+     * @return the inferred variable name, or null if no match
+     */
+    private static String tryStaticCallName(ArkTSExpression callee) {
+        if (!(callee instanceof ArkTSExpression.MemberExpression)) {
+            return null;
+        }
+        ArkTSExpression.MemberExpression member =
+                (ArkTSExpression.MemberExpression) callee;
+        if (member.isComputed()) {
+            return null;
+        }
+        // Extract object name
+        ArkTSExpression obj = member.getObject();
+        if (!(obj instanceof ArkTSExpression.VariableExpression)) {
+            return null;
+        }
+        String objName =
+                ((ArkTSExpression.VariableExpression) obj).getName();
+        // Extract method name
+        ArkTSExpression prop = member.getProperty();
+        if (!(prop instanceof ArkTSExpression.VariableExpression)) {
+            return null;
+        }
+        String methodName =
+                ((ArkTSExpression.VariableExpression) prop).getName();
+        String key = objName + "." + methodName;
+        return STATIC_CALL_RESULT_NAMES.get(key);
+    }
+
     private static String inferBooleanName(ArkTSExpression expr) {
         if (expr instanceof ArkTSExpression.LiteralExpression) {
             String val = ((ArkTSExpression.LiteralExpression) expr)
@@ -667,6 +791,13 @@ class InstructionHandler {
             if ("NaN".equals(val)) {
                 return "isNaN";
             }
+            // Boolean literals
+            if ("true".equals(val)) {
+                return "isTrue";
+            }
+            if ("false".equals(val)) {
+                return "isFalse";
+            }
         }
         if (expr instanceof ArkTSExpression.VariableExpression) {
             String name = ((ArkTSExpression.VariableExpression) expr)
@@ -675,6 +806,21 @@ class InstructionHandler {
                     && !name.equals("acc")) {
                 return "has" + Character.toUpperCase(name.charAt(0))
                         + name.substring(1);
+            }
+        }
+        // Member expression: obj.active → hasActive
+        if (expr instanceof ArkTSExpression.MemberExpression) {
+            ArkTSExpression.MemberExpression member =
+                    (ArkTSExpression.MemberExpression) expr;
+            if (!member.isComputed()) {
+                ArkTSExpression prop = member.getProperty();
+                if (prop instanceof ArkTSExpression.VariableExpression) {
+                    String propName =
+                            ((ArkTSExpression.VariableExpression) prop)
+                                    .getName();
+                    return "has" + Character.toUpperCase(propName.charAt(0))
+                            + propName.substring(1);
+                }
             }
         }
         return null;
@@ -702,7 +848,7 @@ class InstructionHandler {
         if (name == null || name.isEmpty()) {
             return null;
         }
-        // Remove get/set/is prefixes
+        // Remove common verb prefixes: get/set/is/has/can/will/should
         if (name.length() > 3 && name.startsWith("get")
                 && Character.isUpperCase(name.charAt(3))) {
             return decapitalize(name.substring(3));
@@ -714,6 +860,26 @@ class InstructionHandler {
         if (name.length() > 2 && name.startsWith("is")
                 && Character.isUpperCase(name.charAt(2))) {
             return decapitalize(name.substring(2));
+        }
+        if (name.length() > 3 && name.startsWith("has")
+                && Character.isUpperCase(name.charAt(3))) {
+            return decapitalize(name.substring(3));
+        }
+        if (name.length() > 3 && name.startsWith("can")
+                && Character.isUpperCase(name.charAt(3))) {
+            return decapitalize(name.substring(3));
+        }
+        if (name.length() > 4 && name.startsWith("will")
+                && Character.isUpperCase(name.charAt(4))) {
+            return decapitalize(name.substring(4));
+        }
+        if (name.length() > 6 && name.startsWith("should")
+                && Character.isUpperCase(name.charAt(6))) {
+            return decapitalize(name.substring(6));
+        }
+        // Ensure result starts with a lowercase letter
+        if (Character.isUpperCase(name.charAt(0))) {
+            return decapitalize(name);
         }
         return name;
     }
