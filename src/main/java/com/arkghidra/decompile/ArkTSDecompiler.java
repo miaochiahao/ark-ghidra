@@ -654,6 +654,93 @@ public class ArkTSDecompiler {
             }
             return new ArkTSExpression.AssignExpression(target, value);
         }
+        // NewExpression: replace in callee and arguments
+        if (expr instanceof ArkTSExpression.NewExpression) {
+            ArkTSExpression.NewExpression ne =
+                    (ArkTSExpression.NewExpression) expr;
+            ArkTSExpression callee =
+                    replaceVariable(ne.getCallee(), varName, replacement);
+            if (callee == null) {
+                return null;
+            }
+            List<ArkTSExpression> newArgs = new ArrayList<>();
+            for (ArkTSExpression arg : ne.getArguments()) {
+                ArkTSExpression replaced =
+                        replaceVariable(arg, varName, replacement);
+                if (replaced == null) {
+                    return null;
+                }
+                newArgs.add(replaced);
+            }
+            return new ArkTSExpression.NewExpression(callee, newArgs);
+        }
+        // ConditionalExpression (ternary): replace in all branches
+        if (expr instanceof ArkTSAccessExpressions.ConditionalExpression) {
+            ArkTSAccessExpressions.ConditionalExpression cond =
+                    (ArkTSAccessExpressions.ConditionalExpression) expr;
+            ArkTSExpression test =
+                    replaceVariable(cond.getTest(), varName, replacement);
+            ArkTSExpression cons =
+                    replaceVariable(cond.getConsequent(), varName,
+                            replacement);
+            ArkTSExpression alt =
+                    replaceVariable(cond.getAlternate(), varName,
+                            replacement);
+            if (test == null || cons == null || alt == null) {
+                return null;
+            }
+            return new ArkTSAccessExpressions.ConditionalExpression(
+                    test, cons, alt);
+        }
+        // CompoundAssignExpression: replace in target and value
+        if (expr instanceof ArkTSExpression.CompoundAssignExpression) {
+            ArkTSExpression.CompoundAssignExpression ca =
+                    (ArkTSExpression.CompoundAssignExpression) expr;
+            if (isSingleVarRef(ca.getTarget(), varName)) {
+                return null;
+            }
+            ArkTSExpression t =
+                    replaceVariable(ca.getTarget(), varName, replacement);
+            ArkTSExpression v =
+                    replaceVariable(ca.getValue(), varName, replacement);
+            if (t == null || v == null) {
+                return null;
+            }
+            return new ArkTSExpression.CompoundAssignExpression(
+                    t, ca.getOperator(), v);
+        }
+        // LogicalAssignExpression: replace in target and value
+        if (expr instanceof ArkTSExpression.LogicalAssignExpression) {
+            ArkTSExpression.LogicalAssignExpression la =
+                    (ArkTSExpression.LogicalAssignExpression) expr;
+            if (isSingleVarRef(la.getTarget(), varName)) {
+                return null;
+            }
+            ArkTSExpression t =
+                    replaceVariable(la.getTarget(), varName, replacement);
+            ArkTSExpression v =
+                    replaceVariable(la.getValue(), varName, replacement);
+            if (t == null || v == null) {
+                return null;
+            }
+            return new ArkTSExpression.LogicalAssignExpression(
+                    t, la.getOperator(), v);
+        }
+        // IncrementExpression: replace in target
+        if (expr instanceof ArkTSExpression.IncrementExpression) {
+            ArkTSExpression.IncrementExpression inc =
+                    (ArkTSExpression.IncrementExpression) expr;
+            if (isSingleVarRef(inc.getTarget(), varName)) {
+                return null;
+            }
+            ArkTSExpression t =
+                    replaceVariable(inc.getTarget(), varName, replacement);
+            if (t == null) {
+                return null;
+            }
+            return new ArkTSExpression.IncrementExpression(
+                    t, inc.isPrefix(), inc.isIncrement());
+        }
         // Leaf expressions that never contain variables — return as-is
         if (expr instanceof ArkTSExpression.LiteralExpression
                 || expr instanceof ArkTSExpression.ThisExpression) {
