@@ -615,6 +615,58 @@ class OperatorHandler {
                 && Boolean.parseBoolean(lit.getValue()) == expected;
     }
 
+    // --- Logical ternary simplification ---
+
+    /**
+     * Simplifies ternary expressions with undefined/null branches to logical
+     * AND expressions.
+     *
+     * <p>Patterns:
+     * <ul>
+     *   <li>{@code cond ? value : undefined} -> {@code cond && value}</li>
+     *   <li>{@code cond ? value : null} -> {@code cond && value}</li>
+     * </ul>
+     *
+     * @param expr the expression to potentially simplify
+     * @return the simplified expression, or the original if no simplification
+     */
+    static ArkTSExpression simplifyLogicalTernary(ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSAccessExpressions.ConditionalExpression)) {
+            return expr;
+        }
+        ArkTSAccessExpressions.ConditionalExpression cond =
+                (ArkTSAccessExpressions.ConditionalExpression) expr;
+        ArkTSExpression thenExpr = cond.getConsequent();
+        ArkTSExpression elseExpr = cond.getAlternate();
+
+        // cond ? value : undefined/null -> cond && value
+        if (isNullOrUndefined(elseExpr) && !isNullOrUndefined(thenExpr)) {
+            return new ArkTSExpression.BinaryExpression(
+                    cond.getTest(), "&&", thenExpr);
+        }
+        // cond ? undefined/null : value -> !cond && value
+        if (isNullOrUndefined(thenExpr) && !isNullOrUndefined(elseExpr)) {
+            return new ArkTSExpression.BinaryExpression(
+                    new ArkTSExpression.UnaryExpression("!", cond.getTest(),
+                            true),
+                    "&&", elseExpr);
+        }
+        return expr;
+    }
+
+    private static boolean isNullOrUndefined(ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.LiteralExpression)) {
+            return false;
+        }
+        ArkTSExpression.LiteralExpression lit =
+                (ArkTSExpression.LiteralExpression) expr;
+        return lit.getKind()
+                == ArkTSExpression.LiteralExpression.LiteralKind.NULL
+                || lit.getKind()
+                        == ArkTSExpression.LiteralExpression.LiteralKind
+                                .UNDEFINED;
+    }
+
     // --- Comparison normalization ---
 
     /**

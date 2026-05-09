@@ -505,6 +505,8 @@ class BranchProcessor {
                             effectiveCondition, trueValue, falseValue);
             ternaryExpr =
                     OperatorHandler.simplifyRedundantTernary(ternaryExpr);
+            ternaryExpr =
+                    OperatorHandler.simplifyLogicalTernary(ternaryExpr);
             String targetVar = pattern.ternaryTargetVar;
             ArkTSStatement decl =
                     new ArkTSStatement.VariableDeclaration(
