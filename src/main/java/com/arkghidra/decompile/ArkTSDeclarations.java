@@ -279,6 +279,8 @@ public class ArkTSDeclarations {
         private final String rawName;
         private final String superClass;
         private final List<ArkTSStatement> members;
+        private final List<String> decorators;
+        private final boolean isSendable;
 
         /**
          * A class member (field, constructor, or method).
@@ -368,11 +370,33 @@ public class ArkTSDeclarations {
          */
         public ClassDeclaration(String name, String superClass,
                 List<ArkTSStatement> members, String rawName) {
+            this(name, superClass, members, rawName,
+                    Collections.emptyList(), false);
+        }
+
+        /**
+         * Constructs a class declaration with decorators and sendable flag.
+         *
+         * @param name the sanitized class name
+         * @param superClass the super class name (may be null)
+         * @param members the class members
+         * @param rawName the original ABC class name
+         * @param decorators the decorator names (may be empty)
+         * @param isSendable true if this is a sendable class
+         */
+        public ClassDeclaration(String name, String superClass,
+                List<ArkTSStatement> members, String rawName,
+                List<String> decorators, boolean isSendable) {
             this.name = name;
             this.rawName = rawName;
             this.superClass = superClass;
             this.members = Collections.unmodifiableList(
                     new ArrayList<>(members));
+            this.decorators = decorators != null
+                    ? Collections.unmodifiableList(
+                            new ArrayList<>(decorators))
+                    : Collections.emptyList();
+            this.isSendable = isSendable;
         }
 
         public String getName() {
@@ -391,10 +415,26 @@ public class ArkTSDeclarations {
             return members;
         }
 
+        public List<String> getDecorators() {
+            return decorators;
+        }
+
+        public boolean isSendable() {
+            return isSendable;
+        }
+
         @Override
         public String toArkTS(int indent) {
             StringBuilder sb = new StringBuilder();
-            sb.append(indent(indent)).append("class ").append(name);
+            for (String dec : decorators) {
+                sb.append(indent(indent)).append("@").append(dec)
+                        .append("\n");
+            }
+            sb.append(indent(indent));
+            if (isSendable) {
+                sb.append("sendable ");
+            }
+            sb.append("class ").append(name);
             if (superClass != null) {
                 sb.append(" extends ").append(superClass);
             }
@@ -423,6 +463,7 @@ public class ArkTSDeclarations {
         private final boolean isStatic;
         private final String accessModifier;
         private final List<String> decorators;
+        private final boolean isReadonly;
 
         /**
          * Constructs a class field declaration.
@@ -437,7 +478,7 @@ public class ArkTSDeclarations {
                 ArkTSExpression initializer, boolean isStatic,
                 String accessModifier) {
             this(name, typeName, initializer, isStatic, accessModifier,
-                    Collections.emptyList());
+                    Collections.emptyList(), false);
         }
 
         /**
@@ -453,6 +494,25 @@ public class ArkTSDeclarations {
         public ClassFieldDeclaration(String name, String typeName,
                 ArkTSExpression initializer, boolean isStatic,
                 String accessModifier, List<String> decorators) {
+            this(name, typeName, initializer, isStatic, accessModifier,
+                    decorators, false);
+        }
+
+        /**
+         * Constructs a class field declaration with decorators and readonly.
+         *
+         * @param name the field name
+         * @param typeName the type annotation (may be null)
+         * @param initializer the initializer expression (may be null)
+         * @param isStatic true if static
+         * @param accessModifier the access modifier (may be null)
+         * @param decorators the decorator names (may be empty)
+         * @param isReadonly true if the field is readonly
+         */
+        public ClassFieldDeclaration(String name, String typeName,
+                ArkTSExpression initializer, boolean isStatic,
+                String accessModifier, List<String> decorators,
+                boolean isReadonly) {
             this.name = name;
             this.typeName = typeName;
             this.initializer = initializer;
@@ -462,6 +522,7 @@ public class ArkTSDeclarations {
                     ? Collections.unmodifiableList(
                             new ArrayList<>(decorators))
                     : Collections.emptyList();
+            this.isReadonly = isReadonly;
         }
 
         public String getName() {
@@ -501,6 +562,9 @@ public class ArkTSDeclarations {
             }
             if (isStatic) {
                 sb.append("static ");
+            }
+            if (isReadonly) {
+                sb.append("readonly ");
             }
             sb.append(name);
             if (typeName != null) {

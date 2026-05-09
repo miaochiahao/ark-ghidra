@@ -12252,7 +12252,7 @@ class ArkTSDecompilerTest {
                         new ArkTSStatement.BlockStatement(Collections.emptyList()),
                         false, "protected", false, false, true);
         String result = method.toArkTS(0);
-        assertEquals("abstract protected process(): void;",
+        assertEquals("protected abstract process(): void;",
                 result, "Abstract method should render with semicolon");
     }
 
@@ -12268,5 +12268,190 @@ class ArkTSDecompilerTest {
                 "Abstract should come first: " + result);
         assertTrue(result.endsWith(";"),
                 "Abstract method should end with semicolon: " + result);
+    }
+
+    @Test
+    void testClassMethodDeclaration_overrideWithAsyncMethod() {
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSDeclarations.ClassMethodDeclaration method =
+                new ArkTSDeclarations.ClassMethodDeclaration("fetchData",
+                        Collections.emptyList(), "void",
+                        body, false, "public", true, true, false);
+        String result = method.toArkTS(0);
+        assertTrue(result.contains("public override async fetchData"),
+                "Expected override async method, got: " + result);
+    }
+
+    @Test
+    void testClassMethodDeclaration_staticDoesNotGetOverride() {
+        ArkTSStatement body = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        // Static methods cannot override, so isOverride should be false
+        ArkTSDeclarations.ClassMethodDeclaration method =
+                new ArkTSDeclarations.ClassMethodDeclaration("create",
+                        Collections.emptyList(), "MyClass",
+                        body, true, "public", false, false, false);
+        String result = method.toArkTS(0);
+        assertTrue(result.contains("public static create"),
+                "Expected static method without override, got: " + result);
+        assertFalse(result.contains("override"),
+                "Static method should not have override, got: " + result);
+    }
+
+    @Test
+    void testClassDeclaration_withOverrideAndSuperClass() {
+        ArkTSStatement overrideBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.VariableExpression("baseValue"))));
+        ArkTSStatement overrideMethod =
+                new ArkTSDeclarations.ClassMethodDeclaration(
+                        "getValue", Collections.emptyList(), "number",
+                        overrideBody, false, "public", false, true, false);
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("ChildClass",
+                        "BaseClass", List.of(overrideMethod));
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("class ChildClass extends BaseClass"),
+                "Expected class with extends, got: " + result);
+        assertTrue(result.contains("public override getValue()"),
+                "Expected override method in class, got: " + result);
+    }
+
+    @Test
+    void testAbstractMethodDeclaration_multipleParams() {
+        List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
+                List.of(
+                        new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
+                                "x", "number"),
+                        new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
+                                "y", "string"),
+                        new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
+                                "z", "boolean"));
+        ArkTSStatement abstractMethod =
+                new ArkTSDeclarations.AbstractMethodDeclaration("process",
+                        params, "void", "protected");
+        String result = abstractMethod.toArkTS(0);
+        assertTrue(result.contains(
+                "protected abstract process(x: number, y: string, z: boolean): void;"),
+                "Expected multi-param abstract method, got: " + result);
+    }
+
+    @Test
+    void testClassDeclaration_abstractAndConcreteMethods() {
+        ArkTSDeclarations.FunctionDeclaration.FunctionParam param =
+                new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
+                        "data", "string");
+        ArkTSStatement abstractMethod =
+                new ArkTSDeclarations.AbstractMethodDeclaration("validate",
+                        List.of(param), "boolean", "public");
+        ArkTSStatement concreteMethod =
+                new ArkTSDeclarations.ClassMethodDeclaration(
+                        "run", Collections.emptyList(), "void",
+                        new ArkTSStatement.BlockStatement(
+                                Collections.emptyList()),
+                        false, "public", false, false, false);
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("Validator", null,
+                        List.of(abstractMethod, concreteMethod));
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains(
+                "public abstract validate(data: string): boolean;"),
+                "Expected abstract method, got: " + result);
+        assertTrue(result.contains("public run()"),
+                "Expected concrete method, got: " + result);
+    }
+
+    @Test
+    void testGetterSetterPairInClass() {
+        // Verify getter and setter are rendered correctly in a class
+        ArkTSStatement getterBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.VariableExpression("_value"))));
+        ArkTSStatement getter =
+                new ArkTSDeclarations.GetterDeclaration("value", "number",
+                        getterBody, false, "public");
+        ArkTSDeclarations.FunctionDeclaration.FunctionParam valueParam =
+                new ArkTSDeclarations.FunctionDeclaration.FunctionParam(
+                        "value", "number");
+        ArkTSStatement setterBody = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.AssignExpression(
+                                new ArkTSExpression.MemberExpression(
+                                        new ArkTSExpression.VariableExpression(
+                                                "this"),
+                                        new ArkTSExpression.VariableExpression(
+                                                "value"),
+                                        false),
+                                new ArkTSExpression.VariableExpression(
+                                        "value")))));
+        ArkTSStatement setter =
+                new ArkTSDeclarations.SetterDeclaration("value", valueParam,
+                        setterBody, false, "public");
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("Container", null,
+                        List.of(getter, setter));
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("public get value(): number"),
+                "Expected getter, got: " + result);
+        assertTrue(result.contains("public set value(value: number)"),
+                "Expected setter, got: " + result);
+    }
+
+    @Test
+    void testClassDeclaration_sendable() {
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("SharedData", null,
+                        Collections.emptyList(), "LSharedData;",
+                        List.of("Sendable"), true);
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("sendable class SharedData"),
+                "Expected 'sendable class', got: " + result);
+    }
+
+    @Test
+    void testClassDeclaration_withDecorators() {
+        ArkTSDeclarations.ClassDeclaration cls =
+                new ArkTSDeclarations.ClassDeclaration("MyComponent",
+                        "BaseComponent",
+                        Collections.emptyList(), "LMyComponent;",
+                        List.of("Component", "Entry"), false);
+        String result = cls.toArkTS(0);
+        assertTrue(result.contains("@Component"),
+                "Expected @Component decorator, got: " + result);
+        assertTrue(result.contains("@Entry"),
+                "Expected @Entry decorator, got: " + result);
+        assertTrue(result.contains("class MyComponent extends BaseComponent"),
+                "Expected class with extends, got: " + result);
+    }
+
+    @Test
+    void testClassFieldDeclaration_readonly() {
+        ArkTSDeclarations.ClassFieldDeclaration field =
+                new ArkTSDeclarations.ClassFieldDeclaration("id", "string",
+                        null, false, "public", Collections.emptyList(),
+                        true);
+        String result = field.toArkTS(1);
+        assertTrue(result.contains("public readonly id: string"),
+                "Expected 'public readonly id: string', got: " + result);
+    }
+
+    @Test
+    void testClassFieldDeclaration_readonlyStatic() {
+        ArkTSDeclarations.ClassFieldDeclaration field =
+                new ArkTSDeclarations.ClassFieldDeclaration("INSTANCE",
+                        "Config",
+                        new ArkTSExpression.VariableExpression("defaultConfig"),
+                        true, null, Collections.emptyList(), true);
+        String result = field.toArkTS(0);
+        assertTrue(result.contains("static readonly INSTANCE"),
+                "Expected 'static readonly INSTANCE', got: " + result);
+    }
+
+    @Test
+    void testRecordTypeFormat() {
+        String recordType = TypeInference.formatGenericType("Record",
+                List.of("string", "number"));
+        assertEquals("Record<string, number>", recordType);
     }
 }

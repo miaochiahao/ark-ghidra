@@ -101,12 +101,14 @@ class DeclarationBuilder {
             return new ArkTSTypeDeclarations.StructDeclaration(
                     className, members, decorators);
         }
+        boolean isSendable = decorators.contains("Sendable");
         if (!typeParams.isEmpty()) {
             return new ArkTSTypeDeclarations.GenericClassDeclaration(
                     className, typeParams, superClassName, members);
         }
         return new ArkTSDeclarations.ClassDeclaration(
-                className, superClassName, members, abcClass.getName());
+                className, superClassName, members, abcClass.getName(),
+                decorators, isSendable);
     }
 
     /**
