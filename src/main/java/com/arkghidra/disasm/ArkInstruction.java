@@ -20,6 +20,7 @@ public class ArkInstruction {
     private final int length;
     private final List<ArkOperand> operands;
     private final boolean wide;
+    private final boolean callRuntime;
 
     /**
      * Constructs a decoded instruction.
@@ -34,6 +35,24 @@ public class ArkInstruction {
      */
     public ArkInstruction(int opcode, String mnemonic, ArkInstructionFormat format,
             int offset, int length, List<ArkOperand> operands, boolean wide) {
+        this(opcode, mnemonic, format, offset, length, operands, wide, false);
+    }
+
+    /**
+     * Constructs a decoded instruction with explicit callRuntime flag.
+     *
+     * @param opcode the primary opcode byte, or the sub-opcode for wide/callruntime
+     * @param mnemonic the human-readable mnemonic
+     * @param format the instruction format
+     * @param offset the byte offset within the method bytecode
+     * @param length the total instruction length in bytes
+     * @param operands the decoded operands (may be empty)
+     * @param wide true if this is a wide (0xFD-prefixed) instruction
+     * @param callRuntime true if this is a callruntime (0xFB-prefixed) instruction
+     */
+    public ArkInstruction(int opcode, String mnemonic, ArkInstructionFormat format,
+            int offset, int length, List<ArkOperand> operands, boolean wide,
+            boolean callRuntime) {
         this.opcode = opcode & 0xFF;
         this.mnemonic = mnemonic;
         this.format = format;
@@ -41,6 +60,7 @@ public class ArkInstruction {
         this.length = length;
         this.operands = Collections.unmodifiableList(new ArrayList<>(operands));
         this.wide = wide;
+        this.callRuntime = callRuntime;
     }
 
     public int getOpcode() {
@@ -72,6 +92,15 @@ public class ArkInstruction {
     }
 
     /**
+     * Returns true if this is a callruntime (0xFB-prefixed) instruction.
+     *
+     * @return true if callruntime prefixed
+     */
+    public boolean isCallRuntime() {
+        return callRuntime;
+    }
+
+    /**
      * Returns the byte offset immediately following this instruction.
      *
      * @return offset + length
@@ -86,6 +115,9 @@ public class ArkInstruction {
         sb.append(String.format(Locale.ROOT, "%04X: ", offset));
         if (wide) {
             sb.append(String.format(Locale.ROOT, "[wide] %s", mnemonic));
+        } else if (callRuntime) {
+            sb.append(String.format(Locale.ROOT, "[callruntime] %s",
+                    mnemonic));
         } else {
             sb.append(mnemonic);
         }

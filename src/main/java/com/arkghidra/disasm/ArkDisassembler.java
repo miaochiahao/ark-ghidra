@@ -49,6 +49,9 @@ public class ArkDisassembler {
         if (opcode == ArkOpcodes.PREFIX_WIDE) {
             return decodeWide(buf, offset);
         }
+        if (opcode == ArkOpcodes.PREFIX_CALLRUNTIME) {
+            return decodeCallRuntime(buf, offset);
+        }
 
         return decodePrimary(opcode, buf, offset, false);
     }
@@ -130,6 +133,34 @@ public class ArkDisassembler {
 
         return new ArkInstruction(subOpcode, mnemonic, wideFormat, offset, formatLen,
             operands, true);
+    }
+
+    private ArkInstruction decodeCallRuntime(ByteBuffer buf, int offset) {
+        if (buf.remaining() < 1) {
+            throw new DisassemblyException(
+                "Truncated callruntime instruction at offset " + offset);
+        }
+
+        int subOpcode = buf.get() & 0xFF;
+        ArkInstructionFormat crtFormat =
+                ArkOpcodes.getCallRuntimeFormat(subOpcode);
+        String mnemonic = ArkOpcodes.getCallRuntimeMnemonic(subOpcode);
+        int formatLen = crtFormat.getLength();
+
+        // Length includes the 2-byte prefix + sub-opcode
+        int operandsLen = formatLen - 2;
+        if (buf.remaining() < operandsLen) {
+            throw new DisassemblyException(
+                "Not enough bytes for callruntime instruction " + mnemonic
+                + " at offset " + offset
+                + ": need " + formatLen + ", have " + (buf.remaining() + 2));
+        }
+
+        List<ArkOperand> operands = new ArrayList<>();
+        decodeCallRuntimeOperands(crtFormat, buf, operands);
+
+        return new ArkInstruction(subOpcode, mnemonic, crtFormat, offset,
+                formatLen, operands, false, true);
     }
 
     private void decodeOperands(int opcode, ArkInstructionFormat format,
@@ -215,6 +246,14 @@ public class ArkDisassembler {
 
             case IMM8_V8_V8_V8:
                 operands.add(imm8(buf));
+                operands.add(reg(buf));
+                operands.add(reg(buf));
+                operands.add(reg(buf));
+                break;
+
+            case IMM8_V8_V8_V8_V8:
+                operands.add(imm8(buf));
+                operands.add(reg(buf));
                 operands.add(reg(buf));
                 operands.add(reg(buf));
                 operands.add(reg(buf));
@@ -330,6 +369,55 @@ public class ArkDisassembler {
                 operands.add(imm16(buf));
                 operands.add(reg(buf));
                 operands.add(imm16(buf));
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    private void decodeCallRuntimeOperands(ArkInstructionFormat format,
+            ByteBuffer buf, List<ArkOperand> operands) {
+        switch (format) {
+            case PREF_NONE:
+                break;
+
+            case PREF_V8:
+                operands.add(reg(buf));
+                break;
+
+            case PREF_IMM8:
+                operands.add(imm8(buf));
+                break;
+
+            case PREF_IMM16:
+                operands.add(imm16(buf));
+                break;
+
+            case PREF_IMM8_V8:
+                operands.add(imm8(buf));
+                operands.add(reg(buf));
+                break;
+
+            case PREF_IMM16_V8:
+                operands.add(imm16(buf));
+                operands.add(reg(buf));
+                break;
+
+            case PREF_IMM16_IMM8:
+                operands.add(imm16(buf));
+                operands.add(imm8(buf));
+                break;
+
+            case PREF_IMM8_IMM8:
+                operands.add(imm8(buf));
+                operands.add(imm8(buf));
+                break;
+
+            case PREF_IMM8_IMM8_V8:
+                operands.add(imm8(buf));
+                operands.add(imm8(buf));
+                operands.add(reg(buf));
                 break;
 
             default:

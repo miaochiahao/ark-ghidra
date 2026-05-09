@@ -123,7 +123,9 @@ class BranchProcessor {
         int opcode = lastInsn.getOpcode();
 
         if (opcode == ArkOpcodesCompat.JEQZ_IMM8
-                || opcode == ArkOpcodesCompat.JEQZ_IMM16) {
+                || opcode == ArkOpcodesCompat.JEQZ_IMM16
+                || opcode == ArkOpcodesCompat.JSTRICTEQZ_IMM8
+                || opcode == ArkOpcodesCompat.JSTRICTEQZ_IMM16) {
             int target1 = ControlFlowGraph
                     .getJumpTargetPublic(lastInsn);
 
@@ -133,7 +135,11 @@ class BranchProcessor {
                     && (nextLast.getOpcode()
                             == ArkOpcodesCompat.JEQZ_IMM8
                     || nextLast.getOpcode()
-                            == ArkOpcodesCompat.JEQZ_IMM16)) {
+                            == ArkOpcodesCompat.JEQZ_IMM16
+                    || nextLast.getOpcode()
+                            == ArkOpcodesCompat.JSTRICTEQZ_IMM8
+                    || nextLast.getOpcode()
+                            == ArkOpcodesCompat.JSTRICTEQZ_IMM16)) {
                 int target2 = ControlFlowGraph
                         .getJumpTargetPublic(nextLast);
                 if (target1 == target2) {
@@ -151,7 +157,9 @@ class BranchProcessor {
         }
 
         if (opcode == ArkOpcodesCompat.JNEZ_IMM8
-                || opcode == ArkOpcodesCompat.JNEZ_IMM16) {
+                || opcode == ArkOpcodesCompat.JNEZ_IMM16
+                || opcode == ArkOpcodesCompat.JNSTRICTEQZ_IMM8
+                || opcode == ArkOpcodesCompat.JNSTRICTEQZ_IMM16) {
             int target1 = ControlFlowGraph
                     .getJumpTargetPublic(lastInsn);
 
@@ -161,7 +169,11 @@ class BranchProcessor {
                     && (nextLast.getOpcode()
                             == ArkOpcodesCompat.JNEZ_IMM8
                     || nextLast.getOpcode()
-                            == ArkOpcodesCompat.JNEZ_IMM16)) {
+                            == ArkOpcodesCompat.JNEZ_IMM16
+                    || nextLast.getOpcode()
+                            == ArkOpcodesCompat.JNSTRICTEQZ_IMM8
+                    || nextLast.getOpcode()
+                            == ArkOpcodesCompat.JNSTRICTEQZ_IMM16)) {
                 int target2 = ControlFlowGraph
                         .getJumpTargetPublic(nextLast);
                 if (target1 == target2) {

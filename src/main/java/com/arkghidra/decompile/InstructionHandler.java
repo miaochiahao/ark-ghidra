@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Set;
 
 import com.arkghidra.disasm.ArkInstruction;
+import com.arkghidra.disasm.ArkOpcodes;
 import com.arkghidra.disasm.ArkOperand;
 import com.arkghidra.format.AbcClass;
 import com.arkghidra.format.AbcCode;
@@ -57,6 +58,11 @@ class InstructionHandler {
                 ? ArkOpcodesCompat.normalizeWideOpcode(rawOpcode)
                 : rawOpcode;
         List<ArkOperand> operands = insn.getOperands();
+
+        // --- CallRuntime (0xFB-prefixed) instructions ---
+        if (insn.isCallRuntime()) {
+            return handleCallRuntime(rawOpcode, operands, accValue, ctx);
+        }
 
         // --- Loads that set the accumulator ---
         switch (opcode) {
@@ -508,10 +514,15 @@ class InstructionHandler {
                     .processDefineClassWithBuffer(insn, ctx);
         }
 
-        // --- Define field/property by name ---
-        if (opcode == ArkOpcodesCompat.DEFINEFIELDBYNAME
-                || opcode == ArkOpcodesCompat.DEFINEPROPERTYBYNAME) {
+        // --- Define field by name ---
+        if (opcode == ArkOpcodesCompat.DEFINEFIELDBYNAME) {
             return handleDefineByName(opcode, operands, accValue, ctx);
+        }
+
+        // --- Define property by name (Object.defineProperty semantics) ---
+        if (opcode == ArkOpcodesCompat.DEFINEPROPERTYBYNAME) {
+            return handleDefinePropertyByName(
+                    operands, accValue, ctx);
         }
 
         // --- Delegate remaining instruction categories ---
@@ -988,6 +999,217 @@ class InstructionHandler {
                 new ArkTSStatement.ExpressionStatement(
                         new ArkTSExpression.AssignExpression(target, value)),
                 value);
+    }
+
+    /**
+     * Handles definepropertybyname instructions which use
+     * Object.defineProperty semantics (with attribute control)
+     * rather than simple field assignment.
+     */
+    private static StatementResult handleDefinePropertyByName(
+            List<ArkOperand> operands, ArkTSExpression accValue,
+            DecompilationContext ctx) {
+        int stringIdx = (int) operands.get(1).getValue();
+        String propName = ctx.resolveString(stringIdx);
+        int objReg = (int) operands.get(
+                operands.size() - 1).getValue();
+        ArkTSExpression obj =
+                new ArkTSExpression.VariableExpression("v" + objReg);
+        ArkTSExpression prop =
+                new ArkTSExpression.LiteralExpression(propName,
+                        ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        ArkTSExpression value = accValue != null
+                ? accValue
+                : new ArkTSExpression.VariableExpression(ACC);
+        ArkTSExpression defineExpr =
+                new ArkTSPropertyExpressions.DefinePropertyExpression(
+                        obj, prop, value);
+        return new StatementResult(
+                new ArkTSStatement.ExpressionStatement(defineExpr),
+                value);
+    }
+
+    // --- CallRuntime (0xFB prefix) instruction handling ---
+
+    /**
+     * Handles callruntime (0xFB-prefixed) instructions.
+     *
+     * <p>Maps runtime sub-opcodes to their ArkTS equivalents where
+     * possible. Some runtime calls have direct ArkTS semantics
+     * (e.g. callinit → constructor initialization, definefieldbyvalue
+     * → property definition). Others emit a descriptive comment.
+     *
+     * @param subOpcode the callruntime sub-opcode
+     * @param operands the decoded operands
+     * @param accValue the current accumulator value
+     * @param ctx the decompilation context
+     * @return the statement result, or null for no-ops
+     */
+    private static StatementResult handleCallRuntime(int subOpcode,
+            List<ArkOperand> operands, ArkTSExpression accValue,
+            DecompilationContext ctx) {
+        // --- callinit: constructor initialization call ---
+        if (subOpcode == ArkOpcodesCompat.CRT_CALLINIT) {
+            // callinit takes a V8 register for the object being
+            // initialized. This is typically a no-op in ArkTS output
+            // since constructor initialization is implicit.
+            return null;
+        }
+
+        // --- definefieldbyvalue: obj[key] = acc (field definition) ---
+        if (subOpcode == ArkOpcodesCompat.CRT_DEFINEFIELDBYVALUE) {
+            int objReg = (int) operands.get(0).getValue();
+            ArkTSExpression obj =
+                    new ArkTSExpression.VariableExpression("v" + objReg);
+            // The key is in the accumulator, value from context
+            ArkTSExpression key = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            ArkTSExpression target =
+                    new ArkTSExpression.MemberExpression(obj, key, true);
+            return new StatementResult(null, target);
+        }
+
+        // --- definefieldbyindex: obj[index] = acc (field by index) ---
+        if (subOpcode == ArkOpcodesCompat.CRT_DEFINEFIELDBYINDEX) {
+            int objReg = (int) operands.get(0).getValue();
+            ArkTSExpression obj =
+                    new ArkTSExpression.VariableExpression("v" + objReg);
+            return new StatementResult(null,
+                    new ArkTSExpression.MemberExpression(
+                            obj, new ArkTSExpression.VariableExpression(ACC),
+                            true));
+        }
+
+        // --- topropertykey: convert accumulator to property key ---
+        if (subOpcode == ArkOpcodesCompat.CRT_TOPROPERTYKEY) {
+            // This is a type conversion runtime call, result is
+            // the accumulator coerced to a property key
+            return new StatementResult(null, accValue);
+        }
+
+        // --- createprivateproperty: declare private field ---
+        if (subOpcode == ArkOpcodesCompat.CRT_CREATEPRIVATEPROPERTY) {
+            int stringIdx = (int) operands.get(0).getValue();
+            String propName = ctx.resolveString(stringIdx);
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression(
+                            "/* private: #" + propName + " */"));
+        }
+
+        // --- defineprivateproperty: set private property value ---
+        if (subOpcode == ArkOpcodesCompat.CRT_DEFINEPRIVATEPROPERTY) {
+            int stringIdx = (int) operands.get(0).getValue();
+            String propName = ctx.resolveString(stringIdx);
+            int objReg = (int) operands.get(1).getValue();
+            ArkTSExpression obj =
+                    new ArkTSExpression.VariableExpression("v" + objReg);
+            ArkTSExpression target =
+                    new ArkTSPropertyExpressions.PrivateMemberExpression(
+                            obj, propName);
+            ArkTSExpression value = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            return new StatementResult(
+                    new ArkTSStatement.ExpressionStatement(
+                            new ArkTSExpression.AssignExpression(
+                                    target, value)),
+                    value);
+        }
+
+        // --- istrue/isfalse runtime versions ---
+        if (subOpcode == ArkOpcodesCompat.CRT_ISTRUE) {
+            ArkTSExpression operand = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            return new StatementResult(null,
+                    new ArkTSExpression.CallExpression(
+                            new ArkTSExpression.VariableExpression("Boolean"),
+                            List.of(operand)));
+        }
+        if (subOpcode == ArkOpcodesCompat.CRT_ISFALSE) {
+            ArkTSExpression operand = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            return new StatementResult(null,
+                    new ArkTSExpression.UnaryExpression("!", operand, true));
+        }
+
+        // --- ldlazymodulevar: lazy-loaded module variable ---
+        if (subOpcode == ArkOpcodesCompat.CRT_LDLAZYMODULEVAR) {
+            int varIdx = (int) operands.get(0).getValue();
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression(
+                            "lazy_mod_" + varIdx));
+        }
+
+        // --- ldsendableexternalmodulevar: sendable module var ---
+        if (subOpcode == ArkOpcodesCompat.CRT_LDSENDABLEEXTERNALMODULEVAR) {
+            int varIdx = (int) operands.get(0).getValue();
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression(
+                            "sendable_ext_mod_" + varIdx));
+        }
+
+        // --- ldsendablevar / ldsendablevarptr: load sendable var ---
+        if (subOpcode == ArkOpcodesCompat.CRT_LDSENDABLEVAR
+                || subOpcode == ArkOpcodesCompat.CRT_LDSENDABLEVARPTR) {
+            int level = (int) operands.get(0).getValue();
+            int slot = (int) operands.get(1).getValue();
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression(
+                            "sendable_" + level + "_" + slot));
+        }
+
+        // --- stsendablevar / stsendablevarptr: store sendable var ---
+        if (subOpcode == ArkOpcodesCompat.CRT_STSENDABLEVAR
+                || subOpcode == ArkOpcodesCompat.CRT_STSENDABLEVARPTR) {
+            int level = (int) operands.get(0).getValue();
+            int slot = (int) operands.get(1).getValue();
+            if (accValue != null) {
+                return new StatementResult(
+                        new ArkTSStatement.ExpressionStatement(
+                                new ArkTSExpression.AssignExpression(
+                                        new ArkTSExpression.VariableExpression(
+                                                "sendable_" + level + "_"
+                                                        + slot),
+                                        accValue)),
+                        accValue);
+            }
+            return null;
+        }
+
+        // --- newsendableenv: create sendable lexical environment ---
+        if (subOpcode == ArkOpcodesCompat.CRT_NEWSENDABLEENV) {
+            return null;
+        }
+
+        // --- definesendableclass: define a sendable class ---
+        if (subOpcode == ArkOpcodesCompat.CRT_DEFINESENDABLECLASS) {
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression(
+                            "/* definesendableclass */"));
+        }
+
+        // --- ldsendableclass: load sendable class ---
+        if (subOpcode == ArkOpcodesCompat.CRT_LDSENDABLECLASS) {
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression(
+                            "sendable_class"));
+        }
+
+        // --- notifyconcurrentresult: concurrent result notification ---
+        if (subOpcode == ArkOpcodesCompat.CRT_NOTIFYCONCURRENTRESULT) {
+            return new StatementResult(null,
+                    new ArkTSExpression.VariableExpression(
+                            "/* notifyconcurrentresult */"));
+        }
+
+        // --- Generic fallback for unknown callruntime sub-opcodes ---
+        String name = ArkOpcodes.getCallRuntimeMnemonic(subOpcode);
+        return new StatementResult(null,
+                new ArkTSAccessExpressions.RuntimeCallExpression(
+                        name, Collections.emptyList()));
     }
 
     // --- Delegates for external callers ---

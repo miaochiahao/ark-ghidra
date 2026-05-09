@@ -211,12 +211,14 @@ public class ControlFlowGraph {
         // For IMM8 / IMM16 jump formats (jmp, jeqz, jnez, etc.), offset is the first operand
         ArkOperand offsetOperand;
 
-        if (opcode == ArkOpcodes.JEQ_IMM8 || opcode == ArkOpcodes.JEQ_IMM16
-                || opcode == ArkOpcodes.JNE_IMM8 || opcode == ArkOpcodes.JNE_IMM16
-                || opcode == ArkOpcodes.JSTRICTEQ_IMM8
-                || opcode == ArkOpcodes.JSTRICTEQ_IMM16
-                || opcode == ArkOpcodes.JNSTRICTEQ_IMM8
-                || opcode == ArkOpcodes.JNSTRICTEQ_IMM16) {
+        if (opcode == ArkOpcodesCompat.JEQ_IMM8
+                || opcode == ArkOpcodesCompat.JEQ_IMM16
+                || opcode == ArkOpcodesCompat.JNE_IMM8
+                || opcode == ArkOpcodesCompat.JNE_IMM16
+                || opcode == ArkOpcodesCompat.JSTRICTEQ_IMM8
+                || opcode == ArkOpcodesCompat.JSTRICTEQ_IMM16
+                || opcode == ArkOpcodesCompat.JNSTRICTEQ_IMM8
+                || opcode == ArkOpcodesCompat.JNSTRICTEQ_IMM16) {
             offsetOperand = operands.get(operands.size() - 1);
         } else if (ArkOpcodesCompat.isUnconditionalJump(opcode)
                 || ArkOpcodesCompat.isConditionalBranch(opcode)) {

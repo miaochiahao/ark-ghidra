@@ -917,4 +917,50 @@ public class ArkTSAccessExpressions {
             return innerFunction.toArkTS();
         }
     }
+
+    // --- Runtime call expression ---
+
+    /**
+     * A runtime call expression from CALLRUNTIME (0xFB) prefix.
+     *
+     * <p>Represents a call to an Ark runtime function such as
+     * definefieldbyvalue, callinit, topropertykey, etc.
+     * The decompiler maps well-known runtime calls to their
+     * ArkTS equivalents where possible.
+     */
+    public static class RuntimeCallExpression extends ArkTSExpression {
+        private final String runtimeName;
+        private final List<ArkTSExpression> arguments;
+
+        /**
+         * Constructs a runtime call expression.
+         *
+         * @param runtimeName the runtime function name (e.g.
+         *                    "definefieldbyvalue")
+         * @param arguments the argument expressions
+         */
+        public RuntimeCallExpression(String runtimeName,
+                List<ArkTSExpression> arguments) {
+            this.runtimeName = runtimeName;
+            this.arguments = Collections.unmodifiableList(
+                    new ArrayList<>(arguments));
+        }
+
+        public String getRuntimeName() {
+            return runtimeName;
+        }
+
+        public List<ArkTSExpression> getArguments() {
+            return arguments;
+        }
+
+        @Override
+        public String toArkTS() {
+            StringJoiner joiner = new StringJoiner(", ");
+            for (ArkTSExpression arg : arguments) {
+                joiner.add(arg.toArkTS());
+            }
+            return "/* runtime: " + runtimeName + "(" + joiner + ") */";
+        }
+    }
 }

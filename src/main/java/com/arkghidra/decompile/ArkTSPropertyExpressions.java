@@ -506,4 +506,100 @@ public class ArkTSPropertyExpressions {
             return "(" + left.toArkTS() + " ?? " + right.toArkTS() + ")";
         }
     }
+
+    // --- Super expression ---
+
+    /**
+     * The {@code super} keyword expression.
+     *
+     * <p>Used for super property access (super.prop, super[expr]) and
+     * super constructor calls (super()). Represents the parent class
+     * context in ArkTS class inheritance.
+     */
+    public static class SuperExpression extends ArkTSExpression {
+        @Override
+        public String toArkTS() {
+            return "super";
+        }
+    }
+
+    // --- Define property expression ---
+
+    /**
+     * A define property expression: Object.defineProperty(obj, prop, value).
+     *
+     * <p>Represents the Ark bytecode {@code definepropertybyname} instruction
+     * which defines a property on an object with specific attributes
+     * (writable, enumerable, configurable). Distinct from simple field
+     * definition ({@code definefieldbyname}) which is a plain assignment.
+     */
+    public static class DefinePropertyExpression extends ArkTSExpression {
+        private final ArkTSExpression object;
+        private final ArkTSExpression property;
+        private final ArkTSExpression value;
+
+        /**
+         * Constructs a define property expression.
+         *
+         * @param object the target object
+         * @param property the property name expression
+         * @param value the value expression
+         */
+        public DefinePropertyExpression(ArkTSExpression object,
+                ArkTSExpression property, ArkTSExpression value) {
+            this.object = object;
+            this.property = property;
+            this.value = value;
+        }
+
+        public ArkTSExpression getObject() {
+            return object;
+        }
+
+        public ArkTSExpression getProperty() {
+            return property;
+        }
+
+        public ArkTSExpression getValue() {
+            return value;
+        }
+
+        @Override
+        public String toArkTS() {
+            return "Object.defineProperty(" + object.toArkTS() + ", "
+                    + property.toArkTS() + ", { value: "
+                    + value.toArkTS() + " })";
+        }
+    }
+
+    // --- Template object expression ---
+
+    /**
+     * A template object reference expression.
+     *
+     * <p>Represents the result of {@code gettemplateobject} which retrieves
+     * the frozen template strings array associated with a tagged template
+     * literal. Used as the first argument to tag functions.
+     */
+    public static class TemplateObjectExpression extends ArkTSExpression {
+        private final int templateIndex;
+
+        /**
+         * Constructs a template object expression.
+         *
+         * @param templateIndex the template literal index
+         */
+        public TemplateObjectExpression(int templateIndex) {
+            this.templateIndex = templateIndex;
+        }
+
+        public int getTemplateIndex() {
+            return templateIndex;
+        }
+
+        @Override
+        public String toArkTS() {
+            return "/* template_" + templateIndex + " */";
+        }
+    }
 }

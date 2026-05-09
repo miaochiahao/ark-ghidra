@@ -30,35 +30,26 @@ class PropertyAccessHandler {
                 : insn.getOpcode();
         List<ArkOperand> operands = insn.getOperands();
 
-        ArkTSExpression callee;
+        ArkTSExpression callee = accValue != null
+                ? accValue
+                : new ArkTSExpression.VariableExpression(ACC);
         List<ArkTSExpression> args = new ArrayList<>();
 
         switch (opcode) {
+            // CALLARG: acc holds the function, args from registers
             case ArkOpcodesCompat.CALLARG0:
-                callee = accValue != null
-                        ? accValue
-                        : new ArkTSExpression.VariableExpression(ACC);
                 break;
             case ArkOpcodesCompat.CALLARG1:
-                callee = accValue != null
-                        ? accValue
-                        : new ArkTSExpression.VariableExpression(ACC);
                 args.add(new ArkTSExpression.VariableExpression(
                         "v" + operands.get(1).getValue()));
                 break;
             case ArkOpcodesCompat.CALLARGS2:
-                callee = accValue != null
-                        ? accValue
-                        : new ArkTSExpression.VariableExpression(ACC);
                 args.add(new ArkTSExpression.VariableExpression(
                         "v" + operands.get(1).getValue()));
                 args.add(new ArkTSExpression.VariableExpression(
                         "v" + operands.get(2).getValue()));
                 break;
             case ArkOpcodesCompat.CALLARGS3:
-                callee = accValue != null
-                        ? accValue
-                        : new ArkTSExpression.VariableExpression(ACC);
                 args.add(new ArkTSExpression.VariableExpression(
                         "v" + operands.get(1).getValue()));
                 args.add(new ArkTSExpression.VariableExpression(
@@ -66,42 +57,57 @@ class PropertyAccessHandler {
                 args.add(new ArkTSExpression.VariableExpression(
                         "v" + operands.get(3).getValue()));
                 break;
-            case ArkOpcodesCompat.CALLTHIS0:
-                callee = accValue != null
-                        ? accValue
-                        : new ArkTSExpression.VariableExpression(ACC);
+            // CALLTHIS: acc holds the method, first register is this
+            case ArkOpcodesCompat.CALLTHIS0: {
+                ArkTSExpression thisObj =
+                        new ArkTSExpression.VariableExpression(
+                                "v" + operands.get(1).getValue());
+                callee = new ArkTSExpression.MemberExpression(
+                        thisObj, callee, false);
                 break;
-            case ArkOpcodesCompat.CALLTHIS1:
-                callee = accValue != null
-                        ? accValue
-                        : new ArkTSExpression.VariableExpression(ACC);
-                args.add(new ArkTSExpression.VariableExpression(
-                        "v" + operands.get(1).getValue()));
-                break;
-            case ArkOpcodesCompat.CALLTHIS2:
-                callee = accValue != null
-                        ? accValue
-                        : new ArkTSExpression.VariableExpression(ACC);
-                args.add(new ArkTSExpression.VariableExpression(
-                        "v" + operands.get(1).getValue()));
+            }
+            case ArkOpcodesCompat.CALLTHIS1: {
+                ArkTSExpression thisObj =
+                        new ArkTSExpression.VariableExpression(
+                                "v" + operands.get(1).getValue());
+                callee = new ArkTSExpression.MemberExpression(
+                        thisObj, callee, false);
                 args.add(new ArkTSExpression.VariableExpression(
                         "v" + operands.get(2).getValue()));
                 break;
-            case ArkOpcodesCompat.CALLTHIS3:
-                callee = accValue != null
-                        ? accValue
-                        : new ArkTSExpression.VariableExpression(ACC);
-                args.add(new ArkTSExpression.VariableExpression(
-                        "v" + operands.get(1).getValue()));
+            }
+            case ArkOpcodesCompat.CALLTHIS2: {
+                ArkTSExpression thisObj =
+                        new ArkTSExpression.VariableExpression(
+                                "v" + operands.get(1).getValue());
+                callee = new ArkTSExpression.MemberExpression(
+                        thisObj, callee, false);
                 args.add(new ArkTSExpression.VariableExpression(
                         "v" + operands.get(2).getValue()));
                 args.add(new ArkTSExpression.VariableExpression(
                         "v" + operands.get(3).getValue()));
                 break;
-            case ArkOpcodesCompat.CALLTHISRANGE:
-                callee = accValue != null
-                        ? accValue
-                        : new ArkTSExpression.VariableExpression(ACC);
+            }
+            case ArkOpcodesCompat.CALLTHIS3: {
+                ArkTSExpression thisObj =
+                        new ArkTSExpression.VariableExpression(
+                                "v" + operands.get(1).getValue());
+                callee = new ArkTSExpression.MemberExpression(
+                        thisObj, callee, false);
+                args.add(new ArkTSExpression.VariableExpression(
+                        "v" + operands.get(2).getValue()));
+                args.add(new ArkTSExpression.VariableExpression(
+                        "v" + operands.get(3).getValue()));
+                args.add(new ArkTSExpression.VariableExpression(
+                        "v" + operands.get(4).getValue()));
+                break;
+            }
+            case ArkOpcodesCompat.CALLTHISRANGE: {
+                ArkTSExpression thisObj =
+                        new ArkTSExpression.VariableExpression(
+                                "v" + operands.get(1).getValue());
+                callee = new ArkTSExpression.MemberExpression(
+                        thisObj, callee, false);
                 if (operands.size() >= 3) {
                     int numRangeArgs = (int) operands.get(0).getValue();
                     int firstReg = (int) operands.get(
@@ -112,10 +118,8 @@ class PropertyAccessHandler {
                     }
                 }
                 break;
+            }
             case ArkOpcodesCompat.CALLRANGE:
-                callee = accValue != null
-                        ? accValue
-                        : new ArkTSExpression.VariableExpression(ACC);
                 if (operands.size() >= 3) {
                     int numRangeArgs = (int) operands.get(0).getValue();
                     int firstReg = (int) operands.get(
@@ -127,9 +131,6 @@ class PropertyAccessHandler {
                 }
                 break;
             default:
-                callee = accValue != null
-                        ? accValue
-                        : new ArkTSExpression.VariableExpression(ACC);
                 break;
         }
 
@@ -151,7 +152,7 @@ class PropertyAccessHandler {
             obj = new ArkTSExpression.ThisExpression();
         } else if (opcode == ArkOpcodesCompat.LDSUPERBYNAME
                 || opcode == ArkOpcodesCompat.LDSUPERBYVALUE) {
-            obj = new ArkTSExpression.VariableExpression("super");
+            obj = new ArkTSPropertyExpressions.SuperExpression();
         } else {
             obj = accValue != null
                     ? accValue
@@ -201,7 +202,7 @@ class PropertyAccessHandler {
             obj = new ArkTSExpression.ThisExpression();
         } else if (opcode == ArkOpcodesCompat.STSUPERBYNAME
                 || opcode == ArkOpcodesCompat.STSUPERBYVALUE) {
-            obj = new ArkTSExpression.VariableExpression("super");
+            obj = new ArkTSPropertyExpressions.SuperExpression();
         } else {
             int objReg = (int) operands.get(
                     operands.size() - 1).getValue();

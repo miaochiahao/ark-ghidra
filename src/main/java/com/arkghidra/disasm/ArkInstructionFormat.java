@@ -23,6 +23,7 @@ package com.arkghidra.disasm;
  *   <li>IMM8_V8_V8: opcode + imm8 + reg8 + reg8 (4 bytes)</li>
  *   <li>V8_V8_V8: opcode + reg8 + reg8 + reg8 (4 bytes)</li>
  *   <li>IMM8_V8_V8_V8: opcode + imm8 + reg8 + reg8 + reg8 (5 bytes)</li>
+ *   <li>IMM8_V8_V8_V8_V8: opcode + imm8 + reg8 + reg8 + reg8 + reg8 (6 bytes)</li>
  *   <li>V8_V8_V8_V8: opcode + reg8 + reg8 + reg8 + reg8 (5 bytes)</li>
  *   <li>IMM32: opcode + imm32 (5 bytes)</li>
  *   <li>IMM64: opcode + imm64 (9 bytes)</li>
@@ -64,6 +65,8 @@ public enum ArkInstructionFormat {
     V8_V8_V8(4),
     /** Opcode + 8-bit immediate + three 8-bit registers. */
     IMM8_V8_V8_V8(5),
+    /** Opcode + 8-bit immediate + four 8-bit registers. */
+    IMM8_V8_V8_V8_V8(6),
     /** Opcode + four 8-bit registers. */
     V8_V8_V8_V8(5),
     /** Opcode + 32-bit signed immediate. */
@@ -112,6 +115,27 @@ public enum ArkInstructionFormat {
     WIDE_IMM16_V8_IMM16(7),
     /** Wide: opcode pair + 16-bit immediate + 8-bit register. */
     WIDE_IMM16_IMM8_V8_ALT(5),
+
+    // --- CallRuntime (0xFB) prefixed formats: 2 opcode bytes ---
+    /** CallRuntime: prefix + sub-opcode only, no operands. */
+    PREF_NONE(2),
+    /** CallRuntime: prefix + sub-opcode + 8-bit register. */
+    PREF_V8(3),
+    /** CallRuntime: prefix + sub-opcode + 8-bit immediate. */
+    PREF_IMM8(3),
+    /** CallRuntime: prefix + sub-opcode + 16-bit immediate. */
+    PREF_IMM16(4),
+    /** CallRuntime: prefix + sub-opcode + 8-bit immediate + 8-bit register. */
+    PREF_IMM8_V8(4),
+    /** CallRuntime: prefix + sub-opcode + 16-bit immediate + 8-bit register. */
+    PREF_IMM16_V8(5),
+    /** CallRuntime: prefix + sub-opcode + 16-bit immediate + 8-bit immediate. */
+    PREF_IMM16_IMM8(4),
+    /** CallRuntime: prefix + sub-opcode + two 8-bit immediates. */
+    PREF_IMM8_IMM8(4),
+    /** CallRuntime: prefix + sub-opcode + 8-bit immediate + 8-bit immediate
+     *  + 8-bit register. */
+    PREF_IMM8_IMM8_V8(5),
 
     /** Unknown or invalid instruction format. */
     UNKNOWN(1);

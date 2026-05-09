@@ -51,7 +51,7 @@ class LoadStoreHandler {
                     new ArkTSControlFlow.SuperCallStatement(args);
             return new InstructionHandler.StatementResult(superCall,
                     new ArkTSExpression.CallExpression(
-                            new ArkTSExpression.VariableExpression("super"),
+                            new ArkTSPropertyExpressions.SuperExpression(),
                             args));
         }
 
@@ -68,7 +68,7 @@ class LoadStoreHandler {
                     new ArkTSControlFlow.SuperCallStatement(args);
             return new InstructionHandler.StatementResult(superCall,
                     new ArkTSAccessExpressions.SpreadCallExpression(
-                            new ArkTSExpression.VariableExpression("super"),
+                            new ArkTSPropertyExpressions.SuperExpression(),
                             args));
         }
 
@@ -303,8 +303,8 @@ class LoadStoreHandler {
         if (opcode == ArkOpcodesCompat.GETTEMPLATEOBJECT) {
             int templateIdx = (int) operands.get(0).getValue();
             return new InstructionHandler.StatementResult(null,
-                    new ArkTSExpression.VariableExpression(
-                            "template_" + templateIdx));
+                    new ArkTSPropertyExpressions.TemplateObjectExpression(
+                            templateIdx));
         }
 
         // --- Object prototype ---
@@ -411,7 +411,7 @@ class LoadStoreHandler {
                 new ArkTSExpression.VariableExpression("v" + keyReg);
         return new InstructionHandler.StatementResult(null,
                 new ArkTSExpression.MemberExpression(
-                        new ArkTSExpression.VariableExpression("super"),
+                        new ArkTSPropertyExpressions.SuperExpression(),
                         prop, true));
     }
 
@@ -425,8 +425,8 @@ class LoadStoreHandler {
                 new ArkTSStatement.ExpressionStatement(
                         new ArkTSExpression.AssignExpression(
                                 new ArkTSExpression.MemberExpression(
-                                        new ArkTSExpression
-                                                .VariableExpression("super"),
+                                        new ArkTSPropertyExpressions
+                                                .SuperExpression(),
                                         prop, true),
                                 accValue != null ? accValue
                                         : new ArkTSExpression

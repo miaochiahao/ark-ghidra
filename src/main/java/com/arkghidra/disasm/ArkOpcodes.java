@@ -276,6 +276,26 @@ public final class ArkOpcodes {
     // --- Class definition (IMM8_IMM16_IMM16_IMM8_V8) ---
     public static final int DEFINECLASSWITHBUFFER = 0x35;
 
+    // --- CallRuntime (0xFB) sub-opcodes ---
+    public static final int CRT_NOTIFYCONCURRENTRESULT = 0x00;
+    public static final int CRT_DEFINEFIELDBYVALUE = 0x01;
+    public static final int CRT_DEFINEFIELDBYINDEX = 0x02;
+    public static final int CRT_TOPROPERTYKEY = 0x03;
+    public static final int CRT_CREATEPRIVATEPROPERTY = 0x04;
+    public static final int CRT_DEFINEPRIVATEPROPERTY = 0x05;
+    public static final int CRT_CALLINIT = 0x06;
+    public static final int CRT_DEFINESENDABLECLASS = 0x07;
+    public static final int CRT_LDSENDABLECLASS = 0x08;
+    public static final int CRT_LDSENDABLEEXTERNALMODULEVAR = 0x09;
+    public static final int CRT_NEWSENDABLEENV = 0x0B;
+    public static final int CRT_STSENDABLEVAR = 0x0D;
+    public static final int CRT_STSENDABLEVARPTR = 0x0E;
+    public static final int CRT_LDSENDABLEVAR = 0x10;
+    public static final int CRT_LDSENDABLEVARPTR = 0x11;
+    public static final int CRT_ISTRUE = 0x13;
+    public static final int CRT_ISFALSE = 0x14;
+    public static final int CRT_LDLAZYMODULEVAR = 0x15;
+
     // --- Wide (0xFD) sub-opcodes ---
     public static final int WIDE_CREATEEMPTYARRAY = 0x80;
     public static final int WIDE_CREATEARRAYWITHBUFFER = 0x81;
@@ -643,6 +663,10 @@ public final class ArkOpcodes {
             case CALLTHIS2:
                 return ArkInstructionFormat.IMM8_V8_V8_V8;
 
+            // IMM8_V8_V8_V8_V8 format
+            case CALLTHIS3:
+                return ArkInstructionFormat.IMM8_V8_V8_V8_V8;
+
             // IMM16 format — opcode + 16-bit immediate
             case LDA_STR:
             case LDBIGINT:
@@ -777,6 +801,110 @@ public final class ArkOpcodes {
 
             default:
                 return ArkInstructionFormat.UNKNOWN;
+        }
+    }
+
+    /**
+     * Returns the mnemonic for a callruntime (0xFB-prefixed) sub-opcode.
+     *
+     * @param subOpcode the sub-opcode byte following the 0xFB prefix
+     * @return the mnemonic string
+     */
+    public static String getCallRuntimeMnemonic(int subOpcode) {
+        switch (subOpcode & 0xFF) {
+            case CRT_NOTIFYCONCURRENTRESULT:
+                return "callruntime.notifyconcurrentresult";
+            case CRT_DEFINEFIELDBYVALUE:
+                return "callruntime.definefieldbyvalue";
+            case CRT_DEFINEFIELDBYINDEX:
+                return "callruntime.definefieldbyindex";
+            case CRT_TOPROPERTYKEY:
+                return "callruntime.topropertykey";
+            case CRT_CREATEPRIVATEPROPERTY:
+                return "callruntime.createprivateproperty";
+            case CRT_DEFINEPRIVATEPROPERTY:
+                return "callruntime.defineprivateproperty";
+            case CRT_CALLINIT:
+                return "callruntime.callinit";
+            case CRT_DEFINESENDABLECLASS:
+                return "callruntime.definesendableclass";
+            case CRT_LDSENDABLECLASS:
+                return "callruntime.ldsendableclass";
+            case CRT_LDSENDABLEEXTERNALMODULEVAR:
+                return "callruntime.ldsendableexternalmodulevar";
+            case CRT_NEWSENDABLEENV:
+                return "callruntime.newsendableenv";
+            case CRT_STSENDABLEVAR:
+                return "callruntime.stsendablevar";
+            case CRT_STSENDABLEVARPTR:
+                return "callruntime.stsendablevarptr";
+            case CRT_LDSENDABLEVAR:
+                return "callruntime.ldsendablevar";
+            case CRT_LDSENDABLEVARPTR:
+                return "callruntime.ldsendablevarptr";
+            case CRT_ISTRUE:
+                return "callruntime.istrue";
+            case CRT_ISFALSE:
+                return "callruntime.isfalse";
+            case CRT_LDLAZYMODULEVAR:
+                return "callruntime.ldlazymodulevar";
+            default:
+                return String.format("callruntime.unknown_%02X",
+                        subOpcode & 0xFF);
+        }
+    }
+
+    /**
+     * Returns the instruction format for a callruntime (0xFB-prefixed)
+     * sub-opcode.
+     *
+     * <p>CallRuntime instructions use PREF_* formats where the first byte
+     * after the 0xFB prefix is the sub-opcode, and the remaining bytes
+     * are operands.
+     *
+     * @param subOpcode the sub-opcode byte following the 0xFB prefix
+     * @return the instruction format
+     */
+    public static ArkInstructionFormat getCallRuntimeFormat(int subOpcode) {
+        switch (subOpcode & 0xFF) {
+            case CRT_TOPROPERTYKEY:
+            case CRT_ISTRUE:
+            case CRT_ISFALSE:
+                return ArkInstructionFormat.PREF_NONE;
+
+            case CRT_NOTIFYCONCURRENTRESULT:
+            case CRT_DEFINEFIELDBYVALUE:
+            case CRT_DEFINEFIELDBYINDEX:
+            case CRT_CALLINIT:
+                return ArkInstructionFormat.PREF_V8;
+
+            case CRT_CREATEPRIVATEPROPERTY:
+                return ArkInstructionFormat.PREF_IMM8;
+
+            case CRT_DEFINEPRIVATEPROPERTY:
+                return ArkInstructionFormat.PREF_IMM8_V8;
+
+            case CRT_LDSENDABLEEXTERNALMODULEVAR:
+            case CRT_LDLAZYMODULEVAR:
+                return ArkInstructionFormat.PREF_IMM16;
+
+            case CRT_DEFINESENDABLECLASS:
+                return ArkInstructionFormat.PREF_IMM16_IMM8;
+
+            case CRT_LDSENDABLECLASS:
+                return ArkInstructionFormat.PREF_IMM16_V8;
+
+            case CRT_NEWSENDABLEENV:
+                return ArkInstructionFormat.PREF_IMM8;
+
+            case CRT_STSENDABLEVAR:
+            case CRT_STSENDABLEVARPTR:
+            case CRT_LDSENDABLEVAR:
+            case CRT_LDSENDABLEVARPTR:
+                return ArkInstructionFormat.PREF_IMM8_IMM8;
+
+            default:
+                return ArkInstructionFormat.PREF_NONE;
         }
     }
 

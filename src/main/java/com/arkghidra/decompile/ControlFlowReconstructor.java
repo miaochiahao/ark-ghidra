@@ -526,6 +526,74 @@ class ControlFlowReconstructor {
                                     .LiteralKind.NUMBER));
         }
 
+        // --- Strict null comparison jumps ---
+        if (opcode == ArkOpcodesCompat.JSTRICTEQNULL_IMM8
+                || opcode == ArkOpcodesCompat.JSTRICTEQNULL_IMM16) {
+            return new ArkTSExpression.BinaryExpression(
+                    ctx.currentAccValue != null
+                            ? ctx.currentAccValue
+                            : new ArkTSExpression.VariableExpression(ACC),
+                    "===",
+                    new ArkTSExpression.LiteralExpression("null",
+                            ArkTSExpression.LiteralExpression
+                                    .LiteralKind.NULL));
+        }
+        if (opcode == ArkOpcodesCompat.JNSTRICTEQNULL_IMM8
+                || opcode == ArkOpcodesCompat.JNSTRICTEQNULL_IMM16) {
+            return new ArkTSExpression.BinaryExpression(
+                    ctx.currentAccValue != null
+                            ? ctx.currentAccValue
+                            : new ArkTSExpression.VariableExpression(ACC),
+                    "!==",
+                    new ArkTSExpression.LiteralExpression("null",
+                            ArkTSExpression.LiteralExpression
+                                    .LiteralKind.NULL));
+        }
+
+        // --- Strict undefined comparison jumps ---
+        if (opcode == ArkOpcodesCompat.JSTRICTEQUNDEFINED_IMM16) {
+            return new ArkTSExpression.BinaryExpression(
+                    ctx.currentAccValue != null
+                            ? ctx.currentAccValue
+                            : new ArkTSExpression.VariableExpression(ACC),
+                    "===",
+                    new ArkTSExpression.LiteralExpression("undefined",
+                            ArkTSExpression.LiteralExpression
+                                    .LiteralKind.UNDEFINED));
+        }
+        if (opcode == ArkOpcodesCompat.JNSTRICTEQUNDEFINED_IMM16) {
+            return new ArkTSExpression.BinaryExpression(
+                    ctx.currentAccValue != null
+                            ? ctx.currentAccValue
+                            : new ArkTSExpression.VariableExpression(ACC),
+                    "!==",
+                    new ArkTSExpression.LiteralExpression("undefined",
+                            ArkTSExpression.LiteralExpression
+                                    .LiteralKind.UNDEFINED));
+        }
+
+        // --- Strict equality with register jumps ---
+        if (opcode == ArkOpcodesCompat.JSTRICTEQ_IMM8
+                || opcode == ArkOpcodesCompat.JSTRICTEQ_IMM16) {
+            int reg = (int) operands.get(0).getValue();
+            return new ArkTSExpression.BinaryExpression(
+                    ctx.currentAccValue != null
+                            ? ctx.currentAccValue
+                            : new ArkTSExpression.VariableExpression(ACC),
+                    "===",
+                    new ArkTSExpression.VariableExpression("v" + reg));
+        }
+        if (opcode == ArkOpcodesCompat.JNSTRICTEQ_IMM8
+                || opcode == ArkOpcodesCompat.JNSTRICTEQ_IMM16) {
+            int reg = (int) operands.get(0).getValue();
+            return new ArkTSExpression.BinaryExpression(
+                    ctx.currentAccValue != null
+                            ? ctx.currentAccValue
+                            : new ArkTSExpression.VariableExpression(ACC),
+                    "!==",
+                    new ArkTSExpression.VariableExpression("v" + reg));
+        }
+
         return ctx.currentAccValue;
     }
 
@@ -537,7 +605,12 @@ class ControlFlowReconstructor {
                 || opcode == ArkOpcodesCompat.JEQUNDEFINED_IMM8
                 || opcode == ArkOpcodesCompat.JEQUNDEFINED_IMM16
                 || opcode == ArkOpcodesCompat.JSTRICTEQZ_IMM8
-                || opcode == ArkOpcodesCompat.JSTRICTEQZ_IMM16;
+                || opcode == ArkOpcodesCompat.JSTRICTEQZ_IMM16
+                || opcode == ArkOpcodesCompat.JSTRICTEQNULL_IMM8
+                || opcode == ArkOpcodesCompat.JSTRICTEQNULL_IMM16
+                || opcode == ArkOpcodesCompat.JSTRICTEQUNDEFINED_IMM16
+                || opcode == ArkOpcodesCompat.JSTRICTEQ_IMM8
+                || opcode == ArkOpcodesCompat.JSTRICTEQ_IMM16;
     }
 
     // --- Block instruction processing (delegates to BlockInstructionProcessor) ---

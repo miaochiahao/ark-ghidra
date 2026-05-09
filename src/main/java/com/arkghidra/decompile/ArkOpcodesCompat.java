@@ -226,6 +226,44 @@ final class ArkOpcodesCompat {
 
     // --- Wide (0xFD-prefixed) sub-opcodes ---
     static final int WIDE_CREATEEMPTYARRAY = ArkOpcodes.WIDE_CREATEEMPTYARRAY;
+
+    // --- CallRuntime (0xFB-prefixed) sub-opcodes ---
+    static final int CRT_NOTIFYCONCURRENTRESULT =
+            ArkOpcodes.CRT_NOTIFYCONCURRENTRESULT;
+    static final int CRT_DEFINEFIELDBYVALUE =
+            ArkOpcodes.CRT_DEFINEFIELDBYVALUE;
+    static final int CRT_DEFINEFIELDBYINDEX =
+            ArkOpcodes.CRT_DEFINEFIELDBYINDEX;
+    static final int CRT_TOPROPERTYKEY =
+            ArkOpcodes.CRT_TOPROPERTYKEY;
+    static final int CRT_CREATEPRIVATEPROPERTY =
+            ArkOpcodes.CRT_CREATEPRIVATEPROPERTY;
+    static final int CRT_DEFINEPRIVATEPROPERTY =
+            ArkOpcodes.CRT_DEFINEPRIVATEPROPERTY;
+    static final int CRT_CALLINIT =
+            ArkOpcodes.CRT_CALLINIT;
+    static final int CRT_DEFINESENDABLECLASS =
+            ArkOpcodes.CRT_DEFINESENDABLECLASS;
+    static final int CRT_LDSENDABLECLASS =
+            ArkOpcodes.CRT_LDSENDABLECLASS;
+    static final int CRT_LDSENDABLEEXTERNALMODULEVAR =
+            ArkOpcodes.CRT_LDSENDABLEEXTERNALMODULEVAR;
+    static final int CRT_NEWSENDABLEENV =
+            ArkOpcodes.CRT_NEWSENDABLEENV;
+    static final int CRT_STSENDABLEVAR =
+            ArkOpcodes.CRT_STSENDABLEVAR;
+    static final int CRT_STSENDABLEVARPTR =
+            ArkOpcodes.CRT_STSENDABLEVARPTR;
+    static final int CRT_LDSENDABLEVAR =
+            ArkOpcodes.CRT_LDSENDABLEVAR;
+    static final int CRT_LDSENDABLEVARPTR =
+            ArkOpcodes.CRT_LDSENDABLEVARPTR;
+    static final int CRT_ISTRUE =
+            ArkOpcodes.CRT_ISTRUE;
+    static final int CRT_ISFALSE =
+            ArkOpcodes.CRT_ISFALSE;
+    static final int CRT_LDLAZYMODULEVAR =
+            ArkOpcodes.CRT_LDLAZYMODULEVAR;
     static final int WIDE_CREATEARRAYWITHBUFFER =
             ArkOpcodes.WIDE_CREATEARRAYWITHBUFFER;
     static final int WIDE_CREATEOBJECTWITHBUFFER =
@@ -429,5 +467,38 @@ final class ArkOpcodesCompat {
 
     static boolean isCloseIterator(int opcode) {
         return opcode == CLOSEITERATOR_IMM8 || opcode == CLOSEITERATOR_IMM16;
+    }
+
+    /**
+     * Returns true if the opcode is a known callruntime (0xFB-prefixed)
+     * sub-opcode.
+     *
+     * @param opcode the opcode to check
+     * @return true if this is a callruntime sub-opcode
+     */
+    static boolean isCallRuntimeSubOpcode(int opcode) {
+        switch (opcode) {
+            case CRT_NOTIFYCONCURRENTRESULT:
+            case CRT_DEFINEFIELDBYVALUE:
+            case CRT_DEFINEFIELDBYINDEX:
+            case CRT_TOPROPERTYKEY:
+            case CRT_CREATEPRIVATEPROPERTY:
+            case CRT_DEFINEPRIVATEPROPERTY:
+            case CRT_CALLINIT:
+            case CRT_DEFINESENDABLECLASS:
+            case CRT_LDSENDABLECLASS:
+            case CRT_LDSENDABLEEXTERNALMODULEVAR:
+            case CRT_NEWSENDABLEENV:
+            case CRT_STSENDABLEVAR:
+            case CRT_STSENDABLEVARPTR:
+            case CRT_LDSENDABLEVAR:
+            case CRT_LDSENDABLEVARPTR:
+            case CRT_ISTRUE:
+            case CRT_ISFALSE:
+            case CRT_LDLAZYMODULEVAR:
+                return true;
+            default:
+                return false;
+        }
     }
 }

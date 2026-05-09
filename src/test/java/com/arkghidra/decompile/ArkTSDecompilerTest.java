@@ -79,6 +79,11 @@ class ArkTSDecompilerTest {
         return disasm.disassemble(code, 0, code.length);
     }
 
+    private static DecompilationContext makeTestContext() {
+        return new DecompilationContext(
+                null, null, null, null, null, null);
+    }
+
     // --- Simple return tests ---
 
     @Test
@@ -259,6 +264,104 @@ class ArkTSDecompilerTest {
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
         assertTrue(result.contains("acc(v1, v2)"));
+    }
+
+    @Test
+    void testDecompile_callargs3() {
+        // callargs3 0, v1, v2, v3; sta v0
+        byte[] code = concat(
+            bytes(0x2C, 0x00, 0x01, 0x02, 0x03), // callargs3 0, v1, v2, v3
+            bytes(0x61, 0x00)                     // sta v0
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("acc(v1, v2, v3)"));
+    }
+
+    @Test
+    void testDecompile_callthis0() {
+        // callthis0 0, v0; sta v1
+        byte[] code = concat(
+            bytes(0x2D, 0x00, 0x00), // callthis0 0, v0 (this=v0)
+            bytes(0x61, 0x01)        // sta v1
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0.acc()"));
+    }
+
+    @Test
+    void testDecompile_callthis1() {
+        // callthis1 0, v0, v1; sta v2
+        byte[] code = concat(
+            bytes(0x2E, 0x00, 0x00, 0x01), // callthis1 0, v0, v1 (this=v0, arg=v1)
+            bytes(0x61, 0x02)              // sta v2
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0.acc(v1)"));
+    }
+
+    @Test
+    void testDecompile_callthis2() {
+        // callthis2 0, v0, v1, v2; sta v3
+        byte[] code = concat(
+            bytes(0x2F, 0x00, 0x00, 0x01, 0x02), // callthis2 0, v0, v1, v2
+            bytes(0x61, 0x03)                    // sta v3
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0.acc(v1, v2)"));
+    }
+
+    @Test
+    void testDecompile_callthis3() {
+        // callthis3 0, v0, v1, v2, v3; sta v4
+        byte[] code = concat(
+            bytes(0x30, 0x00, 0x00, 0x01, 0x02, 0x03), // callthis3 0, v0, v1, v2, v3
+            bytes(0x61, 0x04)                           // sta v4
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0.acc(v1, v2, v3)"));
+    }
+
+    @Test
+    void testDecompile_callthis0_withLdobjbyname() {
+        // lda v0; ldobjbyname 0, "method"; callthis0 0, v0; sta v1
+        byte[] code = concat(
+            bytes(0x60, 0x00),               // lda v0
+            bytes(0x42, 0x00, 0x05, 0x00),   // ldobjbyname 0, string_idx=5
+            bytes(0x2D, 0x00, 0x00),         // callthis0 0, v0 (this=v0)
+            bytes(0x61, 0x01)                // sta v1
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0.") && result.contains("()"));
+    }
+
+    @Test
+    void testDecompile_callrange() {
+        // callrange 2, 0, v3; sta v0 (call acc with 2 args starting at v3)
+        byte[] code = concat(
+            bytes(0x73, 0x02, 0x00, 0x03), // callrange 2, 0, v3
+            bytes(0x61, 0x00)              // sta v0
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("acc(v3, v4)"));
+    }
+
+    @Test
+    void testDecompile_callthisrange() {
+        // callthisrange 2, 0, v0; sta v1 (call v0.acc with 2 args starting at v0)
+        byte[] code = concat(
+            bytes(0x31, 0x02, 0x00, 0x00), // callthisrange 2, 0, v0
+            bytes(0x61, 0x01)              // sta v1
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0.acc(v0, v1)"));
     }
 
     // --- Unary operation tests ---
@@ -9080,5 +9183,605 @@ class ArkTSDecompilerTest {
         assertEquals(1, params.size());
         assertEquals("T", params.get(0).toString());
         assertNull(params.get(0).getConstraint());
+    }
+
+    // --- Conditional jump: JSTRICTEQNULL_IMM8 (strict null check) ---
+
+    @Test
+    void testConditionalJump_jstricteqnull_producesCondition() {
+        // lda v0; jstricteqnull +offset; ldai 10; sta v1; return
+        // JSTRICTEQNULL_IMM8 = 0x56 (IMM8 offset)
+        // Layout:
+        // offset 0: lda v0         (2 bytes)
+        // offset 2: jstricteqnull +6 (2 bytes) -> offset 10
+        // offset 4: ldai 10        (5 bytes)
+        // offset 9: sta v1         (2 bytes)
+        // offset 11: return        (1 byte)
+        byte[] code = concat(
+            bytes(0x60, 0x00),          // lda v0
+            bytes(0x56, 0x06),          // jstricteqnull +6 -> offset 10
+            bytes(0x62), le32(10),      // ldai 10
+            bytes(0x61, 0x01),          // sta v1
+            bytes(0x64)                 // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        ControlFlowGraph cfg = ControlFlowGraph.build(insns);
+        assertTrue(cfg.getBlocks().size() >= 2,
+                "jstricteqnull should split into multiple blocks");
+        assertTrue(
+                ArkOpcodesCompat.isConditionalBranch(
+                        ArkOpcodesCompat.JSTRICTEQNULL_IMM8));
+    }
+
+    @Test
+    void testConditionalJump_jstricteqnull_conditionExpression() {
+        // Test that getConditionExpression produces "=== null" for
+        // JSTRICTEQNULL
+        ArkInstruction branchInsn = new ArkInstruction(
+                ArkOpcodesCompat.JSTRICTEQNULL_IMM8, "jstricteqnull",
+                ArkInstructionFormat.IMM8, 0, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE8_SIGNED, 6)),
+                false);
+        DecompilationContext ctx = makeTestContext();
+        ctx.currentAccValue =
+                new ArkTSExpression.VariableExpression("v0");
+        ControlFlowReconstructor cfr = new ControlFlowReconstructor(
+                decompiler, new InstructionHandler(decompiler));
+        ArkTSExpression cond =
+                cfr.getConditionExpression(branchInsn, ctx);
+        assertNotNull(cond);
+        String arkTS = cond.toArkTS();
+        assertTrue(arkTS.contains("=== null"),
+                "Expected '=== null' in condition, got: " + arkTS);
+    }
+
+    // --- Conditional jump: JNSTRICTEQNULL_IMM8 (strict not-null check) ---
+
+    @Test
+    void testConditionalJump_jnstricteqnull_conditionExpression() {
+        // Test that getConditionExpression produces "!== null" for
+        // JNSTRICTEQNULL
+        ArkInstruction branchInsn = new ArkInstruction(
+                ArkOpcodesCompat.JNSTRICTEQNULL_IMM8, "jnstricteqnull",
+                ArkInstructionFormat.IMM8, 0, 2,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE8_SIGNED, 6)),
+                false);
+        DecompilationContext ctx = makeTestContext();
+        ctx.currentAccValue =
+                new ArkTSExpression.VariableExpression("v0");
+        ControlFlowReconstructor cfr = new ControlFlowReconstructor(
+                decompiler, new InstructionHandler(decompiler));
+        ArkTSExpression cond =
+                cfr.getConditionExpression(branchInsn, ctx);
+        assertNotNull(cond);
+        String arkTS = cond.toArkTS();
+        assertTrue(arkTS.contains("!== null"),
+                "Expected '!== null' in condition, got: " + arkTS);
+    }
+
+    // --- Conditional jump: JSTRICTEQUNDEFINED_IMM16 (strict undefined) ---
+
+    @Test
+    void testConditionalJump_jstrictequndefined_conditionExpression() {
+        // Test that getConditionExpression produces "=== undefined" for
+        // JSTRICTEQUNDEFINED_IMM16
+        ArkInstruction branchInsn = new ArkInstruction(
+                ArkOpcodesCompat.JSTRICTEQUNDEFINED_IMM16,
+                "jstrictequndefined",
+                ArkInstructionFormat.IMM16, 0, 3,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE16_SIGNED, 8)),
+                false);
+        DecompilationContext ctx = makeTestContext();
+        ctx.currentAccValue =
+                new ArkTSExpression.VariableExpression("v0");
+        ControlFlowReconstructor cfr = new ControlFlowReconstructor(
+                decompiler, new InstructionHandler(decompiler));
+        ArkTSExpression cond =
+                cfr.getConditionExpression(branchInsn, ctx);
+        assertNotNull(cond);
+        String arkTS = cond.toArkTS();
+        assertTrue(arkTS.contains("=== undefined"),
+                "Expected '=== undefined' in condition, got: " + arkTS);
+    }
+
+    // --- Conditional jump: JNSTRICTEQUNDEFINED_IMM16 ---
+
+    @Test
+    void testConditionalJump_jnstrictequndefined_conditionExpression() {
+        // Test that getConditionExpression produces "!== undefined" for
+        // JNSTRICTEQUNDEFINED_IMM16
+        ArkInstruction branchInsn = new ArkInstruction(
+                ArkOpcodesCompat.JNSTRICTEQUNDEFINED_IMM16,
+                "jnstrictequndefined",
+                ArkInstructionFormat.IMM16, 0, 3,
+                List.of(new ArkOperand(
+                        ArkOperand.Type.IMMEDIATE16_SIGNED, 8)),
+                false);
+        DecompilationContext ctx = makeTestContext();
+        ctx.currentAccValue =
+                new ArkTSExpression.VariableExpression("v0");
+        ControlFlowReconstructor cfr = new ControlFlowReconstructor(
+                decompiler, new InstructionHandler(decompiler));
+        ArkTSExpression cond =
+                cfr.getConditionExpression(branchInsn, ctx);
+        assertNotNull(cond);
+        String arkTS = cond.toArkTS();
+        assertTrue(arkTS.contains("!== undefined"),
+                "Expected '!== undefined' in condition, got: " + arkTS);
+    }
+
+    // --- Conditional jump: JSTRICTEQ_IMM8 (strict eq with register) ---
+
+    @Test
+    void testConditionalJump_jstricteq_conditionExpression() {
+        // Test that getConditionExpression produces "=== vN" for
+        // JSTRICTEQ_IMM8
+        // JSTRICTEQ_IMM8 = 0x5E (V8_IMM8 format: reg + offset)
+        ArkInstruction branchInsn = new ArkInstruction(
+                ArkOpcodesCompat.JSTRICTEQ_IMM8, "jstricteq",
+                ArkInstructionFormat.V8_IMM8, 0, 3,
+                List.of(
+                        new ArkOperand(
+                                ArkOperand.Type.REGISTER, 2),
+                        new ArkOperand(
+                                ArkOperand.Type.IMMEDIATE8_SIGNED, 6)),
+                false);
+        DecompilationContext ctx = makeTestContext();
+        ctx.currentAccValue =
+                new ArkTSExpression.VariableExpression("v0");
+        ControlFlowReconstructor cfr = new ControlFlowReconstructor(
+                decompiler, new InstructionHandler(decompiler));
+        ArkTSExpression cond =
+                cfr.getConditionExpression(branchInsn, ctx);
+        assertNotNull(cond);
+        String arkTS = cond.toArkTS();
+        assertTrue(arkTS.contains("=== v2"),
+                "Expected '=== v2' in condition, got: " + arkTS);
+    }
+
+    // --- Conditional jump: JNSTRICTEQ_IMM8 (strict neq with register) ---
+
+    @Test
+    void testConditionalJump_jnstricteq_conditionExpression() {
+        // Test that getConditionExpression produces "!== vN" for
+        // JNSTRICTEQ_IMM8
+        // JNSTRICTEQ_IMM8 = 0x5F (V8_IMM8 format: reg + offset)
+        ArkInstruction branchInsn = new ArkInstruction(
+                ArkOpcodesCompat.JNSTRICTEQ_IMM8, "jnstricteq",
+                ArkInstructionFormat.V8_IMM8, 0, 3,
+                List.of(
+                        new ArkOperand(
+                                ArkOperand.Type.REGISTER, 3),
+                        new ArkOperand(
+                                ArkOperand.Type.IMMEDIATE8_SIGNED, 6)),
+                false);
+        DecompilationContext ctx = makeTestContext();
+        ctx.currentAccValue =
+                new ArkTSExpression.VariableExpression("v0");
+        ControlFlowReconstructor cfr = new ControlFlowReconstructor(
+                decompiler, new InstructionHandler(decompiler));
+        ArkTSExpression cond =
+                cfr.getConditionExpression(branchInsn, ctx);
+        assertNotNull(cond);
+        String arkTS = cond.toArkTS();
+        assertTrue(arkTS.contains("!== v3"),
+                "Expected '!== v3' in condition, got: " + arkTS);
+    }
+
+    // --- Conditional jump: JSTRICTEQZ IMM8 (strict eq zero) ---
+
+    @Test
+    void testConditionalJump_jstricteqz_producesMultipleBlocks() {
+        // ldai 1; sta v0; lda v0; jstricteqz +offset; ldai 10; sta v1; return
+        // JSTRICTEQZ_IMM8 = 0x52 (IMM8 offset)
+        // Layout:
+        // offset 0: ldai 1         (5 bytes)
+        // offset 5: sta v0         (2 bytes)
+        // offset 7: lda v0         (2 bytes)
+        // offset 9: jstricteqz +5  (2 bytes) -> offset 16
+        // offset 11: ldai 10       (5 bytes)
+        // offset 16: sta v1        (2 bytes)
+        // offset 18: return        (1 byte)
+        byte[] code = concat(
+            bytes(0x62), le32(1),       // ldai 1
+            bytes(0x61, 0x00),          // sta v0
+            bytes(0x60, 0x00),          // lda v0
+            bytes(0x52, 0x05),          // jstricteqz +5 -> offset 16
+            bytes(0x62), le32(10),      // ldai 10
+            bytes(0x61, 0x01),          // sta v1
+            bytes(0x64)                 // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        ControlFlowGraph cfg = ControlFlowGraph.build(insns);
+        assertTrue(cfg.getBlocks().size() >= 2,
+                "jstricteqz should split into multiple blocks");
+    }
+
+    // --- isBranchOnFalse covers strict equality branches ---
+
+    @Test
+    void testIsBranchOnFalse_coversStrictEquality() {
+        ControlFlowReconstructor cfr = new ControlFlowReconstructor(
+                decompiler, new InstructionHandler(decompiler));
+        assertTrue(cfr.isBranchOnFalse(
+                ArkOpcodesCompat.JSTRICTEQNULL_IMM8));
+        assertTrue(cfr.isBranchOnFalse(
+                ArkOpcodesCompat.JSTRICTEQNULL_IMM16));
+        assertTrue(cfr.isBranchOnFalse(
+                ArkOpcodesCompat.JSTRICTEQUNDEFINED_IMM16));
+        assertTrue(cfr.isBranchOnFalse(
+                ArkOpcodesCompat.JSTRICTEQ_IMM8));
+        assertTrue(cfr.isBranchOnFalse(
+                ArkOpcodesCompat.JSTRICTEQ_IMM16));
+        assertFalse(cfr.isBranchOnFalse(
+                ArkOpcodesCompat.JNSTRICTEQNULL_IMM8));
+        assertFalse(cfr.isBranchOnFalse(
+                ArkOpcodesCompat.JNSTRICTEQ_IMM8));
+    }
+
+    // --- isConditionalBranch covers all strict equality jumps ---
+
+    @Test
+    void testIsConditionalBranch_coversStrictEqualityJumps() {
+        assertTrue(ArkOpcodesCompat.isConditionalBranch(
+                ArkOpcodesCompat.JSTRICTEQNULL_IMM8));
+        assertTrue(ArkOpcodesCompat.isConditionalBranch(
+                ArkOpcodesCompat.JSTRICTEQNULL_IMM16));
+        assertTrue(ArkOpcodesCompat.isConditionalBranch(
+                ArkOpcodesCompat.JNSTRICTEQNULL_IMM8));
+        assertTrue(ArkOpcodesCompat.isConditionalBranch(
+                ArkOpcodesCompat.JNSTRICTEQNULL_IMM16));
+        assertTrue(ArkOpcodesCompat.isConditionalBranch(
+                ArkOpcodesCompat.JSTRICTEQUNDEFINED_IMM16));
+        assertTrue(ArkOpcodesCompat.isConditionalBranch(
+                ArkOpcodesCompat.JNSTRICTEQUNDEFINED_IMM16));
+        assertTrue(ArkOpcodesCompat.isConditionalBranch(
+                ArkOpcodesCompat.JSTRICTEQ_IMM8));
+        assertTrue(ArkOpcodesCompat.isConditionalBranch(
+                ArkOpcodesCompat.JSTRICTEQ_IMM16));
+        assertTrue(ArkOpcodesCompat.isConditionalBranch(
+                ArkOpcodesCompat.JNSTRICTEQ_IMM8));
+        assertTrue(ArkOpcodesCompat.isConditionalBranch(
+                ArkOpcodesCompat.JNSTRICTEQ_IMM16));
+    }
+
+    // --- Issue #58: Property store and complex access opcodes ---
+
+    @Test
+    void testSuperExpression_toArkTS() {
+        ArkTSPropertyExpressions.SuperExpression expr =
+                new ArkTSPropertyExpressions.SuperExpression();
+        assertEquals("super", expr.toArkTS());
+    }
+
+    @Test
+    void testSuperPropertyAccess_byName() {
+        ArkTSExpression superExpr =
+                new ArkTSPropertyExpressions.SuperExpression();
+        ArkTSExpression prop =
+                new ArkTSExpression.VariableExpression("method");
+        ArkTSExpression.MemberExpression member =
+                new ArkTSExpression.MemberExpression(superExpr, prop, false);
+        assertEquals("super.method", member.toArkTS());
+    }
+
+    @Test
+    void testSuperPropertyAccess_byValue() {
+        ArkTSExpression superExpr =
+                new ArkTSPropertyExpressions.SuperExpression();
+        ArkTSExpression prop =
+                new ArkTSExpression.VariableExpression("v0");
+        ArkTSExpression.MemberExpression member =
+                new ArkTSExpression.MemberExpression(superExpr, prop, true);
+        assertEquals("super[v0]", member.toArkTS());
+    }
+
+    @Test
+    void testSuperPropertyStore_byName() {
+        ArkTSExpression superExpr =
+                new ArkTSPropertyExpressions.SuperExpression();
+        ArkTSExpression prop =
+                new ArkTSExpression.VariableExpression("prop");
+        ArkTSExpression target =
+                new ArkTSExpression.MemberExpression(superExpr, prop, false);
+        ArkTSExpression value = new ArkTSExpression.VariableExpression("v0");
+        ArkTSExpression.AssignExpression assign =
+                new ArkTSExpression.AssignExpression(target, value);
+        assertEquals("super.prop = v0", assign.toArkTS());
+    }
+
+    @Test
+    void testSuperPropertyStore_byValue() {
+        ArkTSExpression superExpr =
+                new ArkTSPropertyExpressions.SuperExpression();
+        ArkTSExpression prop =
+                new ArkTSExpression.VariableExpression("v1");
+        ArkTSExpression target =
+                new ArkTSExpression.MemberExpression(superExpr, prop, true);
+        ArkTSExpression value = new ArkTSExpression.VariableExpression("v0");
+        ArkTSExpression.AssignExpression assign =
+                new ArkTSExpression.AssignExpression(target, value);
+        assertEquals("super[v1] = v0", assign.toArkTS());
+    }
+
+    @Test
+    void testDefinePropertyExpression_toArkTS() {
+        ArkTSExpression obj =
+                new ArkTSExpression.VariableExpression("v0");
+        ArkTSExpression prop = new ArkTSExpression.LiteralExpression("name",
+                ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        ArkTSExpression value = new ArkTSExpression.LiteralExpression("42",
+                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSPropertyExpressions.DefinePropertyExpression expr =
+                new ArkTSPropertyExpressions.DefinePropertyExpression(
+                        obj, prop, value);
+        assertEquals(
+                "Object.defineProperty(v0, \"name\", { value: 42 })",
+                expr.toArkTS());
+    }
+
+    @Test
+    void testTemplateObjectExpression_toArkTS() {
+        ArkTSPropertyExpressions.TemplateObjectExpression expr =
+                new ArkTSPropertyExpressions.TemplateObjectExpression(3);
+        assertEquals("/* template_3 */", expr.toArkTS());
+    }
+
+    // --- Issue #59: Module variable and runtime call opcode tests ---
+
+    @Test
+    void testCallRuntime_definefieldbyvalue() {
+        // 0xFB prefix + sub-opcode 0x01 (definefieldbyvalue) + V8 register
+        byte[] code = concat(
+                bytes(0x3E, 0x00, 0x00),     // lda.str 0 -> acc = "propName"
+                bytes(0xFB, 0x01, 0x02),     // callruntime.definefieldbyvalue v2
+                bytes(0x61, 0x01),           // sta v1
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        assertTrue(insns.get(1).isCallRuntime(),
+                "Should be callruntime instruction");
+        assertEquals("callruntime.definefieldbyvalue",
+                insns.get(1).getMnemonic());
+        String result = decompiler.decompileInstructions(insns);
+        assertFalse(result.isEmpty(),
+                "Should produce output: " + result);
+    }
+
+    @Test
+    void testCallRuntime_callinit() {
+        // 0xFB prefix + sub-opcode 0x06 (callinit) + V8 register
+        byte[] code = concat(
+                bytes(0x04),                 // createemptyobject -> acc
+                bytes(0x61, 0x00),           // sta v0
+                bytes(0xFB, 0x06, 0x00),     // callruntime.callinit v0
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        assertTrue(insns.get(2).isCallRuntime(),
+                "Should be callruntime instruction");
+        assertEquals("callruntime.callinit",
+                insns.get(2).getMnemonic());
+        String result = decompiler.decompileInstructions(insns);
+        assertFalse(result.isEmpty(),
+                "Should produce output: " + result);
+    }
+
+    @Test
+    void testCallRuntime_topropertykey() {
+        // 0xFB prefix + sub-opcode 0x03 (topropertykey), no operands
+        byte[] code = concat(
+                bytes(0x3E, 0x00, 0x00),     // lda.str 0 -> acc
+                bytes(0xFB, 0x03),           // callruntime.topropertykey
+                bytes(0x61, 0x01),           // sta v1
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        assertTrue(insns.get(1).isCallRuntime(),
+                "Should be callruntime instruction");
+        assertEquals("callruntime.topropertykey",
+                insns.get(1).getMnemonic());
+        String result = decompiler.decompileInstructions(insns);
+        assertFalse(result.isEmpty(),
+                "Should produce output: " + result);
+    }
+
+    @Test
+    void testCallRuntime_ldlazymodulevar() {
+        // 0xFB prefix + sub-opcode 0x15 (ldlazymodulevar) + IMM16
+        byte[] code = concat(
+                bytes(0xFB, 0x15, 0x00, 0x00), // callruntime.ldlazymodulevar 0
+                bytes(0x61, 0x01),             // sta v1
+                bytes(0x64)                    // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        assertTrue(insns.get(0).isCallRuntime(),
+                "Should be callruntime instruction");
+        assertEquals("callruntime.ldlazymodulevar",
+                insns.get(0).getMnemonic());
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("lazy_mod_0"),
+                "Should contain lazy module variable: " + result);
+    }
+
+    @Test
+    void testCallRuntime_createprivateproperty() {
+        // 0xFB prefix + sub-opcode 0x04 (createprivateproperty) + IMM8
+        byte[] code = concat(
+                bytes(0xFB, 0x04, 0x00),     // callruntime.createprivateproperty 0
+                bytes(0x61, 0x01),           // sta v1
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        assertTrue(insns.get(0).isCallRuntime(),
+                "Should be callruntime instruction");
+        assertEquals("callruntime.createprivateproperty",
+                insns.get(0).getMnemonic());
+        String result = decompiler.decompileInstructions(insns);
+        assertFalse(result.isEmpty(),
+                "Should produce output: " + result);
+    }
+
+    @Test
+    void testCallRuntime_istrue() {
+        // 0xFB prefix + sub-opcode 0x13 (istrue), no operands
+        byte[] code = concat(
+                bytes(0x60, 0x00),           // lda v0 -> acc
+                bytes(0xFB, 0x13),           // callruntime.istrue
+                bytes(0x61, 0x01),           // sta v1
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        assertTrue(insns.get(1).isCallRuntime(),
+                "Should be callruntime instruction");
+        assertEquals("callruntime.istrue",
+                insns.get(1).getMnemonic());
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("Boolean"),
+                "Should contain Boolean call for istrue: " + result);
+    }
+
+    @Test
+    void testCallRuntime_isfalse() {
+        // 0xFB prefix + sub-opcode 0x14 (isfalse), no operands
+        byte[] code = concat(
+                bytes(0x60, 0x00),           // lda v0 -> acc
+                bytes(0xFB, 0x14),           // callruntime.isfalse
+                bytes(0x61, 0x01),           // sta v1
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        assertTrue(insns.get(1).isCallRuntime(),
+                "Should be callruntime instruction");
+        assertEquals("callruntime.isfalse",
+                insns.get(1).getMnemonic());
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("!"),
+                "Should contain negation for isfalse: " + result);
+    }
+
+    @Test
+    void testCallRuntime_defineprivateproperty() {
+        // 0xFB prefix + sub-opcode 0x05 (defineprivateproperty) + IMM8 + V8
+        byte[] code = concat(
+                bytes(0x62, 0x2A, 0x00, 0x00, 0x00), // ldai 42 -> acc
+                bytes(0xFB, 0x05, 0x00, 0x01),       // callruntime.defineprivateproperty 0, v1
+                bytes(0x64)                            // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        assertTrue(insns.get(1).isCallRuntime(),
+                "Should be callruntime instruction");
+        assertEquals("callruntime.defineprivateproperty",
+                insns.get(1).getMnemonic());
+        String result = decompiler.decompileInstructions(insns);
+        assertFalse(result.isEmpty(),
+                "Should produce output: " + result);
+    }
+
+    @Test
+    void testCallRuntime_disassembler_decodeMultipleCallRuntime() {
+        // Verify the disassembler can decode multiple callruntime instructions
+        byte[] code = concat(
+                bytes(0xFB, 0x03),           // callruntime.topropertykey
+                bytes(0xFB, 0x06, 0x00),     // callruntime.callinit v0
+                bytes(0xFB, 0x13),           // callruntime.istrue
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        assertEquals(4, insns.size(),
+                "Should decode 4 instructions");
+        assertTrue(insns.get(0).isCallRuntime());
+        assertTrue(insns.get(1).isCallRuntime());
+        assertTrue(insns.get(2).isCallRuntime());
+        assertFalse(insns.get(3).isCallRuntime());
+    }
+
+    @Test
+    void testRuntimeCallExpression_toArkTS() {
+        // Test the RuntimeCallExpression AST node
+        List<ArkTSExpression> args = new ArrayList<>();
+        args.add(new ArkTSExpression.VariableExpression("v0"));
+        args.add(new ArkTSExpression.LiteralExpression("42",
+                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER));
+        ArkTSAccessExpressions.RuntimeCallExpression expr =
+                new ArkTSAccessExpressions.RuntimeCallExpression(
+                        "definefieldbyvalue", args);
+        String output = expr.toArkTS();
+        assertTrue(output.contains("runtime: definefieldbyvalue"),
+                "Should contain runtime name: " + output);
+        assertTrue(output.contains("v0"),
+                "Should contain first argument: " + output);
+        assertTrue(output.contains("42"),
+                "Should contain second argument: " + output);
+    }
+
+    @Test
+    void testCallRuntime_ldsendableexternalmodulevar() {
+        // 0xFB prefix + sub-opcode 0x09 + IMM16
+        byte[] code = concat(
+                bytes(0xFB, 0x09, 0x01, 0x00), // callruntime.ldsendableextmodvar 1
+                bytes(0x61, 0x02),             // sta v2
+                bytes(0x64)                    // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        assertTrue(insns.get(0).isCallRuntime());
+        assertEquals("callruntime.ldsendableexternalmodulevar",
+                insns.get(0).getMnemonic());
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("sendable_ext_mod_1"),
+                "Should contain sendable external module var: " + result);
+    }
+
+    @Test
+    void testCallRuntime_ldsendablevar() {
+        // 0xFB prefix + sub-opcode 0x10 (ldsendablevar) + IMM8 + IMM8
+        byte[] code = concat(
+                bytes(0xFB, 0x10, 0x00, 0x01), // callruntime.ldsendablevar 0, 1
+                bytes(0x61, 0x02),             // sta v2
+                bytes(0x64)                    // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        assertTrue(insns.get(0).isCallRuntime());
+        assertEquals("callruntime.ldsendablevar",
+                insns.get(0).getMnemonic());
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("sendable_0_1"),
+                "Should contain sendable var: " + result);
+    }
+
+    @Test
+    void testCallRuntime_stsendablevar() {
+        // 0xFB prefix + sub-opcode 0x0D (stsendablevar) + IMM8 + IMM8
+        byte[] code = concat(
+                bytes(0x62, 0x2A, 0x00, 0x00, 0x00), // ldai 42 -> acc
+                bytes(0xFB, 0x0D, 0x00, 0x01),       // callruntime.stsendablevar 0, 1
+                bytes(0x64)                            // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        assertTrue(insns.get(1).isCallRuntime());
+        assertEquals("callruntime.stsendablevar",
+                insns.get(1).getMnemonic());
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("sendable_0_1"),
+                "Should contain sendable var store: " + result);
+    }
+
+    @Test
+    void testCallRuntime_newsendableenv() {
+        // 0xFB prefix + sub-opcode 0x0B (newsendableenv) + IMM8
+        byte[] code = concat(
+                bytes(0xFB, 0x0B, 0x02),     // callruntime.newsendableenv 2
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        assertTrue(insns.get(0).isCallRuntime());
+        assertEquals("callruntime.newsendableenv",
+                insns.get(0).getMnemonic());
+        String result = decompiler.decompileInstructions(insns);
+        assertFalse(result.isEmpty(),
+                "Should produce output: " + result);
     }
 }
