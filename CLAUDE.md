@@ -108,9 +108,12 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 21. ~~Prototype/static, private fields, parameter defaults, built-in objects (#60, #61, #62, #63)~~ DONE
 22. ~~Output formatting, error recovery, E2E tests, performance (#64, #65, #66, #67)~~ DONE
 23. ~~Output readability, operator precedence, string escaping (#68, #69, #70)~~ DONE
-24. feat: test with real HarmonyOS .abc files from Ark compiler #25
-25. Real .abc file support: test with actual HarmonyOS compiler output (#25)
-26. Performance: large file handling and incremental decompilation
+24. ~~Class method improvements — override, abstract keywords (#86)~~ DONE
+25. ~~ArkTS-specific features — sendable classes, readonly, Record type (#88)~~ DONE
+26. ~~Collection iteration — for-of with destructuring, Map/Set (#87)~~ DONE
+27. feat: test with real HarmonyOS .abc files from Ark compiler #25
+28. Real .abc file support: test with actual HarmonyOS compiler output (#25)
+29. Performance: large file handling and incremental decompilation
 
 ### Rules for the loop
 
@@ -191,7 +194,7 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Try/catch decompilation:** Use `AbcCode.getTryBlocks()` → `AbcTryBlock.getCatchBlocks()` → `AbcCatchBlock` to reconstruct exception handling. Map try start/end PC ranges to CFG block addresses. Catch-all blocks (typeIdx=0) map to `finally`.
 - **Jump offset calculation:** `jmp +0` at offset 0 with instruction length 2 gives target = 0+2+0 = 2 (not 0). For infinite loop (jmp to self), need negative offset = -instruction_length (e.g., `0xFE` for 2-byte jmp).
 - **Parameter naming convention:** Use `param_0`, `param_1` etc. (not `p0`/`p1`) for better readability. Falls back to untyped when no proto info available.
-- **Test count tracking:** 1253 tests across 20+ test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
+- **Test count tracking:** 1273 tests across 20+ test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
 - **ABC debug info parsing:** Tags 0x07 (SOURCE_FILE), 0x03 (DEBUG_INFO) in class/method tag values. Debug info contains line_start, num_params, param name string offsets, constant pool. LNP uses DWARF v3 state machine with special opcodes.
 - **Realistic test fixture design:** Use 16384-byte buffer with 200-byte spacing between areas (strings at 200, classes at 800, code at 2000, protos at 6000, etc.). Encode methods with ULEB128 for vregs/args/codeSize/triesSize.
 - **Debug parameter name resolution:** `AbcFile.getDebugInfoForMethod()` → `AbcDebugInfo.getParameterNames()` → pass to `MethodSignatureBuilder.buildParams(proto, numArgs, debugNames)`. Falls back to `param_N` for unnamed.
@@ -240,6 +243,9 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Compound assignment detection:** `tryCompoundAssignOrUpdate()` in InstructionHandler detects `lda vN; op2 vN, vM; sta vN` → `vN op= vM`. Must check compound pattern before variable declaration to avoid `let v0 = v0 -= v1` (invalid). When compound matches on first declaration, use `ExpressionStatement` (skip `VariableDeclaration` wrapper since compound assigns include their own assignment).
 - **Test bytecode opcodes:** Always verify opcode values against `ArkOpcodes` constants. Agent #75 used wrong opcodes (0x09 for AND2 which is actually 0x18, 0x07 for SHL2 which is 0x15). Reference: AND2=0x18, SHL2=0x15, SHR2=0x16, ASHR2=0x17, OR2=0x19, XOR2=0x1A.
 - **Do-while detection:** LoopProcessor detects do-while from CFG where loop header is not a conditional (no jeqz/jnez at header). Body block is followed by conditional at loop end that jumps back to header.
+- **Override/abstract method rendering:** ClassMethodDeclaration has 9-param constructor with isOverride and isAbstract. Abstract renders "abstract" before access modifier, override after access modifier/static/async. Abstract methods end with semicolon (no body). DeclarationBuilder detects override via superclass method name matching, abstract via ACC_ABSTRACT flag.
+- **Sendable class syntax:** ClassDeclaration has decorators list and isSendable flag. `sendable class Foo` rendered when @Sendable decorator detected. ClassFieldDeclaration supports readonly modifier.
+- **For-of destructuring:** ForOfStatement has destructuringPattern field. When set, renders as `for (const [key, value] of iterable)` instead of simple variable name.
 - **For-loop detection:** `detectClassicForLoopPattern()` in LoopProcessor identifies init/condition/update blocks from CFG. Predecessor block before loop header = init, conditional at header = condition, last body block before back edge = update. Emits `ForStatement` instead of `WhileStatement`.
 - **Double negation simplification:** `OperatorHandler.simplifyDoubleNegation()` converts `!(a == b)` → `a != b`, `!(a === b)` → `a !== b`, `!!x` → `Boolean(x)`. Called from unary operator handler after creating `UnaryExpression("!", ...)`.
 - **Constant folding:** `OperatorHandler.tryFoldConstants()` evaluates binary expressions with two numeric literal operands at decompile time. Supports +, -, *, /, %, &, |, ^, <<, >>, >>>. Returns `BinaryExpression` unchanged when operands aren't both numeric.

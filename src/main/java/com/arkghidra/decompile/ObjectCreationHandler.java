@@ -235,13 +235,28 @@ class ObjectCreationHandler {
 
                     if (currentSource.equals(sourceVar)
                             && index == consecutiveIdx) {
-                        bindings.add(
-                                new ArkTSPropertyExpressions
-                                        .ArrayDestructuringExpression
-                                        .ArrayBinding(targetVar));
+                        // Check for default value pattern after binding
+                        ArkTSExpression[] defaultOut =
+                                new ArkTSExpression[1];
+                        int defaultConsumed = tryDetectDefaultValue(
+                                instructions, scanIdx + 3,
+                                targetReg, defaultOut);
+
+                        if (defaultOut[0] != null) {
+                            bindings.add(
+                                    new ArkTSPropertyExpressions
+                                            .ArrayDestructuringExpression
+                                            .ArrayBinding(targetVar,
+                                                    defaultOut[0]));
+                        } else {
+                            bindings.add(
+                                    new ArkTSPropertyExpressions
+                                            .ArrayDestructuringExpression
+                                            .ArrayBinding(targetVar));
+                        }
                         declaredVars.add(targetVar);
                         consecutiveIdx++;
-                        scanIdx += 3;
+                        scanIdx += 3 + defaultConsumed;
                         continue;
                     }
                 }
@@ -333,6 +348,160 @@ class ObjectCreationHandler {
         return null;
     }
 
+    // --- Default value detection in destructuring ---
+
+    /**
+     * Attempts to detect a default value pattern after a destructuring
+     * binding's STA instruction.
+     *
+     * <p>Pattern in Ark bytecode:
+     * <pre>
+     *   lda targetReg          // load just-destructured value
+     *   jstrictequndefined +N  // if NOT undefined, skip default
+     *   ldai/lda/fldai value   // load default value
+     *   sta targetReg          // store default into same register
+     * </pre>
+     *
+     * <p>Or using explicit undefined comparison:
+     * <pre>
+     *   lda targetReg; ldundefined; stricteq 0
+     *   jeqz +N; ldai value; sta targetReg
+     * </pre>
+     *
+     * @param instructions the instruction list
+     * @param scanIdx the index right after the binding's STA
+     * @param targetReg the register that received the binding
+     * @return number of instructions consumed for the default, or 0
+     */
+    private int tryDetectDefaultValue(List<ArkInstruction> instructions,
+            int scanIdx, int targetReg,
+            ArkTSExpression[] defaultOut) {
+
+        if (scanIdx + 3 >= instructions.size()) {
+            return 0;
+        }
+
+        ArkInstruction insn = instructions.get(scanIdx);
+        int opcode = insn.getOpcode();
+
+        // Pattern 1: lda targetReg; jstrictequndefined +N;
+        //            ldai/lda/fldai/lda.str value; sta targetReg
+        if (opcode == ArkOpcodesCompat.LDA) {
+            int reg = (int) insn.getOperands().get(0).getValue();
+            if (reg != targetReg) {
+                return 0;
+            }
+
+            ArkInstruction branchInsn = instructions.get(scanIdx + 1);
+            int branchOpcode = branchInsn.getOpcode();
+
+            if (ArkOpcodesCompat.isConditionalBranch(branchOpcode)) {
+                // Check if branch is checking for undefined/null
+                if (isUndefinedCheckBranch(branchOpcode)) {
+                    // Skip over the branch, look for default value + STA
+                    int valueIdx = scanIdx + 2;
+                    ArkTSExpression defaultExpr =
+                            extractLoadExpression(instructions, valueIdx);
+                    if (defaultExpr != null) {
+                        // Find the STA to same target reg
+                        int staIdx = findStaAfterLoad(
+                                instructions, valueIdx, targetReg);
+                        if (staIdx > valueIdx) {
+                            defaultOut[0] = defaultExpr;
+                            return (staIdx + 1) - scanIdx;
+                        }
+                    }
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * Checks if a branch opcode is checking for undefined or null.
+     */
+    private static boolean isUndefinedCheckBranch(int branchOpcode) {
+        return branchOpcode == ArkOpcodesCompat.JSTRICTEQUNDEFINED_IMM16
+                || branchOpcode == ArkOpcodesCompat.JNSTRICTEQUNDEFINED_IMM16
+                || branchOpcode == ArkOpcodesCompat.JSTRICTEQNULL_IMM8
+                || branchOpcode == ArkOpcodesCompat.JSTRICTEQNULL_IMM16
+                || branchOpcode == ArkOpcodesCompat.JNSTRICTEQNULL_IMM8
+                || branchOpcode == ArkOpcodesCompat.JNSTRICTEQNULL_IMM16;
+    }
+
+    /**
+     * Extracts a load expression from an instruction at the given index.
+     * Supports ldai, fldai, lda.str, lda, ldtrue, ldfalse, ldnull,
+     * ldundefined, ldnan, ldinfinity.
+     */
+    private static ArkTSExpression extractLoadExpression(
+            List<ArkInstruction> instructions, int idx) {
+        if (idx >= instructions.size()) {
+            return null;
+        }
+        ArkInstruction insn = instructions.get(idx);
+        int opcode = insn.getOpcode();
+
+        if (opcode == ArkOpcodesCompat.LDAI) {
+            return new ArkTSExpression.LiteralExpression(
+                    String.valueOf(insn.getOperands().get(0).getValue()),
+                    ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        }
+        if (opcode == ArkOpcodesCompat.FLDAI) {
+            double val = Double.longBitsToDouble(
+                    insn.getOperands().get(0).getValue());
+            return new ArkTSExpression.LiteralExpression(
+                    String.valueOf(val),
+                    ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        }
+        if (opcode == ArkOpcodesCompat.LDA_STR) {
+            return new ArkTSExpression.LiteralExpression(
+                    "str_" + insn.getOperands().get(0).getValue(),
+                    ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        }
+        if (opcode == ArkOpcodesCompat.LDTRUE) {
+            return new ArkTSExpression.LiteralExpression("true",
+                    ArkTSExpression.LiteralExpression.LiteralKind.BOOLEAN);
+        }
+        if (opcode == ArkOpcodesCompat.LDFALSE) {
+            return new ArkTSExpression.LiteralExpression("false",
+                    ArkTSExpression.LiteralExpression.LiteralKind.BOOLEAN);
+        }
+        if (opcode == ArkOpcodesCompat.LDNULL) {
+            return new ArkTSExpression.LiteralExpression("null",
+                    ArkTSExpression.LiteralExpression.LiteralKind.NULL);
+        }
+        if (opcode == ArkOpcodesCompat.LDUNDEFINED) {
+            return new ArkTSExpression.LiteralExpression("undefined",
+                    ArkTSExpression.LiteralExpression.LiteralKind.UNDEFINED);
+        }
+        if (opcode == ArkOpcodesCompat.LDA) {
+            int reg = (int) insn.getOperands().get(0).getValue();
+            return new ArkTSExpression.VariableExpression("v" + reg);
+        }
+        return null;
+    }
+
+    /**
+     * Finds a STA instruction targeting the specified register after a
+     * load instruction at valueIdx.
+     */
+    private static int findStaAfterLoad(List<ArkInstruction> instructions,
+            int valueIdx, int targetReg) {
+        for (int i = valueIdx + 1; i < instructions.size()
+                && i <= valueIdx + 2; i++) {
+            ArkInstruction insn = instructions.get(i);
+            if (insn.getOpcode() == ArkOpcodesCompat.STA) {
+                int reg = (int) insn.getOperands().get(0).getValue();
+                if (reg == targetReg) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
     // --- Object destructuring detection ---
 
     /**
@@ -341,7 +510,8 @@ class ObjectCreationHandler {
      *
      * <p>Pattern: lda srcReg; ldobjbyname imm, stringIdx; sta dstReg
      * repeated from the same source register. Supports renamed
-     * properties (when property name != target variable).
+     * properties (when property name != target variable) and default
+     * values (conditional assignment after the binding).
      *
      * @param instructions the instruction list for the block
      * @param startIndex the index to start scanning from
@@ -403,14 +573,23 @@ class ObjectCreationHandler {
                         if (!targetVar.equals(propName)) {
                             alias = targetVar;
                         }
+
+                        // Check for default value pattern after binding
+                        ArkTSExpression[] defaultOut =
+                                new ArkTSExpression[1];
+                        int defaultConsumed = tryDetectDefaultValue(
+                                instructions, scanIdx + 3,
+                                targetReg, defaultOut);
+
                         bindings.add(
                                 new ArkTSPropertyExpressions
                                         .ObjectDestructuringExpression
                                         .DestructuringBinding(
-                                                propName, alias));
+                                                propName, alias,
+                                                defaultOut[0]));
                         declaredVars.add(targetVar);
                         propertyCount++;
-                        scanIdx += 3;
+                        scanIdx += 3 + defaultConsumed;
                         continue;
                     }
                 }
