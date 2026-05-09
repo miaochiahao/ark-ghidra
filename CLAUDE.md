@@ -161,6 +161,8 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 74. ~~Switch expression detection — convert switch-in-assignment to switch expression (#163)~~ DONE
 75. ~~SwitchExpression integration — replaceVariable, type inference, name inference (#164)~~ DONE
 76. ~~Interface detection — render all-abstract ABC classes as interfaces (#165)~~ DONE
+77. ~~Annotation class detection — ACC_ANNOTATION renders as class, null-safe detectDecorators (#168)~~ DONE
+78. ~~Post-processing — return-if ternary, if-else chain to switch (#170, #171)~~ DONE
 71. ~~Source line number comments from debug info (#128)~~ DONE
 66. ~~Variable name inference from usage context (#133)~~ DONE
 64. ~~Comprehensive opcode decompilation tests (#134)~~ DONE
@@ -250,7 +252,7 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Try/catch decompilation:** Use `AbcCode.getTryBlocks()` → `AbcTryBlock.getCatchBlocks()` → `AbcCatchBlock` to reconstruct exception handling. Map try start/end PC ranges to CFG block addresses. Catch-all blocks (typeIdx=0) map to `finally`.
 - **Jump offset calculation:** `jmp +0` at offset 0 with instruction length 2 gives target = 0+2+0 = 2 (not 0). For infinite loop (jmp to self), need negative offset = -instruction_length (e.g., `0xFE` for 2-byte jmp).
 - **Parameter naming convention:** Use `param_0`, `param_1` etc. (not `p0`/`p1`) for better readability. Falls back to untyped when no proto info available.
-- **Test count tracking:** 1779 tests across 36 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
+- **Test count tracking:** 1800 tests across 38 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
 - **AST node immutability:** `BlockStatement.body`, `SwitchCase.body`, `VariableDeclaration` fields use `Collections.unmodifiableList` or `final`. Don't use `List.set()` to modify — use mutable fields (`setKind()`) or rebuild nodes. `VariableDeclaration.kind` is now mutable via `setKind()` for const/let optimization.
 - **Post-processing pattern:** `applyConstOptimization()` in ArkTSDecompiler traverses all AST statement types recursively. When adding new AST node types, add them to both `collectVarUsage` and `rewriteLetToConst`. Must handle `IfStatement.getThenBlock()`/`getElseBlock()` (returns `ArkTSStatement`, not List) — use `extractBodyList()` helper.
 - **Opcode values for tests:** STA=0x61, LDA=0x60, LDAI=0x62, RETURN=0x64, RETURNUNDEFINED=0x65. Always verify against `ArkOpcodes` constants — NOT 0x06 for STA.
@@ -389,6 +391,13 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Lexical variable type tracking:** `TypeInference.lexicalVarTypes` maps `"lex_level_slot"` to type name. Populated by STLEXVAR via `OperatorHandler.getAccType()`, queried by LDLEXVAR. Cleared in `reset()`.
 - **replace_all for test updates:** When changing fallback names in source, use `replace_all: true` with `Edit` to update ALL test assertions referencing old names. Check both ArkTSDecompilerTest and ArkTSOutputQualityTest.
 - **Map.of() limit (recurring):** Java `Map.of()` max 10 entries (20 args). Always use `Map.ofEntries(Map.entry(...))` for 11+ entries. Checkstyle catches unused imports but NOT this at compile time.
+- **Post-processing pipeline order:** `applyConstOptimization → inlineSingleUseVariables → mergeNestedIfConditions → detectSwitchExpressions → simplifyReturnIfTernary → convertIfElseChainToSwitch`. Order matters — switch expression detection needs const-optimized vars; ternary conversion needs switch expressions resolved; if-else chain needs ternary resolved.
+- **Return-if ternary conversion:** `simplifyReturnIfTernary()` converts `if (cond) { return a; } else { return b; }` → `return cond ? a : b;`. Also handles throw variants. Mixed return/throw not converted. Only triggers when both branches have single return/throw.
+- **If-else chain to switch:** `convertIfElseChainToSwitch()` detects 3+ branch if/else-if chains where all conditions are strict equality (`===`) comparing the same variable against constants. Requires ChainEntry helper class. Non-===, mixed variables, or <3 branches stay as if/else.
+- **isInterfaceClass() heuristic:** Must have at least one non-constructor abstract method (not just empty abstract class). `hasAbstractMethods` flag prevents false matches on plain classes. ACC_INTERFACE flag takes priority.
+- **detectDecorators() null safety:** Must null-check `abcFile` parameter since tests pass null. Return empty list when abcFile is null.
+- **ForStatement field access:** `ForStatement` in ArkTSControlFlow has private `init`, `condition`, `update` fields with NO public getters. Only `getBody()` is public. Don't try to access init/condition/update.
+- **Dead store elimination is too aggressive (recurring):** Previous attempt to remove unused variable declarations broke 20+ tests because the expression visitor was incomplete. Only inline into terminal statements. `removeUnusedVariables()` is scaffolded but disabled — needs comprehensive expression traversal using `ExpressionVisitor.countVariableUsage()` to be safe.
 <!-- LINT_RULES_END -->
 
 ---
