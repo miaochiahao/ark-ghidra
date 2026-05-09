@@ -166,6 +166,9 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 79. ~~Trailing return-if ternary — if-return + trailing return → ternary (#172)~~ DONE
 80. ~~Enable removeUnusedVariables — dead variable declaration removal (#173)~~ DONE
 81. ~~Object literal shorthand — { name: name } → { name } (#174)~~ DONE
+82. ~~Built-in method return type inference — String/Array/Math/Object/JSON/Map/Set/Promise (#176)~~ DONE
+83. ~~Type narrowing improvements — MemberExpression type inference, else-if chain rendering (#177)~~ DONE
+84. ~~Logical ternary simplification — cond ? value : undefined → cond && value (#178)~~ DONE
 
 ### Remaining open issues (require external resources)
 - #25 — Test with real HarmonyOS .abc files from Ark compiler (needs real .abc files)
@@ -402,6 +405,11 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Lexical variable type tracking:** `TypeInference.lexicalVarTypes` maps `"lex_level_slot"` to type name. Populated by STLEXVAR via `OperatorHandler.getAccType()`, queried by LDLEXVAR. Cleared in `reset()`.
 - **replace_all for test updates:** When changing fallback names in source, use `replace_all: true` with `Edit` to update ALL test assertions referencing old names. Check both ArkTSDecompilerTest and ArkTSOutputQualityTest.
 - **Map.of() limit (recurring):** Java `Map.of()` max 10 entries (20 args). Always use `Map.ofEntries(Map.entry(...))` for 11+ entries. Checkstyle catches unused imports but NOT this at compile time.
+- **BinaryExpression constructor order:** `BinaryExpression(left, operator, right)` — NOT `BinaryExpression(operator, left, right)`. The left operand comes first.
+- **BUILTIN_METHOD_RETURN_TYPES map:** ~60 entries covering String, Array, Math, Object, JSON, Map/Set, Promise, Number methods. Used in `OperatorHandler.getAccType()` for CallExpression with MemberExpression callee. Method name-only lookup (no receiver type check).
+- **Else-if chain rendering:** `IfStatement.toArkTS()` uses `unwrapSingleIf()` to detect BlockStatement wrapping a single IfStatement in else blocks, rendering as `else if` instead of `else { if ... }`.
+- **Computed property normalization:** `MemberExpression.toArkTS()` uses `tryExtractIdentifier()` to convert `obj["name"]` → `obj.name` when name is a valid Java identifier and the property is a string literal.
+- **Logical ternary simplification:** `simplifyLogicalTernary()` converts `cond ? value : undefined` → `cond && value` and `cond ? undefined : value` → `!cond && value`. Called after `simplifyRedundantTernary()` in BranchProcessor.
 - **Post-processing pipeline order:** `applyConstOptimization → inlineSingleUseVariables → mergeNestedIfConditions → detectSwitchExpressions → simplifyReturnIfTernary → convertIfElseChainToSwitch → removeUnusedVariables`. Order matters — switch expression detection needs const-optimized vars; ternary conversion needs switch expressions resolved; if-else chain needs ternary resolved; unused var removal is last because it depends on all prior transforms.
 - **Return-if ternary conversion:** `simplifyReturnIfTernary()` converts `if (cond) { return a; } else { return b; }` → `return cond ? a : b;`. Also handles throw variants. Mixed return/throw not converted. Only triggers when both branches have single return/throw.
 - **If-else chain to switch:** `convertIfElseChainToSwitch()` detects 3+ branch if/else-if chains where all conditions are strict equality (`===`) comparing the same variable against constants. Requires ChainEntry helper class. Non-===, mixed variables, or <3 branches stay as if/else.
