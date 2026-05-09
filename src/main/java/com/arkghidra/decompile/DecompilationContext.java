@@ -68,6 +68,18 @@ public class DecompilationContext {
     final List<int[]> loopContextStack;
 
     /**
+     * Stack of loop labels for labeled break/continue support.
+     * Parallel to {@link #loopContextStack}; may contain null
+     * entries for unlabeled loops.
+     */
+    private final List<String> loopLabelStack;
+
+    /**
+     * Counter for auto-generating unique loop labels.
+     */
+    private int loopLabelCounter;
+
+    /**
      * Cache for string resolution keyed by string table index.
      * Avoids redundant MUTF-8 decoding when the same string index
      * is referenced multiple times during decompilation.
@@ -100,17 +112,32 @@ public class DecompilationContext {
         this.restParamIndex = -1;
         this.restParamRegister = -1;
         this.loopContextStack = new ArrayList<>();
+        this.loopLabelStack = new ArrayList<>();
+        this.loopLabelCounter = 0;
         this.warnings = new ArrayList<>();
     }
 
     /**
-     * Pushes a loop context onto the stack.
+     * Pushes a loop context onto the stack (unlabeled).
      *
      * @param headerOffset the loop header (condition) offset
      * @param endOffset the offset just past the loop end
      */
     public void pushLoopContext(int headerOffset, int endOffset) {
+        pushLoopContext(headerOffset, endOffset, null);
+    }
+
+    /**
+     * Pushes a loop context onto the stack with an optional label.
+     *
+     * @param headerOffset the loop header (condition) offset
+     * @param endOffset the offset just past the loop end
+     * @param label the loop label, or null for unlabeled
+     */
+    public void pushLoopContext(int headerOffset, int endOffset,
+            String label) {
         loopContextStack.add(new int[] {headerOffset, endOffset});
+        loopLabelStack.add(label);
     }
 
     /**
@@ -119,6 +146,7 @@ public class DecompilationContext {
     public void popLoopContext() {
         if (!loopContextStack.isEmpty()) {
             loopContextStack.remove(loopContextStack.size() - 1);
+            loopLabelStack.remove(loopLabelStack.size() - 1);
         }
     }
 
@@ -132,6 +160,84 @@ public class DecompilationContext {
             return null;
         }
         return loopContextStack.get(loopContextStack.size() - 1);
+    }
+
+    /**
+     * Returns the label of the current innermost loop, or null.
+     *
+     * @return the loop label or null
+     */
+    public String getCurrentLoopLabel() {
+        if (loopLabelStack.isEmpty()) {
+            return null;
+        }
+        return loopLabelStack.get(loopLabelStack.size() - 1);
+    }
+
+    /**
+     * Generates a unique label for a loop and returns it.
+     *
+     * @return the generated label (e.g. "loop_0")
+     */
+    public String generateLoopLabel() {
+        return "loop_" + (loopLabelCounter++);
+    }
+
+    /**
+     * Finds the label for a break jump that targets the given offset.
+     * If the innermost loop matches, returns null (unlabeled break).
+     * If an outer loop matches, returns that loop's label.
+     *
+     * @param jumpTarget the target offset of the jump
+     * @return the label for a labeled break, or null for unlabeled
+     */
+    public String findBreakLabel(int jumpTarget) {
+        if (loopContextStack.isEmpty()) {
+            return null;
+        }
+        // Check from innermost (last) to outermost (first)
+        for (int i = loopContextStack.size() - 1; i >= 0; i--) {
+            int[] ctx = loopContextStack.get(i);
+            int loopEnd = ctx[1];
+            if (jumpTarget >= loopEnd) {
+                // Innermost match -> unlabeled break
+                if (i == loopContextStack.size() - 1) {
+                    return null;
+                }
+                // Outer match -> labeled break
+                return loopLabelStack.get(i);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Finds the label for a continue jump that targets the given offset.
+     * If the innermost loop header matches, returns null (unlabeled continue).
+     * If an outer loop header matches, returns that loop's label.
+     *
+     * @param jumpTarget the target offset of the jump
+     * @return the label for a labeled continue, or null for unlabeled
+     */
+    public String findContinueLabel(int jumpTarget) {
+        if (loopContextStack.isEmpty()) {
+            return null;
+        }
+        // Check from innermost (last) to outermost (first)
+        for (int i = loopContextStack.size() - 1; i >= 0; i--) {
+            int[] ctx = loopContextStack.get(i);
+            int loopHeader = ctx[0];
+            int loopEnd = ctx[1];
+            if (jumpTarget == loopHeader && jumpTarget < loopEnd) {
+                // Innermost match -> unlabeled continue
+                if (i == loopContextStack.size() - 1) {
+                    return null;
+                }
+                // Outer match -> labeled continue
+                return loopLabelStack.get(i);
+            }
+        }
+        return null;
     }
 
     /**

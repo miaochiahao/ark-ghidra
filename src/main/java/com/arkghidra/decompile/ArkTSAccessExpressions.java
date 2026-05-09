@@ -129,30 +129,66 @@ public class ArkTSAccessExpressions {
 
     /**
      * An object literal expression: { key: value, ... }.
+     *
+     * <p>Supports both static property names ({@code key: value}) and
+     * computed property names ({@code [expr]: value}).
      */
     public static class ObjectLiteralExpression extends ArkTSExpression {
         private final List<ObjectProperty> properties;
 
         /**
          * A key-value pair in an object literal.
+         *
+         * <p>When {@code computedKey} is non-null, the property uses
+         * computed name syntax: {@code [computedKey]: value}.
          */
         public static class ObjectProperty {
             private final String key;
+            private final ArkTSExpression computedKey;
             private final ArkTSExpression value;
 
             /**
-             * Constructs an object property.
+             * Constructs an object property with a static string key.
              *
              * @param key the property key
              * @param value the property value expression
              */
             public ObjectProperty(String key, ArkTSExpression value) {
                 this.key = key;
+                this.computedKey = null;
+                this.value = value;
+            }
+
+            /**
+             * Constructs an object property with a computed key expression.
+             *
+             * @param computedKey the computed key expression
+             * @param value the property value expression
+             * @param isComputed marker to distinguish from string-key
+             *        constructor; always pass {@code true}
+             */
+            public ObjectProperty(ArkTSExpression computedKey,
+                    ArkTSExpression value, boolean isComputed) {
+                this.key = null;
+                this.computedKey = computedKey;
                 this.value = value;
             }
 
             public String getKey() {
                 return key;
+            }
+
+            public ArkTSExpression getComputedKey() {
+                return computedKey;
+            }
+
+            /**
+             * Returns true if this property uses computed key syntax.
+             *
+             * @return true if computed key ({@code [expr]: value})
+             */
+            public boolean isComputed() {
+                return computedKey != null;
             }
 
             public ArkTSExpression getValue() {
@@ -178,7 +214,10 @@ public class ArkTSAccessExpressions {
         public String toArkTS() {
             StringJoiner joiner = new StringJoiner(", ");
             for (ObjectProperty prop : properties) {
-                if (prop.key == null) {
+                if (prop.computedKey != null) {
+                    joiner.add("[" + prop.computedKey.toArkTS() + "]: "
+                            + prop.value.toArkTS());
+                } else if (prop.key == null) {
                     joiner.add(prop.value.toArkTS());
                 } else {
                     joiner.add(prop.key + ": " + prop.value.toArkTS());

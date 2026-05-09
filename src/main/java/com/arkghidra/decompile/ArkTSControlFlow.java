@@ -510,19 +510,154 @@ public class ArkTSControlFlow {
             ArkTSStatement.appendBlockBody(sb, tryBlock, indent + 1);
             sb.append(indent(indent)).append("}");
             if (catchBlock != null) {
-                sb.append(" catch (");
-                String param = catchParam != null ? catchParam : "e";
-                sb.append(param);
-                if (catchParamType != null) {
-                    sb.append(": ").append(catchParamType);
+                if (catchParam == null && catchParamType == null) {
+                    // ECMAScript 2019+ catch with no binding
+                    sb.append(" catch {\n");
+                } else {
+                    sb.append(" catch (");
+                    String param =
+                            catchParam != null ? catchParam : "e";
+                    sb.append(param);
+                    if (catchParamType != null) {
+                        sb.append(": ").append(catchParamType);
+                    }
+                    sb.append(") {\n");
                 }
-                sb.append(") {\n");
-                ArkTSStatement.appendBlockBody(sb, catchBlock, indent + 1);
+                ArkTSStatement.appendBlockBody(sb, catchBlock,
+                        indent + 1);
                 sb.append(indent(indent)).append("}");
             }
             if (finallyBlock != null) {
                 sb.append(" finally {\n");
-                ArkTSStatement.appendBlockBody(sb, finallyBlock, indent + 1);
+                ArkTSStatement.appendBlockBody(sb, finallyBlock,
+                        indent + 1);
+                sb.append(indent(indent)).append("}");
+            }
+            return sb.toString();
+        }
+    }
+
+    // --- Multi-catch try/catch ---
+
+    /**
+     * A try/catch/finally statement with multiple typed catch blocks.
+     *
+     * <p>Renders as:
+     * <pre>
+     * try { ... }
+     * catch (e: TypeError) { ... }
+     * catch (e: RangeError) { ... }
+     * finally { ... }
+     * </pre>
+     *
+     * <p>Each catch clause has its own parameter name, type, and body.
+     */
+    public static class MultiCatchTryCatchStatement
+            extends ArkTSStatement {
+
+        /**
+         * A single catch clause with parameter name, optional type,
+         * and body.
+         */
+        public static class CatchClause {
+            private final String paramName;
+            private final String paramType;
+            private final ArkTSStatement body;
+
+            /**
+             * Constructs a catch clause.
+             *
+             * @param paramName the catch parameter name (may be null
+             *        for no-binding catch)
+             * @param paramType the catch parameter type annotation
+             *        (may be null)
+             * @param body the catch body
+             */
+            public CatchClause(String paramName, String paramType,
+                    ArkTSStatement body) {
+                this.paramName = paramName;
+                this.paramType = paramType;
+                this.body = body;
+            }
+
+            public String getParamName() {
+                return paramName;
+            }
+
+            public String getParamType() {
+                return paramType;
+            }
+
+            public ArkTSStatement getBody() {
+                return body;
+            }
+        }
+
+        private final ArkTSStatement tryBlock;
+        private final List<CatchClause> catchClauses;
+        private final ArkTSStatement finallyBlock;
+
+        /**
+         * Constructs a multi-catch try/catch statement.
+         *
+         * @param tryBlock the try body
+         * @param catchClauses the list of catch clauses
+         *        (may be empty or null)
+         * @param finallyBlock the finally body (may be null)
+         */
+        public MultiCatchTryCatchStatement(ArkTSStatement tryBlock,
+                List<CatchClause> catchClauses,
+                ArkTSStatement finallyBlock) {
+            this.tryBlock = tryBlock;
+            this.catchClauses = catchClauses != null
+                    ? Collections.unmodifiableList(
+                            new ArrayList<>(catchClauses))
+                    : Collections.emptyList();
+            this.finallyBlock = finallyBlock;
+        }
+
+        public ArkTSStatement getTryBlock() {
+            return tryBlock;
+        }
+
+        public List<CatchClause> getCatchClauses() {
+            return catchClauses;
+        }
+
+        public ArkTSStatement getFinallyBlock() {
+            return finallyBlock;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(indent(indent)).append("try {\n");
+            ArkTSStatement.appendBlockBody(sb, tryBlock, indent + 1);
+            sb.append(indent(indent)).append("}");
+            for (CatchClause clause : catchClauses) {
+                if (clause.paramName == null
+                        && clause.paramType == null) {
+                    // ECMAScript 2019+ catch with no binding
+                    sb.append(" catch {\n");
+                } else {
+                    sb.append(" catch (");
+                    String param = clause.paramName != null
+                            ? clause.paramName : "e";
+                    sb.append(param);
+                    if (clause.paramType != null) {
+                        sb.append(": ")
+                                .append(clause.paramType);
+                    }
+                    sb.append(") {\n");
+                }
+                ArkTSStatement.appendBlockBody(sb, clause.body,
+                        indent + 1);
+                sb.append(indent(indent)).append("}");
+            }
+            if (finallyBlock != null) {
+                sb.append(" finally {\n");
+                ArkTSStatement.appendBlockBody(sb, finallyBlock,
+                        indent + 1);
                 sb.append(indent(indent)).append("}");
             }
             return sb.toString();

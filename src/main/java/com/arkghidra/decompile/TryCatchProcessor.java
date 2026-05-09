@@ -14,7 +14,7 @@ import com.arkghidra.format.AbcTryBlock;
  * finds blocks belonging to try bodies and catch handlers,
  * and generates structured try/catch statements including
  * support for nested regions, finally blocks, typed catch
- * parameters, and throw expressions.
+ * parameters, multi-catch blocks, and throw expressions.
  *
  * <p>Called from {@link ControlFlowReconstructor} when
  * try/catch regions are detected.
@@ -146,20 +146,24 @@ class TryCatchProcessor {
         String catchParam = "e";
         String catchParamType = null;
 
-        // Build catch body from typed handler blocks
-        if (!tcr.handlers.isEmpty()) {
-            ControlFlowReconstructor.CatchHandler firstHandler =
-                    tcr.handlers.get(0);
-            catchParamType = filterTypeName(
-                    firstHandler.typeName);
-            catchBody = buildHandlerBody(tcr.handlers, ctx, cfg,
-                    visited);
-        }
-
         // Build finally body from catch-all handler if present
         // and distinct from typed handlers (try-catch-finally)
         ControlFlowReconstructor.CatchHandler finallyHandler =
                 tcr.getFinallyHandler();
+
+        // Separate truly typed handlers from catch-all that was
+        // merged in the finally-only case
+        List<ControlFlowReconstructor.CatchHandler> trulyTyped =
+                new ArrayList<>();
+        for (ControlFlowReconstructor.CatchHandler h :
+                tcr.handlers) {
+            if (tcr.isFinallyOnly() && finallyHandler != null
+                    && h.handlerPc == finallyHandler.handlerPc) {
+                continue;
+            }
+            trulyTyped.add(h);
+        }
+
         if (finallyHandler != null && !tcr.isFinallyOnly()) {
             BasicBlock finallyBlock =
                     cfg.getBlockAt(finallyHandler.handlerPc);
@@ -175,6 +179,54 @@ class TryCatchProcessor {
                                     finallyStmts);
                 }
             }
+        }
+
+        // Multiple typed handlers: use MultiCatchTryCatchStatement
+        if (trulyTyped.size() > 1) {
+            List<ArkTSControlFlow
+                    .MultiCatchTryCatchStatement.CatchClause>
+                    clauses = new ArrayList<>();
+            for (ControlFlowReconstructor.CatchHandler handler :
+                    trulyTyped) {
+                String paramType = filterTypeName(
+                        handler.typeName);
+                BasicBlock handlerBlock =
+                        cfg.getBlockAt(handler.handlerPc);
+                ArkTSStatement handlerBody = null;
+                if (handlerBlock != null
+                        && !visited.contains(handlerBlock)) {
+                    visited.add(handlerBlock);
+                    List<ArkTSStatement> handlerStmts =
+                            reconstructor.processBlockInstructions(
+                                    handlerBlock, ctx);
+                    if (!handlerStmts.isEmpty()) {
+                        handlerBody =
+                                new ArkTSStatement.BlockStatement(
+                                        handlerStmts);
+                    }
+                }
+                clauses.add(
+                        new ArkTSControlFlow
+                                .MultiCatchTryCatchStatement
+                                .CatchClause("e", paramType,
+                                handlerBody));
+            }
+            ArkTSControlFlow.MultiCatchTryCatchStatement multiCatch =
+                    new ArkTSControlFlow
+                            .MultiCatchTryCatchStatement(tryBody,
+                            clauses, finallyBody);
+            stmts.add(multiCatch);
+            return stmts;
+        }
+
+        // Single handler (original path)
+        if (!tcr.handlers.isEmpty()) {
+            ControlFlowReconstructor.CatchHandler firstHandler =
+                    tcr.handlers.get(0);
+            catchParamType = filterTypeName(
+                    firstHandler.typeName);
+            catchBody = buildHandlerBody(tcr.handlers, ctx, cfg,
+                    visited);
         }
 
         ArkTSControlFlow.TryCatchStatement tryCatch =
