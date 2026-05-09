@@ -63,4 +63,64 @@ class ArkBytecodeAnalyzerTest {
         assertTrue(fresh.getDefaultEnablement(null) == false
                 || fresh.getDefaultEnablement(null) == true);
     }
+
+    @Test
+    void testReadMutf8String_ascii() {
+        byte[] data = "hello".getBytes();
+        String result = ArkBytecodeAnalyzer.readMutf8String(data, 0);
+        assertEquals("hello", result);
+    }
+
+    @Test
+    void testReadMutf8String_stopsAtNull() {
+        byte[] data = {0x68, 0x69, 0x00, 0x62, 0x79, 0x65};
+        String result = ArkBytecodeAnalyzer.readMutf8String(data, 0);
+        assertEquals("hi", result);
+    }
+
+    @Test
+    void testReadMutf8String_twoByteUtf8() {
+        // é = 0xC3 0xA9 in UTF-8
+        byte[] data = {(byte) 0xC3, (byte) 0xA9};
+        String result = ArkBytecodeAnalyzer.readMutf8String(data, 0);
+        assertEquals("\u00E9", result);
+    }
+
+    @Test
+    void testReadMutf8String_threeByteUtf8() {
+        // € = 0xE2 0x82 0xAC in UTF-8
+        byte[] data = {(byte) 0xE2, (byte) 0x82, (byte) 0xAC};
+        String result = ArkBytecodeAnalyzer.readMutf8String(data, 0);
+        assertEquals("\u20AC", result);
+    }
+
+    @Test
+    void testReadMutf8String_mixedAsciiAndMultiByte() {
+        // "hié" = h(68) i(69) é(C3 A9)
+        byte[] data = {0x68, 0x69, (byte) 0xC3, (byte) 0xA9};
+        String result = ArkBytecodeAnalyzer.readMutf8String(data, 0);
+        assertEquals("hi\u00E9", result);
+    }
+
+    @Test
+    void testReadMutf8String_emptyAtNullByte() {
+        byte[] data = {0x00};
+        String result = ArkBytecodeAnalyzer.readMutf8String(data, 0);
+        assertEquals("", result);
+    }
+
+    @Test
+    void testReadMutf8String_withOffset() {
+        byte[] data = {0x00, 0x00, 0x68, 0x69};
+        String result = ArkBytecodeAnalyzer.readMutf8String(data, 2);
+        assertEquals("hi", result);
+    }
+
+    @Test
+    void testReadMutf8String_truncatedTwoByte() {
+        // Only first byte of 2-byte sequence, no following byte
+        byte[] data = {(byte) 0xC3};
+        String result = ArkBytecodeAnalyzer.readMutf8String(data, 0);
+        assertEquals("", result);
+    }
 }

@@ -130,6 +130,7 @@ public class DecompilationContext {
         this.code = code;
         this.proto = proto;
         this.abcFile = abcFile;
+        prePopulateStringCache();
         this.cfg = cfg;
         this.instructions = instructions;
         this.numArgs = code != null ? (int) code.getNumArgs() : 0;
@@ -264,6 +265,25 @@ public class DecompilationContext {
             }
         }
         return null;
+    }
+
+    /**
+     * Pre-populates the string resolution cache by decoding all strings
+     * from the ABC file's LNP index table upfront. This avoids repeated
+     * MUTF-8 decoding for large files with thousands of string references.
+     */
+    private void prePopulateStringCache() {
+        if (abcFile == null) {
+            return;
+        }
+        try {
+            List<Long> lnpIndex = abcFile.getLnpIndex();
+            for (int i = 0; i < lnpIndex.size(); i++) {
+                stringResolveCache.put(i, resolveStringUncached(i));
+            }
+        } catch (Exception e) {
+            // Partial cache is acceptable; resolveString will fill gaps
+        }
     }
 
     /**

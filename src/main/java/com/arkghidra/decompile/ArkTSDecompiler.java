@@ -44,6 +44,8 @@ public class ArkTSDecompiler {
 
     private static final String ACC = "acc";
 
+    private long methodTimeoutMs = 5000L;
+
     private final InstructionHandler instrHandler;
     private final ControlFlowReconstructor cfReconstructor;
     private final DeclarationBuilder declBuilder;
@@ -54,6 +56,27 @@ public class ArkTSDecompiler {
         this.cfReconstructor = new ControlFlowReconstructor(
                 this, instrHandler);
         this.declBuilder = new DeclarationBuilder(this);
+    }
+
+    /**
+     * Sets the per-method decompilation timeout in milliseconds.
+     * When a method takes longer than this, it returns a timeout
+     * comment instead of decompiled output. Default is 5000ms.
+     * Set to 0 to disable timeout.
+     *
+     * @param ms timeout in milliseconds, or 0 to disable
+     */
+    public void setMethodTimeoutMs(long ms) {
+        this.methodTimeoutMs = ms;
+    }
+
+    /**
+     * Returns the current per-method timeout in milliseconds.
+     *
+     * @return the timeout in milliseconds, or 0 if disabled
+     */
+    public long getMethodTimeoutMs() {
+        return methodTimeoutMs;
     }
 
     // --- Public entry points ---
@@ -72,6 +95,8 @@ public class ArkTSDecompiler {
                 || code.getCodeSize() == 0) {
             return buildEmptyMethod(method, null);
         }
+
+        long startTimeNs = System.nanoTime();
 
         List<ArkInstruction> instructions;
         try {
@@ -103,6 +128,11 @@ public class ArkTSDecompiler {
             }
         }
 
+        if (isTimedOut(startTimeNs)) {
+            return buildTimeoutMethod(method, code, abcFile,
+                    startTimeNs);
+        }
+
         ControlFlowGraph cfg;
         try {
             cfg = ControlFlowGraph.build(instructions,
@@ -110,6 +140,11 @@ public class ArkTSDecompiler {
         } catch (Exception e) {
             return buildFallbackMethod(method, code, abcFile,
                     "CFG construction failed: " + e.getMessage());
+        }
+
+        if (isTimedOut(startTimeNs)) {
+            return buildTimeoutMethod(method, code, abcFile,
+                    startTimeNs);
         }
 
         AbcProto proto = resolveProto(method, abcFile);
@@ -126,8 +161,15 @@ public class ArkTSDecompiler {
 
         List<ArkTSStatement> bodyStmts;
         try {
+            bodyStmts = generateStatements(ctx);
+
+            if (isTimedOut(startTimeNs)) {
+                return buildTimeoutMethod(method, code, abcFile,
+                        startTimeNs);
+            }
+
             bodyStmts = ExpressionVisitor.inlineSingleUseVariables(
-                    applyConstOptimization(generateStatements(ctx)));
+                    applyConstOptimization(bodyStmts));
         } catch (Exception e) {
             List<ArkTSStatement> fallbackStmts = new ArrayList<>();
             fallbackStmts.add(new ArkTSStatement.ExpressionStatement(
@@ -382,6 +424,8 @@ public class ArkTSDecompiler {
             return Collections.emptyList();
         }
 
+        long startTimeNs = System.nanoTime();
+
         List<ArkInstruction> instructions = disasm.disassemble(
                 code.getInstructions(), 0, (int) code.getCodeSize());
 
@@ -398,6 +442,10 @@ public class ArkTSDecompiler {
                     "CFG construction failed: " + e.getMessage());
         }
 
+        if (isTimedOut(startTimeNs)) {
+            return buildTimeoutBody(startTimeNs);
+        }
+
         AbcProto proto = resolveProto(method, abcFile);
         DecompilationContext ctx = new DecompilationContext(
                 method, code, proto, abcFile, cfg, instructions);
@@ -406,6 +454,11 @@ public class ArkTSDecompiler {
 
         try {
             List<ArkTSStatement> stmts = generateStatements(ctx);
+
+            if (isTimedOut(startTimeNs)) {
+                return buildTimeoutBody(startTimeNs);
+            }
+
             return ExpressionVisitor.inlineSingleUseVariables(
                     applyConstOptimization(stmts));
         } catch (Exception e) {
@@ -754,6 +807,40 @@ public class ArkTSDecompiler {
                                     + " */")));
         }
         return stmts;
+    }
+
+    // --- Timeout support ---
+
+    private boolean isTimedOut(long startTimeNs) {
+        if (methodTimeoutMs <= 0) {
+            return false;
+        }
+        long elapsedMs =
+                (System.nanoTime() - startTimeNs) / 1_000_000L;
+        return elapsedMs > methodTimeoutMs;
+    }
+
+    private String buildTimeoutMethod(AbcMethod method, AbcCode code,
+            AbcFile abcFile, long startTimeNs) {
+        long elapsedMs =
+                (System.nanoTime() - startTimeNs) / 1_000_000L;
+        AbcProto proto = resolveProto(method, abcFile);
+        List<ArkTSStatement> bodyStmts = List.of(
+                new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression(
+                                "/* decompilation timed out after "
+                                        + elapsedMs + "ms */")));
+        return buildMethodSource(method, proto, code, bodyStmts,
+                abcFile);
+    }
+
+    private List<ArkTSStatement> buildTimeoutBody(long startTimeNs) {
+        long elapsedMs =
+                (System.nanoTime() - startTimeNs) / 1_000_000L;
+        return List.of(new ArkTSStatement.ExpressionStatement(
+                new ArkTSExpression.VariableExpression(
+                        "/* decompilation timed out after "
+                                + elapsedMs + "ms */")));
     }
 
     // --- Output formatting ---

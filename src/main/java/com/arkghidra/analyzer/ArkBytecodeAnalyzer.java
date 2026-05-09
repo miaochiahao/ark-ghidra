@@ -270,7 +270,7 @@ public class ArkBytecodeAnalyzer extends AbstractAnalyzer {
                 + annotated + " strings annotated");
     }
 
-    private static String readMutf8String(byte[] data, int offset) {
+    static String readMutf8String(byte[] data, int offset) {
         int pos = offset;
         StringBuilder sb = new StringBuilder();
         while (pos < data.length && data[pos] != 0) {
