@@ -155,6 +155,7 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 68. ~~Lexical variable type tracking (#158)~~ DONE
 69. ~~Complex pattern tests — nested loops, try/catch, compound booleans (#155)~~ DONE
 70. ~~Identity operation simplification — multiply by zero, boolean shortcuts (#159)~~ DONE
+71. ~~Expression simplification — unary negation folding, redundant ternary, comparison normalization (#160)~~ DONE
 71. ~~Source line number comments from debug info (#128)~~ DONE
 66. ~~Variable name inference from usage context (#133)~~ DONE
 64. ~~Comprehensive opcode decompilation tests (#134)~~ DONE
@@ -244,7 +245,7 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Try/catch decompilation:** Use `AbcCode.getTryBlocks()` → `AbcTryBlock.getCatchBlocks()` → `AbcCatchBlock` to reconstruct exception handling. Map try start/end PC ranges to CFG block addresses. Catch-all blocks (typeIdx=0) map to `finally`.
 - **Jump offset calculation:** `jmp +0` at offset 0 with instruction length 2 gives target = 0+2+0 = 2 (not 0). For infinite loop (jmp to self), need negative offset = -instruction_length (e.g., `0xFE` for 2-byte jmp).
 - **Parameter naming convention:** Use `param_0`, `param_1` etc. (not `p0`/`p1`) for better readability. Falls back to untyped when no proto info available.
-- **Test count tracking:** 1717 tests across 31 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
+- **Test count tracking:** 1740 tests across 32 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
 - **AST node immutability:** `BlockStatement.body`, `SwitchCase.body`, `VariableDeclaration` fields use `Collections.unmodifiableList` or `final`. Don't use `List.set()` to modify — use mutable fields (`setKind()`) or rebuild nodes. `VariableDeclaration.kind` is now mutable via `setKind()` for const/let optimization.
 - **Post-processing pattern:** `applyConstOptimization()` in ArkTSDecompiler traverses all AST statement types recursively. When adding new AST node types, add them to both `collectVarUsage` and `rewriteLetToConst`. Must handle `IfStatement.getThenBlock()`/`getElseBlock()` (returns `ArkTSStatement`, not List) — use `extractBodyList()` helper.
 - **Opcode values for tests:** STA=0x61, LDA=0x60, LDAI=0x62, RETURN=0x64, RETURNUNDEFINED=0x65. Always verify against `ArkOpcodes` constants — NOT 0x06 for STA.
@@ -360,6 +361,9 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Null method guard:** `decompileMethod(null, null, null)` returns `"/* unknown method */"` instead of NPE. Always null-check method parameter before accessing method.getName().
 - **Disassembler truncated instruction rejection:** `ArkDisassembler` throws `DisassemblyException` for truncated instructions (e.g., LDAI with only 2 bytes instead of 5). Tests should catch this or use try/catch patterns.
 - **Robustness test patterns:** For edge case tests, prefer try/catch with assertions on exception message content, or relaxed assertions (assertNotNull only) rather than asserting specific output format.
+- **Expression simplification pipeline:** `InstructionHandler` applies simplifications in order: constant folding → string merging → boolean comparison → comparison normalization → typeof/null → identity → template literal. Unary: double negation → unary negation. Ternary: redundant ternary in BranchProcessor.
+- **ConditionalExpression API:** Located in `ArkTSAccessExpressions.ConditionalExpression` (not `ArkTSExpression`). Methods: `getTest()`, `getConsequent()`, `getAlternate()`. Not `getCondition()`, `getThenExpression()`, `getElseExpression()`.
+- **Comparison normalization:** `OperatorHandler.normalizeComparison()` swaps constant-LHS comparisons to variable-LHS: `0 < x` → `x > 0`, `null === x` → `x === null`. Equality operators (`===`, `!==`, `==`, `!=`) keep same operator; ordering operators flip. Does NOT swap `instanceof` or `in` (non-commutative).
 - **Map.of() size limit:** Java's `Map.of()` supports max 10 key-value pairs (20 args). For larger maps, use `Map.ofEntries(Map.entry(...), ...)` instead. Applies to `BUILTIN_CLASS_VAR_NAMES` (15 entries) and `STATIC_CALL_RESULT_NAMES` (12 entries) in InstructionHandler.
 - **Variable name inference maps:** `BUILTIN_CLASS_VAR_NAMES` maps class names to variable names (Error→error, Map→map, Array→arr). `STATIC_CALL_RESULT_NAMES` maps static calls to result names (JSON.parse→parsed, Object.keys→keys). Both in InstructionHandler.
 - **Object key resolution:** `parseLiteralToString()` in LoadStoreHandler accepts `DecompilationContext` to resolve string table offsets. Key tags 0x02/0x03 contain int32 string table index, resolved via `ctx.resolveString()`.
