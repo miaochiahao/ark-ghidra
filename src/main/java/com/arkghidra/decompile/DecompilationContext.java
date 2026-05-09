@@ -45,6 +45,13 @@ public class DecompilationContext {
     final List<String> warnings;
 
     /**
+     * Tracks the last expression stored to each register.
+     * Used to inline function expressions as call arguments.
+     */
+    private final Map<Integer, ArkTSExpression> registerExpressions =
+            new HashMap<>();
+
+    /**
      * Stack of loop contexts for break/continue detection.
      * Each entry is [loopHeaderOffset, loopEndOffset].
      */
@@ -196,5 +203,26 @@ public class DecompilationContext {
             }
         }
         return sb.toString();
+    }
+
+    /**
+     * Records the expression stored to a register.
+     *
+     * @param reg the register number
+     * @param expr the expression stored
+     */
+    public void setRegisterExpression(int reg,
+            ArkTSExpression expr) {
+        registerExpressions.put(reg, expr);
+    }
+
+    /**
+     * Gets the last expression stored to a register, or null.
+     *
+     * @param reg the register number
+     * @return the expression or null
+     */
+    public ArkTSExpression getRegisterExpression(int reg) {
+        return registerExpressions.get(reg);
     }
 }

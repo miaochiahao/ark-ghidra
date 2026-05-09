@@ -43,22 +43,22 @@ class PropertyAccessHandler {
             case ArkOpcodesCompat.CALLARG0:
                 break;
             case ArkOpcodesCompat.CALLARG1:
-                args.add(new ArkTSExpression.VariableExpression(
-                        "v" + operands.get(1).getValue()));
+                args.add(resolveArgExpression(
+                        (int) operands.get(1).getValue(), ctx));
                 break;
             case ArkOpcodesCompat.CALLARGS2:
-                args.add(new ArkTSExpression.VariableExpression(
-                        "v" + operands.get(1).getValue()));
-                args.add(new ArkTSExpression.VariableExpression(
-                        "v" + operands.get(2).getValue()));
+                args.add(resolveArgExpression(
+                        (int) operands.get(1).getValue(), ctx));
+                args.add(resolveArgExpression(
+                        (int) operands.get(2).getValue(), ctx));
                 break;
             case ArkOpcodesCompat.CALLARGS3:
-                args.add(new ArkTSExpression.VariableExpression(
-                        "v" + operands.get(1).getValue()));
-                args.add(new ArkTSExpression.VariableExpression(
-                        "v" + operands.get(2).getValue()));
-                args.add(new ArkTSExpression.VariableExpression(
-                        "v" + operands.get(3).getValue()));
+                args.add(resolveArgExpression(
+                        (int) operands.get(1).getValue(), ctx));
+                args.add(resolveArgExpression(
+                        (int) operands.get(2).getValue(), ctx));
+                args.add(resolveArgExpression(
+                        (int) operands.get(3).getValue(), ctx));
                 break;
             // CALLTHIS: acc holds the method, first register is this
             case ArkOpcodesCompat.CALLTHIS0: {
@@ -384,5 +384,28 @@ class PropertyAccessHandler {
         return new ArkTSPropertyExpressions.InExpression(
                 new ArkTSExpression.VariableExpression(propName),
                 obj);
+    }
+
+    /**
+     * Resolves a register to its expression. If the register holds a
+     * function-like expression (arrow, anonymous, definefunc),
+     * inline it as a callback argument.
+     */
+    private static ArkTSExpression resolveArgExpression(
+            int reg, DecompilationContext ctx) {
+        ArkTSExpression stored = ctx.getRegisterExpression(reg);
+        if (stored != null && isInlineableFunction(stored)) {
+            return stored;
+        }
+        return new ArkTSExpression.VariableExpression("v" + reg);
+    }
+
+    private static boolean isInlineableFunction(ArkTSExpression expr) {
+        return expr instanceof ArkTSAccessExpressions.ArrowFunctionExpression
+                || expr instanceof ArkTSAccessExpressions
+                        .AnonymousFunctionExpression
+                || expr instanceof ArkTSAccessExpressions
+                        .GeneratorFunctionExpression
+                || InstructionHandler.isDefineFuncExpression(expr);
     }
 }

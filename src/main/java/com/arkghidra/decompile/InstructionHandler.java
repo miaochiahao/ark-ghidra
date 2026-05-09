@@ -620,6 +620,9 @@ class InstructionHandler {
         int reg = (int) operands.get(0).getValue();
         String varName = "v" + reg;
         if (accValue != null) {
+            // Track expression stored to register for later inlining
+            ctx.setRegisterExpression(reg, accValue);
+
             // Check if storing a definefunc expression to a variable
             if (accValue instanceof DefineFuncExpression) {
                 return handleDefineFuncStore(
