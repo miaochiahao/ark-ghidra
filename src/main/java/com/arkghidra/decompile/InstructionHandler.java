@@ -390,8 +390,17 @@ class InstructionHandler {
                     : new ArkTSExpression.VariableExpression(ACC);
             ArkTSExpression right =
                     new ArkTSExpression.VariableExpression("v" + reg);
-            return new StatementResult(null,
-                    new ArkTSExpression.BinaryExpression(left, op, right));
+            ArkTSExpression result =
+                    OperatorHandler.tryFoldConstants(left, op, right);
+            // Attempt string concatenation -> template literal for +
+            if ("+".equals(op) && accValue != null) {
+                ArkTSExpression tmpl =
+                        tryReconstructTemplateLiteral(result);
+                if (tmpl != result) {
+                    result = tmpl;
+                }
+            }
+            return new StatementResult(null, result);
         }
 
         // --- Unary operations: acc = OP acc ---
@@ -400,8 +409,10 @@ class InstructionHandler {
             ArkTSExpression operand = accValue != null
                     ? accValue
                     : new ArkTSExpression.VariableExpression(ACC);
-            return new StatementResult(null,
-                    new ArkTSExpression.UnaryExpression(op, operand, true));
+            ArkTSExpression result =
+                    new ArkTSExpression.UnaryExpression(op, operand, true);
+            result = OperatorHandler.simplifyDoubleNegation(result);
+            return new StatementResult(null, result);
         }
 
         // --- Inc/Dec: acc = acc +/- 1 ---

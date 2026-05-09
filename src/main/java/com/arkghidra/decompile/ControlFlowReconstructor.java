@@ -293,7 +293,36 @@ class ControlFlowReconstructor {
             }
         }
 
-        return stmts;
+        return eliminateDeadCode(stmts);
+    }
+
+    /**
+     * Removes statements that appear after unconditional terminators
+     * (return, throw) at the top level. Statements after a terminator
+     * are unreachable and should not appear in the output.
+     *
+     * @param stmts the statement list
+     * @return a new list with dead code removed
+     */
+    private static List<ArkTSStatement> eliminateDeadCode(
+            List<ArkTSStatement> stmts) {
+        List<ArkTSStatement> result = new ArrayList<>();
+        for (ArkTSStatement stmt : stmts) {
+            result.add(stmt);
+            if (isUnconditionalTerminator(stmt)) {
+                break;
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Returns true if the statement unconditionally terminates control
+     * flow (return or throw).
+     */
+    private static boolean isUnconditionalTerminator(ArkTSStatement stmt) {
+        return stmt instanceof ArkTSStatement.ReturnStatement
+                || stmt instanceof ArkTSStatement.ThrowStatement;
     }
 
     // --- Pattern detection (delegates to sub-processors) ---

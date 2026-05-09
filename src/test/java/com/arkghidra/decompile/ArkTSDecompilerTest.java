@@ -11609,4 +11609,163 @@ class ArkTSDecompilerTest {
                 "Comparison should remain as regular assignment, got: "
                         + result);
     }
+
+    // --- Issue #78: String concatenation, dead code, negation, constant folding ---
+
+    @Test
+    void testStringConcat_templateLiteralFromAddChain() {
+        // "str_0" + v1 via add2 -> should produce template literal
+        byte[] code = concat(
+                bytes(0x3E), le16(0),        // lda.str 0 -> "str_0"
+                bytes(0x0A, 0x00, 0x01),     // add2 0, v1
+                bytes(0x61, 0x02),           // sta v2
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("`"),
+                "Should produce template literal: " + result);
+        assertTrue(result.contains("str_0"),
+                "Should contain string part: " + result);
+    }
+
+    @Test
+    void testDoubleNegation_notNotEquals() {
+        // !(a == b): lda v0; eq 0, v1 -> acc = (v0 == v1); not 0 -> acc = !(v0 == v1)
+        // Should simplify to v0 != v1
+        byte[] code = concat(
+                bytes(0x60, 0x00),       // lda v0
+                bytes(0x0F, 0x00, 0x01), // eq 0, v1 -> acc = (v0 == v1)
+                bytes(0x20, 0x00),       // not 0 -> !(v0 == v1)
+                bytes(0x61, 0x02),       // sta v2
+                bytes(0x64)              // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0 != v1"),
+                "!(v0 == v1) should simplify to v0 != v1, got: " + result);
+        assertFalse(result.contains("!("),
+                "Should not contain negation, got: " + result);
+    }
+
+    @Test
+    void testDoubleNegation_notStrictEqual() {
+        // !(a === b): lda v0; stricteq 0, v1 -> acc = (v0 === v1); not 0
+        // Should simplify to v0 !== v1
+        byte[] code = concat(
+                bytes(0x60, 0x00),       // lda v0
+                bytes(0x28, 0x00, 0x01), // stricteq 0, v1
+                bytes(0x20, 0x00),       // not 0
+                bytes(0x61, 0x02),       // sta v2
+                bytes(0x64)              // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("v0 !== v1"),
+                "!(v0 === v1) should simplify to v0 !== v1, got: "
+                        + result);
+    }
+
+    @Test
+    void testDoubleNegation_doubleBangToBoolean() {
+        // !!x: lda v0; not 0; not 0; sta v1
+        // Should simplify to Boolean(v0)
+        byte[] code = concat(
+                bytes(0x60, 0x00),       // lda v0
+                bytes(0x20, 0x00),       // not 0 -> !v0
+                bytes(0x20, 0x00),       // not 0 -> !!v0 -> Boolean(v0)
+                bytes(0x61, 0x01),       // sta v1
+                bytes(0x64)              // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("Boolean(v0)"),
+                "!!v0 should simplify to Boolean(v0), got: " + result);
+        assertFalse(result.contains("!!"),
+                "Should not contain double-bang, got: " + result);
+    }
+
+    @Test
+    void testConstantFold_addition() {
+        // ldai 2; add2 with literal result stored to v0
+        // But add2 takes register operand, so we need:
+        // lda v0 (which holds 2 via ldai+sta); but add2 operand is a register
+        // Instead test: ldai 3; sta v0; ldai 4; sta v1; lda v0; add2 0, v1
+        // This won't fold because add2 uses register variables.
+        // Test directly via the expression API.
+        ArkTSExpression left = new ArkTSExpression.LiteralExpression("3",
+                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSExpression right = new ArkTSExpression.LiteralExpression("4",
+                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSExpression result =
+                OperatorHandler.tryFoldConstants(left, "+", right);
+        assertEquals("7", result.toArkTS(),
+                "3 + 4 should fold to 7");
+    }
+
+    @Test
+    void testConstantFold_multiplication() {
+        ArkTSExpression left = new ArkTSExpression.LiteralExpression("6",
+                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSExpression right = new ArkTSExpression.LiteralExpression("7",
+                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSExpression result =
+                OperatorHandler.tryFoldConstants(left, "*", right);
+        assertEquals("42", result.toArkTS(),
+                "6 * 7 should fold to 42");
+    }
+
+    @Test
+    void testConstantFold_noFold_variableOperands() {
+        // Should not fold when operands are variables
+        ArkTSExpression left = new ArkTSExpression.VariableExpression("v0");
+        ArkTSExpression right = new ArkTSExpression.VariableExpression("v1");
+        ArkTSExpression result =
+                OperatorHandler.tryFoldConstants(left, "+", right);
+        assertTrue(result instanceof ArkTSExpression.BinaryExpression,
+                "Variable addition should not be folded");
+        assertEquals("v0 + v1", result.toArkTS());
+    }
+
+    @Test
+    void testConstantFold_bitwiseAnd() {
+        ArkTSExpression left = new ArkTSExpression.LiteralExpression("15",
+                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSExpression right = new ArkTSExpression.LiteralExpression("6",
+                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSExpression result =
+                OperatorHandler.tryFoldConstants(left, "&", right);
+        assertEquals("6", result.toArkTS(),
+                "15 & 6 should fold to 6");
+    }
+
+    @Test
+    void testConstantFold_noFold_divisionByZero() {
+        ArkTSExpression left = new ArkTSExpression.LiteralExpression("10",
+                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSExpression right = new ArkTSExpression.LiteralExpression("0",
+                ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        ArkTSExpression result =
+                OperatorHandler.tryFoldConstants(left, "/", right);
+        assertTrue(result instanceof ArkTSExpression.BinaryExpression,
+                "Division by zero should not be folded");
+    }
+
+    @Test
+    void testDeadCodeElimination_returnFollowedByMoreCode() {
+        // return 42 followed by unreachable ldai 99; return
+        // The second return should be eliminated
+        byte[] code = concat(
+                bytes(0x62), le32(42),   // ldai 42
+                bytes(0x64),              // return
+                bytes(0x62), le32(99),   // ldai 99 (unreachable)
+                bytes(0x64)               // return (unreachable)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("return 42"),
+                "Should contain return 42: " + result);
+        assertFalse(result.contains("99"),
+                "Should not contain unreachable code (99): " + result);
+    }
 }
