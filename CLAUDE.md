@@ -154,7 +154,8 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 67. ~~Type inference for symbol, bigint, new.target (#157)~~ DONE
 68. ~~Lexical variable type tracking (#158)~~ DONE
 69. ~~Complex pattern tests — nested loops, try/catch, compound booleans (#155)~~ DONE
-70. ~~Source line number comments from debug info (#128)~~ DONE
+70. ~~Identity operation simplification — multiply by zero, boolean shortcuts (#159)~~ DONE
+71. ~~Source line number comments from debug info (#128)~~ DONE
 66. ~~Variable name inference from usage context (#133)~~ DONE
 64. ~~Comprehensive opcode decompilation tests (#134)~~ DONE
 65. ~~decompileFile() integration tests (#135)~~ DONE
@@ -318,6 +319,7 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **For-loop detection:** `detectClassicForLoopPattern()` in LoopProcessor identifies init/condition/update blocks from CFG. Predecessor block before loop header = init, conditional at header = condition, last body block before back edge = update. Emits `ForStatement` instead of `WhileStatement`.
 - **Double negation simplification:** `OperatorHandler.simplifyDoubleNegation()` converts `!(a == b)` → `a != b`, `!(a === b)` → `a !== b`, `!!x` → `Boolean(x)`. Called from unary operator handler after creating `UnaryExpression("!", ...)`.
 - **Constant folding:** `OperatorHandler.tryFoldConstants()` evaluates binary expressions with two numeric literal operands at decompile time. Supports +, -, *, /, %, &, |, ^, <<, >>, >>>. Returns `BinaryExpression` unchanged when operands aren't both numeric.
+- **Identity simplification:** `OperatorHandler.trySimplifyIdentity()` handles: x+0→x, 0+x→x, x-0→x, x*1→x, 1*x→x, x*0→0, 0*x→0, x/1→x, x||false→x, false||x→x, x||true→true, true||x→true, x&&true→x, true&&x→x, x&&false→false, false&&x→false.
 - **Dead code elimination:** `ControlFlowReconstructor.eliminateDeadCode()` removes top-level statements after `return`/`throw` terminators. Simple but effective for removing unreachable instructions.
 - **Agent test opcode errors (recurring):** Agents frequently use wrong opcode values. ALWAYS verify: EQ=0x0F, NOTEQ=0x10, STRICTEQ=0x28, STRICTNOTEQ=0x27, AND2=0x18, OR2=0x19, XOR2=0x1A, SHL2=0x15, SHR2=0x16, ASHR2=0x17. Before running tests after agent changes, check test bytecode constants against `ArkOpcodes`.
 - **Compact if rendering:** `IfStatement.toArkTS()` uses compact form when then-block is a single return/break/continue with no else: `if (cond) return val;`. `isCompactEligible()` checks statement type. Does NOT apply to if-else or multi-statement blocks.
