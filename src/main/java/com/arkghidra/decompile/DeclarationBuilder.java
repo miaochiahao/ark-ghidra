@@ -187,6 +187,18 @@ class DeclarationBuilder {
             }
         }
 
+        // Detect readonly (ACC_FINAL maps to readonly in ArkTS)
+        boolean isReadonly = (field.getAccessFlags()
+                & AbcAccessFlags.ACC_FINAL) != 0;
+
+        // Build initializer from field int value when available
+        ArkTSExpression initializer = null;
+        if (field.getIntValue() != 0) {
+            initializer = new ArkTSExpression.LiteralExpression(
+                    String.valueOf(field.getIntValue()),
+                    ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+        }
+
         // Apply nullable type widening when null/undefined assignments
         // are detected in the constructor body
         if (nullability != null && typeName != null) {
@@ -195,8 +207,8 @@ class DeclarationBuilder {
         }
 
         return new ArkTSDeclarations.ClassFieldDeclaration(
-                fieldName, typeName, null, isStatic, accessModifier,
-                fieldDecorators);
+                fieldName, typeName, initializer, isStatic, accessModifier,
+                fieldDecorators, isReadonly);
     }
 
     /**

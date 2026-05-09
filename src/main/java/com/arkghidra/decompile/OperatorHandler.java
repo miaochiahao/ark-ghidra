@@ -714,6 +714,23 @@ class OperatorHandler {
             return "Object";
         }
         if (expr instanceof ArkTSExpression.CallExpression) {
+            ArkTSExpression callee =
+                    ((ArkTSExpression.CallExpression) expr).getCallee();
+            if (callee instanceof ArkTSExpression.VariableExpression) {
+                String name =
+                        ((ArkTSExpression.VariableExpression) callee)
+                                .getName();
+                return switch (name) {
+                    case "Boolean" -> "boolean";
+                    case "Number" -> "number";
+                    case "String" -> "string";
+                    case "Array" -> "Array";
+                    case "Map" -> "Map";
+                    case "Set" -> "Set";
+                    case "Promise" -> "Promise";
+                    default -> null;
+                };
+            }
             return null;
         }
         if (expr instanceof ArkTSAccessExpressions
@@ -721,7 +738,17 @@ class OperatorHandler {
             return "string";
         }
         if (expr instanceof ArkTSExpression.NewExpression) {
+            ArkTSExpression callee =
+                    ((ArkTSExpression.NewExpression) expr).getCallee();
+            if (callee instanceof ArkTSExpression.VariableExpression) {
+                return ((ArkTSExpression.VariableExpression) callee)
+                        .getName();
+            }
             return null;
+        }
+        if (expr instanceof ArkTSAccessExpressions
+                .DynamicImportExpression) {
+            return "Promise";
         }
         return null;
     }
