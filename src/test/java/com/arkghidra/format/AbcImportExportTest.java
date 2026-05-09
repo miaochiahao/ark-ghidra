@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.arkghidra.decompile.ArkTSDecompiler;
+import com.arkghidra.decompile.ArkTSDeclarations;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -837,5 +838,465 @@ class AbcImportExportTest {
         if (expected != actual) {
             throw new AssertionError("Expected same instance but got different objects");
         }
+    }
+
+    // --- Star export decompilation ---
+
+    @Test
+    void testDecompilerStarExport() {
+        byte[] data = buildAbcWithStarExport();
+        AbcFile abc = AbcFile.parse(data);
+
+        ArkTSDecompiler decompiler = new ArkTSDecompiler();
+        String output = decompiler.decompileFile(abc);
+
+        assertTrue(output.contains("export * from '@ohos/core'"),
+                "Output should contain star export, got: " + output);
+    }
+
+    // --- ABC with default import ---
+
+    /**
+     * Builds an ABC with a default import (import React from 'react').
+     */
+    private static byte[] buildAbcWithDefaultImport() {
+        ByteBuffer bb = ByteBuffer.allocate(4096).order(ByteOrder.LITTLE_ENDIAN);
+
+        int stringAreaOff = 200;
+        int classOff = 400;
+        int codeOff = 550;
+        int regionHeaderOff = 600;
+        int classIdxOff = 660;
+        int literalArrayIdxOff = 670;
+        int lnpIdxOff = 680;
+        int classRegionIdxOff = 690;
+        int moduleRecordLaOff = 700;
+        int fileSize = 4096;
+
+        bb.put(new byte[]{'P', 'A', 'N', 'D', 'A', 0, 0, 0});
+        bb.putInt(0);
+        bb.put(new byte[]{'0', '0', '0', '2'});
+        bb.putInt(fileSize);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(1);
+        bb.putInt(classIdxOff);
+        bb.putInt(0);
+        bb.putInt(lnpIdxOff);
+        bb.putInt(1);
+        bb.putInt(literalArrayIdxOff);
+        bb.putInt(1);
+        bb.putInt(regionHeaderOff);
+
+        bb.position(stringAreaOff);
+        int classNameOff = bb.position();
+        bb.put(mutf8String("Lcom/example/App;"));
+        int methodNameOff = bb.position();
+        bb.put(mutf8String("render"));
+        int moduleRecordIdxNameOff = bb.position();
+        bb.put(mutf8String("moduleRecordIdx"));
+        int modulePathOff = bb.position();
+        bb.put(mutf8String("react"));
+        int importNameOff = bb.position();
+        bb.put(mutf8String("default"));
+        int localNameOff = bb.position();
+        bb.put(mutf8String("React"));
+
+        bb.position(classIdxOff);
+        bb.putInt(classOff);
+
+        bb.position(literalArrayIdxOff);
+        bb.putInt(moduleRecordLaOff);
+
+        bb.position(regionHeaderOff);
+        bb.putInt(classOff);
+        bb.putInt(codeOff + 32);
+        bb.putInt(1);
+        bb.putInt(classRegionIdxOff);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(0);
+
+        bb.position(classRegionIdxOff);
+        bb.putInt(classOff);
+
+        // Module record: 1 regular import with importName = "default"
+        bb.position(moduleRecordLaOff);
+        bb.putInt(10);
+        bb.putInt(1); // num_module_requests
+        bb.putInt(modulePathOff);
+        bb.putInt(1); // regular_import_num
+        bb.putInt(localNameOff); // local_name_off = "React"
+        bb.putInt(importNameOff); // import_name_off = "default"
+        bb.putShort((short) 0); // module_request_idx
+        bb.putInt(0); // namespace_import_num
+        bb.putInt(0); // local_export_num
+        bb.putInt(0); // indirect_export_num
+        bb.putInt(0); // star_export_num
+
+        bb.position(classOff);
+        bb.put(mutf8String("Lcom/example/App;"));
+        bb.putInt(0);
+        bb.put(uleb128(0x0001));
+        bb.put(uleb128(1));
+        bb.put(uleb128(1));
+        bb.put(new byte[]{0x00});
+
+        bb.putShort((short) 0);
+        bb.putShort((short) 0);
+        bb.putInt(moduleRecordIdxNameOff);
+        bb.put(uleb128(0x0001));
+        bb.put((byte) 0x01);
+        bb.put(uleb128(moduleRecordLaOff));
+        bb.put((byte) 0x00);
+
+        bb.putShort((short) 0);
+        bb.putShort((short) 0);
+        bb.putInt(methodNameOff);
+        bb.put(uleb128(0x0001));
+        bb.put(new byte[]{0x01});
+        bb.putInt(codeOff);
+        bb.put(new byte[]{0x00});
+
+        bb.position(codeOff);
+        bb.put(uleb128(2));
+        bb.put(uleb128(1));
+        bb.put(uleb128(4));
+        bb.put(uleb128(0));
+        bb.put(new byte[]{0x00, 0x60, 0x00, 0x64});
+
+        bb.position(0);
+        byte[] result = new byte[fileSize];
+        bb.get(result);
+        return result;
+    }
+
+    @Test
+    void testParseModuleRecord_defaultImport() {
+        byte[] data = buildAbcWithDefaultImport();
+        AbcFile abc = AbcFile.parse(data);
+        AbcModuleRecord record = abc.getModuleRecord(0);
+        assertNotNull(record);
+
+        assertEquals(1, record.getRegularImports().size());
+        AbcModuleRecord.RegularImport ri = record.getRegularImports().get(0);
+        String importName = abc.getSourceFileName(ri.getImportNameOffset());
+        String localName = abc.getSourceFileName(ri.getLocalNameOffset());
+        assertEquals("default", importName);
+        assertEquals("React", localName);
+    }
+
+    @Test
+    void testDecompilerDefaultImport() {
+        byte[] data = buildAbcWithDefaultImport();
+        AbcFile abc = AbcFile.parse(data);
+
+        ArkTSDecompiler decompiler = new ArkTSDecompiler();
+        String output = decompiler.decompileFile(abc);
+
+        assertTrue(output.contains("import React"),
+                "Output should contain default import, got: " + output);
+        assertTrue(output.contains("from 'react'"),
+                "Output should contain module path, got: " + output);
+    }
+
+    // --- ABC with re-export (indirect export with from clause) ---
+
+    /**
+     * Builds an ABC with indirect export that includes the from clause.
+     */
+    private static byte[] buildAbcWithReExport() {
+        ByteBuffer bb = ByteBuffer.allocate(4096).order(ByteOrder.LITTLE_ENDIAN);
+
+        int stringAreaOff = 200;
+        int classOff = 400;
+        int codeOff = 550;
+        int regionHeaderOff = 600;
+        int classIdxOff = 660;
+        int literalArrayIdxOff = 670;
+        int lnpIdxOff = 680;
+        int classRegionIdxOff = 690;
+        int moduleRecordLaOff = 700;
+        int fileSize = 4096;
+
+        bb.put(new byte[]{'P', 'A', 'N', 'D', 'A', 0, 0, 0});
+        bb.putInt(0);
+        bb.put(new byte[]{'0', '0', '0', '2'});
+        bb.putInt(fileSize);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(1);
+        bb.putInt(classIdxOff);
+        bb.putInt(0);
+        bb.putInt(lnpIdxOff);
+        bb.putInt(1);
+        bb.putInt(literalArrayIdxOff);
+        bb.putInt(1);
+        bb.putInt(regionHeaderOff);
+
+        bb.position(stringAreaOff);
+        int classNameOff = bb.position();
+        bb.put(mutf8String("Lcom/example/Index;"));
+        int methodNameOff = bb.position();
+        bb.put(mutf8String("init"));
+        int moduleRecordIdxNameOff = bb.position();
+        bb.put(mutf8String("moduleRecordIdx"));
+        int modulePathOff = bb.position();
+        bb.put(mutf8String("./utils"));
+        int exportNameOff = bb.position();
+        bb.put(mutf8String("helper"));
+        int importNameOff = bb.position();
+        bb.put(mutf8String("internalHelper"));
+
+        bb.position(classIdxOff);
+        bb.putInt(classOff);
+
+        bb.position(literalArrayIdxOff);
+        bb.putInt(moduleRecordLaOff);
+
+        bb.position(regionHeaderOff);
+        bb.putInt(classOff);
+        bb.putInt(codeOff + 32);
+        bb.putInt(1);
+        bb.putInt(classRegionIdxOff);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(0);
+
+        bb.position(classRegionIdxOff);
+        bb.putInt(classOff);
+
+        // Module record: 1 indirect export
+        bb.position(moduleRecordLaOff);
+        bb.putInt(10);
+        bb.putInt(1); // num_module_requests
+        bb.putInt(modulePathOff);
+        bb.putInt(0); // regular_import_num
+        bb.putInt(0); // namespace_import_num
+        bb.putInt(0); // local_export_num
+        bb.putInt(1); // indirect_export_num
+        bb.putInt(exportNameOff);
+        bb.putInt(importNameOff);
+        bb.putShort((short) 0);
+        bb.putInt(0); // star_export_num
+
+        bb.position(classOff);
+        bb.put(mutf8String("Lcom/example/Index;"));
+        bb.putInt(0);
+        bb.put(uleb128(0x0001));
+        bb.put(uleb128(1));
+        bb.put(uleb128(1));
+        bb.put(new byte[]{0x00});
+
+        bb.putShort((short) 0);
+        bb.putShort((short) 0);
+        bb.putInt(moduleRecordIdxNameOff);
+        bb.put(uleb128(0x0001));
+        bb.put((byte) 0x01);
+        bb.put(uleb128(moduleRecordLaOff));
+        bb.put((byte) 0x00);
+
+        bb.putShort((short) 0);
+        bb.putShort((short) 0);
+        bb.putInt(methodNameOff);
+        bb.put(uleb128(0x0001));
+        bb.put(new byte[]{0x01});
+        bb.putInt(codeOff);
+        bb.put(new byte[]{0x00});
+
+        bb.position(codeOff);
+        bb.put(uleb128(2));
+        bb.put(uleb128(1));
+        bb.put(uleb128(4));
+        bb.put(uleb128(0));
+        bb.put(new byte[]{0x00, 0x60, 0x00, 0x64});
+
+        bb.position(0);
+        byte[] result = new byte[fileSize];
+        bb.get(result);
+        return result;
+    }
+
+    @Test
+    void testDecompilerReExport_withFromClause() {
+        byte[] data = buildAbcWithReExport();
+        AbcFile abc = AbcFile.parse(data);
+
+        ArkTSDecompiler decompiler = new ArkTSDecompiler();
+        String output = decompiler.decompileFile(abc);
+
+        assertTrue(output.contains("export"),
+                "Output should contain export statement, got: " + output);
+        assertTrue(output.contains("from './utils'"),
+                "Output should contain from clause, got: " + output);
+        assertTrue(output.contains("internalHelper"),
+                "Output should contain imported name, got: " + output);
+    }
+
+    // --- ABC with mixed imports from same module ---
+
+    /**
+     * Builds an ABC with both named and namespace imports from
+     * the same module to test import merging.
+     */
+    private static byte[] buildAbcWithMixedImports() {
+        ByteBuffer bb = ByteBuffer.allocate(4096).order(ByteOrder.LITTLE_ENDIAN);
+
+        int stringAreaOff = 200;
+        int classOff = 400;
+        int codeOff = 550;
+        int regionHeaderOff = 600;
+        int classIdxOff = 660;
+        int literalArrayIdxOff = 670;
+        int lnpIdxOff = 680;
+        int classRegionIdxOff = 690;
+        int moduleRecordLaOff = 700;
+        int fileSize = 4096;
+
+        bb.put(new byte[]{'P', 'A', 'N', 'D', 'A', 0, 0, 0});
+        bb.putInt(0);
+        bb.put(new byte[]{'0', '0', '0', '2'});
+        bb.putInt(fileSize);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(1);
+        bb.putInt(classIdxOff);
+        bb.putInt(0);
+        bb.putInt(lnpIdxOff);
+        bb.putInt(1);
+        bb.putInt(literalArrayIdxOff);
+        bb.putInt(1);
+        bb.putInt(regionHeaderOff);
+
+        bb.position(stringAreaOff);
+        int classNameOff = bb.position();
+        bb.put(mutf8String("Lcom/example/Mixed;"));
+        int methodNameOff = bb.position();
+        bb.put(mutf8String("run"));
+        int moduleRecordIdxNameOff = bb.position();
+        bb.put(mutf8String("moduleRecordIdx"));
+        int modulePathOff = bb.position();
+        bb.put(mutf8String("@ohos/lib"));
+        int importName1Off = bb.position();
+        bb.put(mutf8String("foo"));
+        int localName1Off = bb.position();
+        bb.put(mutf8String("foo"));
+        int importName2Off = bb.position();
+        bb.put(mutf8String("Bar"));
+        int localName2Off = bb.position();
+        bb.put(mutf8String("myBar"));
+        int nsNameOff = bb.position();
+        bb.put(mutf8String("lib"));
+
+        bb.position(classIdxOff);
+        bb.putInt(classOff);
+
+        bb.position(literalArrayIdxOff);
+        bb.putInt(moduleRecordLaOff);
+
+        bb.position(regionHeaderOff);
+        bb.putInt(classOff);
+        bb.putInt(codeOff + 32);
+        bb.putInt(1);
+        bb.putInt(classRegionIdxOff);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(0);
+        bb.putInt(0);
+
+        bb.position(classRegionIdxOff);
+        bb.putInt(classOff);
+
+        // Module record: 2 regular imports + 1 namespace import, all from same module
+        bb.position(moduleRecordLaOff);
+        bb.putInt(8);
+        bb.putInt(1); // num_module_requests
+        bb.putInt(modulePathOff);
+        bb.putInt(2); // regular_import_num
+        // Regular import 1: import { foo }
+        bb.putInt(localName1Off);
+        bb.putInt(importName1Off);
+        bb.putShort((short) 0);
+        // Regular import 2: import { Bar as myBar }
+        bb.putInt(localName2Off);
+        bb.putInt(importName2Off);
+        bb.putShort((short) 0);
+        bb.putInt(1); // namespace_import_num
+        bb.putInt(nsNameOff);
+        bb.putShort((short) 0);
+        bb.putInt(0); // local_export_num
+        bb.putInt(0); // indirect_export_num
+        bb.putInt(0); // star_export_num
+
+        bb.position(classOff);
+        bb.put(mutf8String("Lcom/example/Mixed;"));
+        bb.putInt(0);
+        bb.put(uleb128(0x0001));
+        bb.put(uleb128(1));
+        bb.put(uleb128(1));
+        bb.put(new byte[]{0x00});
+
+        bb.putShort((short) 0);
+        bb.putShort((short) 0);
+        bb.putInt(moduleRecordIdxNameOff);
+        bb.put(uleb128(0x0001));
+        bb.put((byte) 0x01);
+        bb.put(uleb128(moduleRecordLaOff));
+        bb.put((byte) 0x00);
+
+        bb.putShort((short) 0);
+        bb.putShort((short) 0);
+        bb.putInt(methodNameOff);
+        bb.put(uleb128(0x0001));
+        bb.put(new byte[]{0x01});
+        bb.putInt(codeOff);
+        bb.put(new byte[]{0x00});
+
+        bb.position(codeOff);
+        bb.put(uleb128(2));
+        bb.put(uleb128(1));
+        bb.put(uleb128(4));
+        bb.put(uleb128(0));
+        bb.put(new byte[]{0x00, 0x60, 0x00, 0x64});
+
+        bb.position(0);
+        byte[] result = new byte[fileSize];
+        bb.get(result);
+        return result;
+    }
+
+    @Test
+    void testDecompilerMixedImports_sameModuleMerged() {
+        // Test the ModuleImportCollector merging logic directly via AST
+        ArkTSDecompiler.ModuleImportCollector collector =
+                new ArkTSDecompiler.ModuleImportCollector();
+        collector.addNamedImport("foo", "foo");
+        collector.addNamedImport("Bar", "myBar");
+        collector.setNamespaceImport("lib");
+
+        List<ArkTSDeclarations.ImportStatement> stmts =
+                collector.toImportStatements("@ohos/lib");
+        StringBuilder sb = new StringBuilder();
+        for (ArkTSDeclarations.ImportStatement stmt : stmts) {
+            sb.append(stmt.toArkTS(0)).append("\n");
+        }
+        String output = sb.toString().trim();
+
+        assertTrue(output.contains("@ohos/lib"),
+                "Output should contain module path, got: " + output);
+        assertTrue(output.contains("foo"),
+                "Output should contain named import foo, got: " + output);
+        assertTrue(output.contains("Bar as myBar"),
+                "Output should contain aliased import, got: " + output);
+        assertTrue(output.contains("lib"),
+                "Output should contain namespace import, got: " + output);
     }
 }

@@ -306,7 +306,7 @@ public class ArkTSDecompiler {
                 : importCollectors.entrySet()) {
             String modulePath = entry.getKey();
             ModuleImportCollector collector = entry.getValue();
-            imports.add(collector.toImportStatement(modulePath));
+            imports.addAll(collector.toImportStatements(modulePath));
         }
 
         for (AbcClass abcClass : abcFile.getClasses()) {
@@ -815,21 +815,21 @@ public class ArkTSDecompiler {
      * merging of default, named, and namespace imports into one
      * import statement.
      */
-    static class ModuleImportCollector {
+    public static class ModuleImportCollector {
         private String defaultImportName;
         private String namespaceImportName;
         private final List<String> namedImports = new ArrayList<>();
         private final Set<String> seenNames = new HashSet<>();
 
-        void setDefaultImport(String localName) {
+        public void setDefaultImport(String localName) {
             this.defaultImportName = localName;
         }
 
-        void setNamespaceImport(String localName) {
+        public void setNamespaceImport(String localName) {
             this.namespaceImportName = localName;
         }
 
-        void addNamedImport(String importName, String localName) {
+        public void addNamedImport(String importName, String localName) {
             String entry;
             if (localName != null && importName != null
                     && !localName.equals(importName)) {
@@ -844,12 +844,46 @@ public class ArkTSDecompiler {
             }
         }
 
-        ArkTSDeclarations.ImportStatement toImportStatement(
+        /**
+         * Builds import statements for this module path.
+         *
+         * <p>When both namespace and named imports exist for the same module,
+         * they need separate statements since ES module syntax does not
+         * allow combining them in one import declaration.
+         *
+         * @param modulePath the module path
+         * @return the list of import statements
+         */
+        public List<ArkTSDeclarations.ImportStatement> toImportStatements(
                 String modulePath) {
-            return new ArkTSDeclarations.ImportStatement(
-                    namedImports, modulePath,
-                    defaultImportName != null,
-                    defaultImportName, namespaceImportName);
+            List<ArkTSDeclarations.ImportStatement> result =
+                    new ArrayList<>();
+            if (namespaceImportName != null && !namedImports.isEmpty()) {
+                // Namespace + named: separate statements
+                result.add(new ArkTSDeclarations.ImportStatement(
+                        namedImports, modulePath,
+                        defaultImportName != null,
+                        defaultImportName, null));
+                result.add(new ArkTSDeclarations.ImportStatement(
+                        Collections.emptyList(), modulePath,
+                        false, null, namespaceImportName));
+            } else {
+                result.add(new ArkTSDeclarations.ImportStatement(
+                        namedImports, modulePath,
+                        defaultImportName != null,
+                        defaultImportName, namespaceImportName));
+            }
+            return result;
+        }
+
+        /**
+         * Convenience method: returns the first (or only) import statement.
+         */
+        public ArkTSDeclarations.ImportStatement toImportStatement(
+                String modulePath) {
+            List<ArkTSDeclarations.ImportStatement> stmts =
+                    toImportStatements(modulePath);
+            return stmts.isEmpty() ? null : stmts.get(0);
         }
     }
 }
