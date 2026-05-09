@@ -115,7 +115,7 @@ public class TypeInference {
             return inferCallReturnType(insn);
         }
         if (isPropertyLoadOpcode(opcode)) {
-            return null;
+            return inferPropertyLoadType(insn, ctx);
         }
         return null;
     }
@@ -317,6 +317,36 @@ public class TypeInference {
                 || opcode == ArkOpcodesCompat.CALLTHIS1
                 || opcode == ArkOpcodesCompat.CALLTHIS2
                 || opcode == ArkOpcodesCompat.CALLTHIS3;
+    }
+
+    private static final java.util.Map<String, String>
+            PROPERTY_TYPE_MAP = java.util.Map.ofEntries(
+                    java.util.Map.entry("length", "number"),
+                    java.util.Map.entry("size", "number"),
+                    java.util.Map.entry("byteLength", "number"),
+                    java.util.Map.entry("byteOffset", "number"),
+                    java.util.Map.entry("constructor", "Function"),
+                    java.util.Map.entry("prototype", "object"),
+                    java.util.Map.entry("name", "string"),
+                    java.util.Map.entry("message", "string"),
+                    java.util.Map.entry("stack", "string"),
+                    java.util.Map.entry("toString", "string"),
+                    java.util.Map.entry("valueOf", "object"));
+
+    private String inferPropertyLoadType(ArkInstruction insn,
+            DecompilationContext ctx) {
+        if (ctx == null) {
+            return null;
+        }
+        List<ArkOperand> operands = insn.getOperands();
+        if (operands.size() >= 2) {
+            int stringIdx = (int) operands.get(1).getValue();
+            String propName = ctx.resolveString(stringIdx);
+            if (propName != null && !propName.startsWith("str_")) {
+                return PROPERTY_TYPE_MAP.get(propName);
+            }
+        }
+        return null;
     }
 
     private static boolean isPropertyLoadOpcode(int opcode) {
