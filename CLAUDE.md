@@ -140,7 +140,7 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 53. ~~Single-use variable inlining, newobjrange class name resolution (#117)~~ DONE
 54. ~~Cascading single-use inlining, throw support (#118)~~ DONE
 55. feat: test with real HarmonyOS .abc files from Ark compiler #25
-56. ~~Performance: large file handling and incremental decompilation (#129)~~ DONE
+56. ~~Performance: shared file-level string cache (#144)~~ DONE
 57. ~~Source line number comments from debug info (#128)~~ DONE
 58. ~~Variable name inference from usage context (#133)~~ DONE
 59. ~~Comprehensive opcode decompilation tests (#134)~~ DONE
@@ -230,7 +230,7 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Try/catch decompilation:** Use `AbcCode.getTryBlocks()` → `AbcTryBlock.getCatchBlocks()` → `AbcCatchBlock` to reconstruct exception handling. Map try start/end PC ranges to CFG block addresses. Catch-all blocks (typeIdx=0) map to `finally`.
 - **Jump offset calculation:** `jmp +0` at offset 0 with instruction length 2 gives target = 0+2+0 = 2 (not 0). For infinite loop (jmp to self), need negative offset = -instruction_length (e.g., `0xFE` for 2-byte jmp).
 - **Parameter naming convention:** Use `param_0`, `param_1` etc. (not `p0`/`p1`) for better readability. Falls back to untyped when no proto info available.
-- **Test count tracking:** 1585 tests across 27 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
+- **Test count tracking:** 1592 tests across 26 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
 - **AST node immutability:** `BlockStatement.body`, `SwitchCase.body`, `VariableDeclaration` fields use `Collections.unmodifiableList` or `final`. Don't use `List.set()` to modify — use mutable fields (`setKind()`) or rebuild nodes. `VariableDeclaration.kind` is now mutable via `setKind()` for const/let optimization.
 - **Post-processing pattern:** `applyConstOptimization()` in ArkTSDecompiler traverses all AST statement types recursively. When adding new AST node types, add them to both `collectVarUsage` and `rewriteLetToConst`. Must handle `IfStatement.getThenBlock()`/`getElseBlock()` (returns `ArkTSStatement`, not List) — use `extractBodyList()` helper.
 - **Opcode values for tests:** STA=0x61, LDA=0x60, LDAI=0x62, RETURN=0x64, RETURNUNDEFINED=0x65. Always verify against `ArkOpcodes` constants — NOT 0x06 for STA.
@@ -338,7 +338,7 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **ObjectProperty constructors:** Two overloads: `(String key, ArkTSExpression value)` for string keys, `(ArkTSExpression computedKey, ArkTSExpression value, boolean isComputed)` for computed keys. No shorthand parameter.
 - **YieldExpression constructor:** Takes `(ArkTSExpression argument, boolean delegate)` — the `delegate` flag is for `yield*` syntax.
 - **newobjrange class name resolution:** `defineclasswithbuffer` stores resolved class expression via `ctx.setRegisterExpression()`. When `newobjrange` uses a register reference as callee, `resolveCallee()` in InstructionHandler looks up the stored expression for the real class name.
-- **String cache pre-population:** `DecompilationContext` pre-populates `stringResolveCache` from LNP index at construction time when `abcFile` is non-null. Avoids per-string MUTF-8 decoding overhead during decompilation.
+- **String cache pre-population:** `AbcFile.resolveStringByIndex()` lazily populates a file-level `String[]` cache from the LNP index. Shared across all method decompilations — `DecompilationContext.resolveString()` delegates to it when `abcFile` is non-null. No per-method string re-decoding.
 - **Per-method decompilation timeout:** `ArkTSDecompiler.setMethodTimeoutMs(long)` configures per-method timeout (default 5000ms, 0 = disabled). Timeout checked after CFG construction and after statement generation. Timed-out methods produce `/* decompilation timed out after Nms */` comment body.
 - **Analyzer string annotations:** `ArkBytecodeAnalyzer.annotateStrings()` iterates `abc.getLnpIndex()` to create plate comments at string offsets. `readMutf8String()` is package-visible for testing. Also annotates literal arrays with element counts.
 - **Null method guard:** `decompileMethod(null, null, null)` returns `"/* unknown method */"` instead of NPE. Always null-check method parameter before accessing method.getName().
