@@ -13807,4 +13807,205 @@ class ArkTSDecompilerTest {
         assertTrue(result.contains("releaseResource()"),
                 "Should contain finally body, got: " + result);
     }
+
+    // --- Return type inference tests ---
+
+    @Test
+    void testInferReturnType_numberLiteral() {
+        // ldai 42; return -> return 42 -> inferred : number
+        byte[] codeBytes = concat(
+            bytes(0x62), le32(42),
+            bytes(0x64)
+        );
+        AbcCode code = new AbcCode(0, 0, codeBytes.length, codeBytes,
+                Collections.emptyList(), 0);
+        AbcMethod method = new AbcMethod(0, 0, "getNum",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        String result = decompiler.decompileMethod(method, code, null);
+        assertTrue(result.contains("function getNum(): number"),
+                "Expected number return type, got: " + result);
+    }
+
+    @Test
+    void testInferReturnType_booleanLiteral() {
+        // ldtrue; return -> return true -> inferred : boolean
+        byte[] codeBytes = concat(
+            bytes(0x02),
+            bytes(0x64)
+        );
+        AbcCode code = new AbcCode(0, 0, codeBytes.length, codeBytes,
+                Collections.emptyList(), 0);
+        AbcMethod method = new AbcMethod(0, 0, "getFlag",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        String result = decompiler.decompileMethod(method, code, null);
+        assertTrue(result.contains("function getFlag(): boolean"),
+                "Expected boolean return type, got: " + result);
+    }
+
+    @Test
+    void testInferReturnType_voidReturn() {
+        // returnundefined -> return; -> : void (from proto, no inference)
+        byte[] codeBytes = bytes(0x65);
+        AbcCode code = new AbcCode(0, 0, codeBytes.length, codeBytes,
+                Collections.emptyList(), 0);
+        AbcMethod method = new AbcMethod(0, 0, "doNothing",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        String result = decompiler.decompileMethod(method, code, null);
+        assertTrue(result.contains("function doNothing(): void"),
+                "Expected void return type, got: " + result);
+    }
+
+    @Test
+    void testInferReturnType_noReturnInBody() {
+        // lda v0; sta v1 -> no return statement -> : void
+        byte[] codeBytes = concat(
+            bytes(0x60, 0x00),
+            bytes(0x61, 0x01)
+        );
+        AbcCode code = new AbcCode(0, 0, codeBytes.length, codeBytes,
+                Collections.emptyList(), 0);
+        AbcMethod method = new AbcMethod(0, 0, "process",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        String result = decompiler.decompileMethod(method, code, null);
+        assertTrue(result.contains("function process()"),
+                "Expected function without return type, got: " + result);
+    }
+
+    @Test
+    void testInferReturnType_variableReturn() {
+        // ldai 42; sta v0; lda v0; return -> return v0 (variable) -> no inference
+        byte[] codeBytes = concat(
+            bytes(0x62), le32(42),
+            bytes(0x61, 0x00),
+            bytes(0x60, 0x00),
+            bytes(0x64)
+        );
+        AbcCode code = new AbcCode(2, 0, codeBytes.length, codeBytes,
+                Collections.emptyList(), 0);
+        AbcMethod method = new AbcMethod(0, 0, "compute",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        String result = decompiler.decompileMethod(method, code, null);
+        assertTrue(result.contains("function compute()"),
+                "Expected no return type annotation for variable return, got: "
+                        + result);
+        assertFalse(result.contains("): number"),
+                "Should not annotate return type for variable return, got: "
+                        + result);
+    }
+
+    @Test
+    void testInferReturnType_staticMethod() {
+        String returnType = ArkTSDecompiler.inferReturnType(
+                List.of(new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.LiteralExpression("42",
+                                ArkTSExpression.LiteralExpression
+                                        .LiteralKind.NUMBER))));
+        assertEquals("number", returnType);
+    }
+
+    @Test
+    void testInferReturnType_staticVoidReturn() {
+        String returnType = ArkTSDecompiler.inferReturnType(
+                List.of(new ArkTSStatement.ReturnStatement(null)));
+        assertEquals("void", returnType);
+    }
+
+    @Test
+    void testInferReturnType_staticEmptyBody() {
+        String returnType = ArkTSDecompiler.inferReturnType(
+                Collections.emptyList());
+        assertEquals("void", returnType);
+    }
+
+    @Test
+    void testInferReturnType_staticStringReturn() {
+        String returnType = ArkTSDecompiler.inferReturnType(
+                List.of(new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.LiteralExpression("hello",
+                                ArkTSExpression.LiteralExpression
+                                        .LiteralKind.STRING))));
+        assertEquals("string", returnType);
+    }
+
+    @Test
+    void testInferReturnType_staticMixedTypes() {
+        List<ArkTSStatement> stmts = List.of(
+                new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.LiteralExpression("42",
+                                ArkTSExpression.LiteralExpression
+                                        .LiteralKind.NUMBER)),
+                new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.LiteralExpression("true",
+                                ArkTSExpression.LiteralExpression
+                                        .LiteralKind.BOOLEAN)));
+        String returnType = ArkTSDecompiler.inferReturnType(stmts);
+        org.junit.jupiter.api.Assertions.assertNull(returnType,
+                "Mixed return types should yield null (no annotation)");
+    }
+
+    @Test
+    void testInferReturnType_staticVariableReturn() {
+        String returnType = ArkTSDecompiler.inferReturnType(
+                List.of(new ArkTSStatement.ReturnStatement(
+                        new ArkTSExpression.VariableExpression("x"))));
+        org.junit.jupiter.api.Assertions.assertNull(returnType,
+                "Variable return should yield null (cannot infer)");
+    }
+
+    @Test
+    void testInferReturnType_insideIfStatement() {
+        List<ArkTSStatement> stmts = List.of(
+                new ArkTSControlFlow.IfStatement(
+                        new ArkTSExpression.VariableExpression("cond"),
+                        new ArkTSStatement.BlockStatement(
+                                List.of(new ArkTSStatement.ReturnStatement(
+                                        new ArkTSExpression.LiteralExpression(
+                                                "42",
+                                                ArkTSExpression
+                                                .LiteralExpression
+                                                .LiteralKind.NUMBER)))),
+                        null));
+        String returnType = ArkTSDecompiler.inferReturnType(stmts);
+        assertEquals("number", returnType);
+    }
+
+    @Test
+    void testInferReturnType_insideTryCatch() {
+        List<ArkTSStatement> stmts = List.of(
+                new ArkTSControlFlow.TryCatchStatement(
+                        new ArkTSStatement.BlockStatement(
+                                List.of(new ArkTSStatement.ReturnStatement(
+                                        new ArkTSExpression.LiteralExpression(
+                                                "ok",
+                                                ArkTSExpression
+                                                .LiteralExpression
+                                                .LiteralKind.STRING)))),
+                        "e",
+                        new ArkTSStatement.BlockStatement(
+                                List.of(new ArkTSStatement.ReturnStatement(
+                                        new ArkTSExpression.LiteralExpression(
+                                                "error",
+                                                ArkTSExpression
+                                                .LiteralExpression
+                                                .LiteralKind.STRING)))),
+                        null));
+        String returnType = ArkTSDecompiler.inferReturnType(stmts);
+        assertEquals("string", returnType);
+    }
+
+    @Test
+    void testInferReturnType_falseLiteral() {
+        // ldfalse; return -> return false -> inferred : boolean
+        byte[] codeBytes = concat(
+            bytes(0x03),
+            bytes(0x64)
+        );
+        AbcCode code = new AbcCode(0, 0, codeBytes.length, codeBytes,
+                Collections.emptyList(), 0);
+        AbcMethod method = new AbcMethod(0, 0, "isDisabled",
+                AbcAccessFlags.ACC_PUBLIC, 0, 0);
+        String result = decompiler.decompileMethod(method, code, null);
+        assertTrue(result.contains("function isDisabled(): boolean"),
+                "Expected boolean return type, got: " + result);
+    }
 }

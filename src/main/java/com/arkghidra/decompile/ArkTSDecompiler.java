@@ -822,6 +822,185 @@ public class ArkTSDecompiler {
                 abcFile);
     }
 
+    // --- Return type inference ---
+
+    private static final String UNKNOWN_TYPE = "__unknown__";
+
+    /**
+     * Infers the return type of a method by analyzing return statements in the
+     * body. Walks the statement tree recursively, collecting the types of
+     * values returned by each {@code ReturnStatement}.
+     *
+     * <p>Inference rules:
+     * <ul>
+     *   <li>All returns are void (or no returns) -> "void"</li>
+     *   <li>All returns are the same literal type (number/string/boolean)
+     *       -> that type</li>
+     *   <li>Mixed types or non-literal returns -> null (don't annotate)</li>
+     * </ul>
+     *
+     * @param stmts the method body statements
+     * @return the inferred return type, or null if uncertain
+     */
+    static String inferReturnType(List<ArkTSStatement> stmts) {
+        Set<String> types = new HashSet<>();
+        collectReturnTypes(stmts, types);
+        if (types.isEmpty()) {
+            return "void";
+        }
+        if (types.contains(UNKNOWN_TYPE)) {
+            return null;
+        }
+        if (types.size() == 1) {
+            return types.iterator().next();
+        }
+        return null;
+    }
+
+    private static void collectReturnTypes(List<ArkTSStatement> stmts,
+            Set<String> types) {
+        if (stmts == null) {
+            return;
+        }
+        for (ArkTSStatement stmt : stmts) {
+            if (stmt instanceof ArkTSStatement.ReturnStatement) {
+                ArkTSExpression val =
+                        ((ArkTSStatement.ReturnStatement) stmt).getValue();
+                String rt = classifyReturnValue(val);
+                if (rt != null) {
+                    types.add(rt);
+                }
+            } else if (stmt instanceof ArkTSControlFlow.IfStatement) {
+                ArkTSControlFlow.IfStatement ifStmt =
+                        (ArkTSControlFlow.IfStatement) stmt;
+                collectReturnTypesFromStmt(
+                        ifStmt.getThenBlock(), types);
+                collectReturnTypesFromStmt(
+                        ifStmt.getElseBlock(), types);
+            } else if (stmt
+                    instanceof ArkTSControlFlow.WhileStatement) {
+                collectReturnTypesFromStmt(
+                        ((ArkTSControlFlow.WhileStatement) stmt).getBody(),
+                        types);
+            } else if (stmt
+                    instanceof ArkTSControlFlow.DoWhileStatement) {
+                collectReturnTypesFromStmt(
+                        ((ArkTSControlFlow.DoWhileStatement) stmt).getBody(),
+                        types);
+            } else if (stmt
+                    instanceof ArkTSControlFlow.ForStatement) {
+                collectReturnTypesFromStmt(
+                        ((ArkTSControlFlow.ForStatement) stmt).getBody(),
+                        types);
+            } else if (stmt
+                    instanceof ArkTSControlFlow.ForOfStatement) {
+                collectReturnTypesFromStmt(
+                        ((ArkTSControlFlow.ForOfStatement) stmt).getBody(),
+                        types);
+            } else if (stmt
+                    instanceof ArkTSControlFlow.ForInStatement) {
+                collectReturnTypesFromStmt(
+                        ((ArkTSControlFlow.ForInStatement) stmt).getBody(),
+                        types);
+            } else if (stmt
+                    instanceof ArkTSControlFlow.ForAwaitOfStatement) {
+                collectReturnTypesFromStmt(
+                        ((ArkTSControlFlow.ForAwaitOfStatement) stmt)
+                                .getBody(),
+                        types);
+            } else if (stmt
+                    instanceof ArkTSControlFlow.SwitchStatement) {
+                ArkTSControlFlow.SwitchStatement sw =
+                        (ArkTSControlFlow.SwitchStatement) stmt;
+                for (ArkTSControlFlow.SwitchStatement.SwitchCase sc
+                        : sw.getCases()) {
+                    collectReturnTypes(sc.getBody(), types);
+                }
+                collectReturnTypesFromStmt(
+                        sw.getDefaultBlock(), types);
+            } else if (stmt
+                    instanceof ArkTSControlFlow.TryCatchStatement) {
+                ArkTSControlFlow.TryCatchStatement tc =
+                        (ArkTSControlFlow.TryCatchStatement) stmt;
+                collectReturnTypesFromStmt(
+                        tc.getTryBlock(), types);
+                collectReturnTypesFromStmt(
+                        tc.getCatchBlock(), types);
+                collectReturnTypesFromStmt(
+                        tc.getFinallyBlock(), types);
+            } else if (stmt instanceof ArkTSControlFlow
+                    .MultiCatchTryCatchStatement) {
+                ArkTSControlFlow.MultiCatchTryCatchStatement mc =
+                        (ArkTSControlFlow.MultiCatchTryCatchStatement) stmt;
+                collectReturnTypesFromStmt(
+                        mc.getTryBlock(), types);
+                for (ArkTSControlFlow.MultiCatchTryCatchStatement
+                        .CatchClause cc : mc.getCatchClauses()) {
+                    collectReturnTypesFromStmt(cc.getBody(), types);
+                }
+                collectReturnTypesFromStmt(
+                        mc.getFinallyBlock(), types);
+            } else if (stmt
+                    instanceof ArkTSStatement.BlockStatement) {
+                collectReturnTypes(
+                        ((ArkTSStatement.BlockStatement) stmt).getBody(),
+                        types);
+            } else if (stmt
+                    instanceof ArkTSStatement.LabeledStatement) {
+                collectReturnTypesFromStmt(
+                        ((ArkTSStatement.LabeledStatement) stmt)
+                                .getStatement(),
+                        types);
+            }
+        }
+    }
+
+    private static void collectReturnTypesFromStmt(ArkTSStatement block,
+            Set<String> types) {
+        if (block == null) {
+            return;
+        }
+        if (block instanceof ArkTSStatement.BlockStatement) {
+            collectReturnTypes(
+                    ((ArkTSStatement.BlockStatement) block).getBody(),
+                    types);
+        } else {
+            collectReturnTypes(List.of(block), types);
+        }
+    }
+
+    /**
+     * Classifies a return value expression into a type string.
+     * Returns {@link #UNKNOWN_TYPE} for expressions whose type
+     * cannot be reliably determined (variables, complex expressions).
+     */
+    private static String classifyReturnValue(ArkTSExpression val) {
+        if (val == null) {
+            return "void";
+        }
+        if (val instanceof ArkTSExpression.LiteralExpression) {
+            ArkTSExpression.LiteralExpression lit =
+                    (ArkTSExpression.LiteralExpression) val;
+            switch (lit.getKind()) {
+                case NUMBER:
+                case NAN:
+                case INFINITY:
+                    return "number";
+                case STRING:
+                    return "string";
+                case BOOLEAN:
+                    return "boolean";
+                case NULL:
+                    return "null";
+                case UNDEFINED:
+                    return "void";
+                default:
+                    return UNKNOWN_TYPE;
+            }
+        }
+        return UNKNOWN_TYPE;
+    }
+
     private String buildMethodSource(AbcMethod method, AbcProto proto,
             AbcCode code, List<ArkTSStatement> bodyStmts,
             AbcFile abcFile) {
@@ -841,6 +1020,15 @@ public class ArkTSDecompiler {
                         getDebugParamNames(method, abcFile),
                         restParamIndex);
         String returnType = MethodSignatureBuilder.getReturnType(proto);
+        // When proto-based type is void (no proto or void shorty),
+        // try to infer a more specific return type from the body
+        if ("void".equals(returnType)) {
+            String inferred =
+                    inferReturnType(filteredStmts);
+            if (inferred != null && !"void".equals(inferred)) {
+                returnType = inferred;
+            }
+        }
         ArkTSStatement body =
                 new ArkTSStatement.BlockStatement(filteredStmts);
         ArkTSDeclarations.FunctionDeclaration func =
