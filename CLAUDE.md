@@ -74,7 +74,9 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 
 ### Iteration cycle
 
-1. **Propose** — Claude proposes a new feature/improvement and writes it as a plan
+**Notice: You should always handle and implement existed improvement before propose new one.**
+
+1. **Propose** — Claude proposes a new feature/improvement and writes it as a plan **if there is no existing open issue**
 2. **Implement** — Claude writes the code, tests, and documentation
 3. **Verify** — Run `./gradlew build test lint` — all must pass
 4. **Commit & Push** — Commit with descriptive message, push to GitHub
@@ -106,8 +108,9 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 21. ~~Prototype/static, private fields, parameter defaults, built-in objects (#60, #61, #62, #63)~~ DONE
 22. ~~Output formatting, error recovery, E2E tests, performance (#64, #65, #66, #67)~~ DONE
 23. ~~Output readability, operator precedence, string escaping (#68, #69, #70)~~ DONE
-24. Real .abc file support: test with actual HarmonyOS compiler output (#25)
-25. Performance: large file handling and incremental decompilation
+24. feat: test with real HarmonyOS .abc files from Ark compiler #25
+25. Real .abc file support: test with actual HarmonyOS compiler output (#25)
+26. Performance: large file handling and incremental decompilation
 
 ### Rules for the loop
 
