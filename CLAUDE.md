@@ -111,7 +111,12 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 24. ~~Class method improvements — override, abstract keywords (#86)~~ DONE
 25. ~~ArkTS-specific features — sendable classes, readonly, Record type (#88)~~ DONE
 26. ~~Collection iteration — for-of with destructuring, Map/Set (#87)~~ DONE
-27. feat: test with real HarmonyOS .abc files from Ark compiler #25
+27. ~~Type inference improvements — array element types (#89)~~ DONE
+28. ~~Error recovery improvements (#90)~~ DONE
+29. ~~Output quality — string merging, boolean simplification (#91)~~ DONE
+30. ~~Advanced control flow — labeled break/continue (#92)~~ DONE
+31. ~~Integration testing — ArkTS output quality (#71)~~ DONE
+32. feat: test with real HarmonyOS .abc files from Ark compiler #25
 28. Real .abc file support: test with actual HarmonyOS compiler output (#25)
 29. Performance: large file handling and incremental decompilation
 
@@ -194,7 +199,7 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Try/catch decompilation:** Use `AbcCode.getTryBlocks()` → `AbcTryBlock.getCatchBlocks()` → `AbcCatchBlock` to reconstruct exception handling. Map try start/end PC ranges to CFG block addresses. Catch-all blocks (typeIdx=0) map to `finally`.
 - **Jump offset calculation:** `jmp +0` at offset 0 with instruction length 2 gives target = 0+2+0 = 2 (not 0). For infinite loop (jmp to self), need negative offset = -instruction_length (e.g., `0xFE` for 2-byte jmp).
 - **Parameter naming convention:** Use `param_0`, `param_1` etc. (not `p0`/`p1`) for better readability. Falls back to untyped when no proto info available.
-- **Test count tracking:** 1273 tests across 20+ test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
+- **Test count tracking:** 1300 tests across 20+ test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
 - **ABC debug info parsing:** Tags 0x07 (SOURCE_FILE), 0x03 (DEBUG_INFO) in class/method tag values. Debug info contains line_start, num_params, param name string offsets, constant pool. LNP uses DWARF v3 state machine with special opcodes.
 - **Realistic test fixture design:** Use 16384-byte buffer with 200-byte spacing between areas (strings at 200, classes at 800, code at 2000, protos at 6000, etc.). Encode methods with ULEB128 for vregs/args/codeSize/triesSize.
 - **Debug parameter name resolution:** `AbcFile.getDebugInfoForMethod()` → `AbcDebugInfo.getParameterNames()` → pass to `MethodSignatureBuilder.buildParams(proto, numArgs, debugNames)`. Falls back to `param_N` for unnamed.
@@ -246,6 +251,11 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Override/abstract method rendering:** ClassMethodDeclaration has 9-param constructor with isOverride and isAbstract. Abstract renders "abstract" before access modifier, override after access modifier/static/async. Abstract methods end with semicolon (no body). DeclarationBuilder detects override via superclass method name matching, abstract via ACC_ABSTRACT flag.
 - **Sendable class syntax:** ClassDeclaration has decorators list and isSendable flag. `sendable class Foo` rendered when @Sendable decorator detected. ClassFieldDeclaration supports readonly modifier.
 - **For-of destructuring:** ForOfStatement has destructuringPattern field. When set, renders as `for (const [key, value] of iterable)` instead of simple variable name.
+- **Array element type inference:** `TypeInference.inferArrayElementType(List<ArkTSExpression>)` checks if all elements share the same literal kind. Returns "number", "string", "boolean", or null. Wired into `OperatorHandler.getAccType()` for automatic detection.
+- **String literal merging:** `OperatorHandler.tryMergeStringLiterals()` merges adjacent string literals in "+" expressions. `extractStringValue()` strips surrounding quotes before merging, LiteralExpression.toArkTS() re-adds them.
+- **Labeled break/continue:** BreakStatement and ContinueStatement accept optional label parameter. LabeledStatement AST node wraps any statement with a label prefix.
+- **Agent rate limit recovery:** When agents hit 429 rate limits, check `git diff --stat` — if no changes, the agent failed. Implement directly instead of retrying. Always verify agent output with clean build before committing.
+- **Agent broken code in ControlFlowReconstructor:** Agent #91 added methods calling non-existent getters (getLeft(), getRight()) on InstanceofExpression. Revert with `git checkout HEAD -- <file>` and verify build.
 - **For-loop detection:** `detectClassicForLoopPattern()` in LoopProcessor identifies init/condition/update blocks from CFG. Predecessor block before loop header = init, conditional at header = condition, last body block before back edge = update. Emits `ForStatement` instead of `WhileStatement`.
 - **Double negation simplification:** `OperatorHandler.simplifyDoubleNegation()` converts `!(a == b)` → `a != b`, `!(a === b)` → `a !== b`, `!!x` → `Boolean(x)`. Called from unary operator handler after creating `UnaryExpression("!", ...)`.
 - **Constant folding:** `OperatorHandler.tryFoldConstants()` evaluates binary expressions with two numeric literal operands at decompile time. Supports +, -, *, /, %, &, |, ^, <<, >>, >>>. Returns `BinaryExpression` unchanged when operands aren't both numeric.
