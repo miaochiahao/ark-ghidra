@@ -104,8 +104,10 @@ This project uses a **self-directed Claude loop** for autonomous development. Ea
 19. ~~Async/await, error handling, type annotations, iterator protocol (#52, #53, #54, #55)~~ DONE
 20. ~~Conditional jumps, call variants, property opcodes, module variables (#56, #57, #58, #59)~~ DONE
 21. ~~Prototype/static, private fields, parameter defaults, built-in objects (#60, #61, #62, #63)~~ DONE
-22. Real .abc file support: test with actual HarmonyOS compiler output (#25)
-23. Performance: large file handling and incremental decompilation
+22. ~~Output formatting, error recovery, E2E tests, performance (#64, #65, #66, #67)~~ DONE
+23. ~~Output readability, operator precedence, string escaping (#68, #69, #70)~~ DONE
+24. Real .abc file support: test with actual HarmonyOS compiler output (#25)
+25. Performance: large file handling and incremental decompilation
 
 ### Rules for the loop
 
@@ -186,7 +188,7 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Try/catch decompilation:** Use `AbcCode.getTryBlocks()` → `AbcTryBlock.getCatchBlocks()` → `AbcCatchBlock` to reconstruct exception handling. Map try start/end PC ranges to CFG block addresses. Catch-all blocks (typeIdx=0) map to `finally`.
 - **Jump offset calculation:** `jmp +0` at offset 0 with instruction length 2 gives target = 0+2+0 = 2 (not 0). For infinite loop (jmp to self), need negative offset = -instruction_length (e.g., `0xFE` for 2-byte jmp).
 - **Parameter naming convention:** Use `param_0`, `param_1` etc. (not `p0`/`p1`) for better readability. Falls back to untyped when no proto info available.
-- **Test count tracking:** 1148 tests across 20 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
+- **Test count tracking:** 1200 tests across 20 test suites (as of 2026-05-09). After any decompiler change, check that existing tests still match expected output strings.
 - **ABC debug info parsing:** Tags 0x07 (SOURCE_FILE), 0x03 (DEBUG_INFO) in class/method tag values. Debug info contains line_start, num_params, param name string offsets, constant pool. LNP uses DWARF v3 state machine with special opcodes.
 - **Realistic test fixture design:** Use 16384-byte buffer with 200-byte spacing between areas (strings at 200, classes at 800, code at 2000, protos at 6000, etc.). Encode methods with ULEB128 for vregs/args/codeSize/triesSize.
 - **Debug parameter name resolution:** `AbcFile.getDebugInfoForMethod()` → `AbcDebugInfo.getParameterNames()` → pass to `MethodSignatureBuilder.buildParams(proto, numArgs, debugNames)`. Falls back to `param_N` for unnamed.
@@ -219,6 +221,8 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **Namespace grouping:** `ClassDeclaration` stores `rawName` (original ABC name like "Lcom/example/Foo;"). `extractNamespace()` uses rawName for namespace extraction since `sanitizeClassName()` strips the package prefix. `NamespaceStatement` renders as `namespace com.example { ... }`.
 - **Performance caching:** `AbcFile.getMethods()` returns cached unmodifiable list (O(1) after first call). `getMethodByFlatIndex(int)` for O(1) method lookup. `DecompilationContext.resolveString()` caches MUTF-8 decoding. `ControlFlowGraph` uses HashSet instead of TreeSet for leader set.
 - **Agent concurrent edit recovery:** When multiple agents edit the same file concurrently, watch for: sentinel/placeholder text left outside class braces, missing import path updates (e.g., `com.arkghidra.ArkTSDecompiler` → `com.arkghidra.decompile`), constructor visibility changes (package-private → public).
+- **Operator precedence in output:** `BinaryExpression.toArkTS()` uses priority-based parentheses — only adds parens when child operator has lower precedence. UnaryExpression omits outer parens. `NullishCoalescingExpression` and `ConditionalExpression` also omit outer parens. When changing expression rendering, update ALL test assertions that check for parenthesized output.
+- **StatementResult.NO_OP:** Use `StatementResult.NO_OP` for instructions that are handled but produce no statement (NEWLEXENV, POPLEXENV, ASYNCFUNCTIONENTER, etc.). Returning `null` from handler means "not handled" and falls through to the fallback `/* opcode */` comment.
 - **Parallel agent coordination (4 agents):** Launched 4 agents for #44-#47 in parallel, each focused on non-overlapping files. All completed successfully. Unified build passed after clean. Key: instruct agents to prefer adding new methods over modifying existing ones to minimize conflicts.
 - **Destructuring decompilation:** Array: `tryDetectArrayDestructuring()` scans `lda vN; ldobjbyindex 0, I; sta vM` patterns. Object: `tryDetectObjectDestructuring()` scans `lda vN; ldobjbyname 0, "prop"; sta vM`. Rest: detect spreadcreatearray after last index. Defaults: detect conditional assignment after destructuring.
 - **Template literal decompilation:** `tryReconstructTemplateLiteral()` flattens `+` binary chains. Detects string literal + variable interleaving. Produces backtick syntax with `${expr}` interpolation. Escapes backticks in quasis.
