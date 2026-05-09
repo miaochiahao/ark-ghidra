@@ -117,6 +117,7 @@ public class ArkTSDecompiler {
                 method, code, proto, abcFile, cfg, instructions);
 
         populateRegisterNames(method, abcFile, ctx);
+        populateLineNumbers(method, abcFile, ctx);
 
         // Detect rest parameter from COPYRESTARGS instruction
         int restParamIndex = detectRestParamIndex(instructions,
@@ -1099,6 +1100,34 @@ public class ArkTSDecompiler {
                     ctx.setRegisterName(local.getRegisterNum(),
                             local.getName());
                 }
+            }
+        }
+    }
+
+    /**
+     * Populates the source line number map in the decompilation context
+     * from debug info. Maps bytecode offsets to source line numbers.
+     */
+    private static void populateLineNumbers(AbcMethod method,
+            AbcFile abcFile, DecompilationContext ctx) {
+        if (abcFile == null || ctx == null) {
+            return;
+        }
+        AbcDebugInfo debugInfo =
+                abcFile.getDebugInfoForMethod(method);
+        if (debugInfo == null) {
+            return;
+        }
+        List<Long> lnpIndices = debugInfo.getLineNumProgramIdx();
+        for (int i = 0; i < lnpIndices.size(); i++) {
+            Long lnpIdx = lnpIndices.get(i);
+            if (lnpIdx == null || lnpIdx <= 0) {
+                continue;
+            }
+            List<com.arkghidra.format.AbcLineNumberEntry> entries =
+                    abcFile.getLineNumberEntries(i);
+            for (com.arkghidra.format.AbcLineNumberEntry entry : entries) {
+                ctx.setLineNumber((int) entry.getPc(), entry.getLine());
             }
         }
     }

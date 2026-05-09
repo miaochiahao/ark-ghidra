@@ -93,6 +93,19 @@ public class DecompilationContext {
     private final Map<Integer, String> registerNames = new HashMap<>();
 
     /**
+     * Maps bytecode offsets to source line numbers from debug info.
+     * Populated from {@link com.arkghidra.format.AbcLineNumberEntry} data.
+     */
+    private final Map<Integer, Long> lineNumberMap = new HashMap<>();
+
+    /**
+     * Tracks the last source line number emitted as a comment.
+     * Prevents duplicate line comments when multiple instructions
+     * map to the same source line.
+     */
+    private long lastEmittedLine = -1;
+
+    /**
      * Constructs a decompilation context.
      *
      * @param method the method being decompiled
@@ -406,5 +419,42 @@ public class DecompilationContext {
      */
     public Set<Integer> getCapturedRegisters() {
         return Collections.unmodifiableSet(capturedRegisters);
+    }
+
+    /**
+     * Stores a mapping from bytecode offset to source line number.
+     *
+     * @param offset the bytecode offset
+     * @param line the source line number
+     */
+    public void setLineNumber(int offset, long line) {
+        lineNumberMap.put(offset, line);
+    }
+
+    /**
+     * Returns the source line number for a bytecode offset, or null.
+     *
+     * @param offset the bytecode offset
+     * @return the source line number, or null
+     */
+    public Long getLineNumber(int offset) {
+        return lineNumberMap.get(offset);
+    }
+
+    /**
+     * Checks whether a line comment should be emitted for the given offset,
+     * and updates the last-emitted line tracking. Returns the line number
+     * if a comment should be emitted, or null otherwise.
+     *
+     * @param offset the bytecode offset
+     * @return the source line number to emit, or null if already emitted
+     */
+    public Long checkAndMarkLineEmitted(int offset) {
+        Long line = lineNumberMap.get(offset);
+        if (line != null && line != lastEmittedLine) {
+            lastEmittedLine = line;
+            return line;
+        }
+        return null;
     }
 }

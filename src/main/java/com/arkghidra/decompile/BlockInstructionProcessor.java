@@ -51,6 +51,13 @@ class BlockInstructionProcessor {
                 continue;
             }
 
+            // Emit source line comment when line number changes
+            Long sourceLine = ctx.checkAndMarkLineEmitted(insn.getOffset());
+            if (sourceLine != null) {
+                stmts.add(new ArkTSStatement.LineCommentStatement(
+                        sourceLine));
+            }
+
             int opcode = insn.getOpcode();
 
             if (opcode == ArkOpcodesCompat.NOP) {

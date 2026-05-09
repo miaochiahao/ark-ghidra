@@ -2,6 +2,7 @@ package com.arkghidra.decompile;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -1213,6 +1214,66 @@ class ArkTSOutputQualityTest {
                                     ArkTSExpression.LiteralExpression
                                             .LiteralKind.NUMBER));
             assertEquals("foo(42)", replaced.toArkTS());
+        }
+    }
+
+    @Nested
+    @DisplayName("Line number comments")
+    class LineCommentTests {
+        @Test
+        void testLineCommentStatement_rendering() {
+            ArkTSStatement.LineCommentStatement stmt =
+                    new ArkTSStatement.LineCommentStatement(42);
+            assertEquals("// line 42", stmt.toArkTS(0));
+            assertEquals("    // line 42", stmt.toArkTS(1));
+        }
+
+        @Test
+        void testLineCommentStatement_nestedInBlock() {
+            List<ArkTSStatement> body = List.of(
+                    new ArkTSStatement.LineCommentStatement(5),
+                    new ArkTSStatement.ReturnStatement(
+                            new ArkTSExpression.LiteralExpression("42",
+                                    ArkTSExpression.LiteralExpression
+                                            .LiteralKind.NUMBER)));
+            ArkTSStatement.BlockStatement block =
+                    new ArkTSStatement.BlockStatement(body);
+            String result = block.toArkTS(0);
+            assertTrue(result.contains("// line 5"),
+                    "Block should contain line comment: " + result);
+            assertTrue(result.contains("return 42"),
+                    "Block should contain return: " + result);
+        }
+
+        @Test
+        void testDecompilationContext_lineNumberTracking() {
+            DecompilationContext ctx = new DecompilationContext(
+                    null, null, null, null, null, List.of());
+            assertNull(ctx.getLineNumber(0));
+            assertNull(ctx.checkAndMarkLineEmitted(0));
+
+            ctx.setLineNumber(0, 10);
+            ctx.setLineNumber(4, 15);
+            ctx.setLineNumber(8, 15);
+            ctx.setLineNumber(12, 20);
+
+            assertEquals(10L, ctx.getLineNumber(0));
+            assertEquals(15L, ctx.getLineNumber(4));
+
+            // First emission of line 10
+            Long line = ctx.checkAndMarkLineEmitted(0);
+            assertEquals(10L, line);
+
+            // Offset 4 maps to line 15 (different from last=10) → emit
+            line = ctx.checkAndMarkLineEmitted(4);
+            assertEquals(15L, line);
+
+            // Offset 8 also maps to line 15 (same as last=15) → skip
+            assertNull(ctx.checkAndMarkLineEmitted(8));
+
+            // New line should be emitted
+            line = ctx.checkAndMarkLineEmitted(12);
+            assertEquals(20L, line);
         }
     }
 }

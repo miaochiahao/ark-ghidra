@@ -351,4 +351,32 @@ public abstract class ArkTSStatement {
         }
         return sb.toString();
     }
+
+    // --- Line comment ---
+
+    /**
+     * A source line number comment: {@code // line N}.
+     * Emitted when debug info maps a bytecode offset to a source line.
+     */
+    public static class LineCommentStatement extends ArkTSStatement {
+        private final long lineNumber;
+
+        /**
+         * Constructs a line comment statement.
+         *
+         * @param lineNumber the source line number
+         */
+        public LineCommentStatement(long lineNumber) {
+            this.lineNumber = lineNumber;
+        }
+
+        public long getLineNumber() {
+            return lineNumber;
+        }
+
+        @Override
+        public String toArkTS(int indent) {
+            return indent(indent) + "// line " + lineNumber;
+        }
+    }
 }
