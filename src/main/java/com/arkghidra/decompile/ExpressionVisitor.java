@@ -247,6 +247,49 @@ class ExpressionVisitor {
             return new ArkTSAccessExpressions.ConditionalExpression(
                     test, cons, alt);
         }
+        // SwitchExpression: replace in discriminant, cases, and default
+        if (expr instanceof ArkTSAccessExpressions.SwitchExpression) {
+            ArkTSAccessExpressions.SwitchExpression se =
+                    (ArkTSAccessExpressions.SwitchExpression) expr;
+            ArkTSExpression disc =
+                    replaceVariableImpl(se.getDiscriminant(), varName,
+                            replacement);
+            if (disc == null) {
+                return null;
+            }
+            List<ArkTSAccessExpressions.SwitchExpression.SwitchExprCase>
+                    newCases = new ArrayList<>();
+            for (ArkTSAccessExpressions.SwitchExpression.SwitchExprCase c
+                    : se.getCases()) {
+                List<ArkTSExpression> newTests = new ArrayList<>();
+                for (ArkTSExpression t : c.getTests()) {
+                    ArkTSExpression nt =
+                            replaceVariableImpl(t, varName, replacement);
+                    if (nt == null) {
+                        return null;
+                    }
+                    newTests.add(nt);
+                }
+                ArkTSExpression nv =
+                        replaceVariableImpl(c.getValue(), varName,
+                                replacement);
+                if (nv == null) {
+                    return null;
+                }
+                newCases.add(
+                        new ArkTSAccessExpressions.SwitchExpression
+                                .SwitchExprCase(newTests, nv));
+            }
+            ArkTSExpression newDefault = se.getDefaultValue() != null
+                    ? replaceVariableImpl(se.getDefaultValue(), varName,
+                            replacement)
+                    : null;
+            if (se.getDefaultValue() != null && newDefault == null) {
+                return null;
+            }
+            return new ArkTSAccessExpressions.SwitchExpression(
+                    disc, newCases, newDefault);
+        }
         // CompoundAssignExpression: replace in target and value
         if (expr instanceof ArkTSExpression.CompoundAssignExpression) {
             ArkTSExpression.CompoundAssignExpression ca =
@@ -1028,6 +1071,23 @@ class ExpressionVisitor {
             return countVariableUsage(cond.getTest(), varName)
                     + countVariableUsage(cond.getConsequent(), varName)
                     + countVariableUsage(cond.getAlternate(), varName);
+        }
+        // Switch expression
+        if (expr instanceof ArkTSAccessExpressions.SwitchExpression) {
+            ArkTSAccessExpressions.SwitchExpression se =
+                    (ArkTSAccessExpressions.SwitchExpression) expr;
+            int count = countVariableUsage(se.getDiscriminant(), varName);
+            for (ArkTSAccessExpressions.SwitchExpression.SwitchExprCase c
+                    : se.getCases()) {
+                for (ArkTSExpression t : c.getTests()) {
+                    count += countVariableUsage(t, varName);
+                }
+                count += countVariableUsage(c.getValue(), varName);
+            }
+            if (se.getDefaultValue() != null) {
+                count += countVariableUsage(se.getDefaultValue(), varName);
+            }
+            return count;
         }
         // Array literal
         if (expr instanceof ArkTSAccessExpressions.ArrayLiteralExpression) {

@@ -727,6 +727,10 @@ class InstructionHandler {
                 }
             }
         }
+        // Switch expression: infer from discriminant
+        if (expr instanceof ArkTSAccessExpressions.SwitchExpression) {
+            return "switchResult";
+        }
         return null;
     }
 

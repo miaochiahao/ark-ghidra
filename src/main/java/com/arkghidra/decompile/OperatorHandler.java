@@ -981,6 +981,32 @@ class OperatorHandler {
                 .DynamicImportExpression) {
             return "Promise";
         }
+        if (expr instanceof ArkTSAccessExpressions.SwitchExpression) {
+            // Infer type from case values if all match
+            ArkTSAccessExpressions.SwitchExpression se =
+                    (ArkTSAccessExpressions.SwitchExpression) expr;
+            String firstType = null;
+            for (ArkTSAccessExpressions.SwitchExpression.SwitchExprCase c
+                    : se.getCases()) {
+                String t = getAccType(c.getValue(), typeInf);
+                if (t == null) {
+                    return null;
+                }
+                if (firstType == null) {
+                    firstType = t;
+                } else if (!firstType.equals(t)) {
+                    return null;
+                }
+            }
+            if (se.getDefaultValue() != null) {
+                String dt = getAccType(se.getDefaultValue(), typeInf);
+                if (dt == null || (firstType != null
+                        && !firstType.equals(dt))) {
+                    return null;
+                }
+            }
+            return firstType;
+        }
         return null;
     }
 
