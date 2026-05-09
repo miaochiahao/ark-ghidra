@@ -341,6 +341,9 @@ _This section is updated automatically when lint reveals new patterns to enforce
 - **String cache pre-population:** `DecompilationContext` pre-populates `stringResolveCache` from LNP index at construction time when `abcFile` is non-null. Avoids per-string MUTF-8 decoding overhead during decompilation.
 - **Per-method decompilation timeout:** `ArkTSDecompiler.setMethodTimeoutMs(long)` configures per-method timeout (default 5000ms, 0 = disabled). Timeout checked after CFG construction and after statement generation. Timed-out methods produce `/* decompilation timed out after Nms */` comment body.
 - **Analyzer string annotations:** `ArkBytecodeAnalyzer.annotateStrings()` iterates `abc.getLnpIndex()` to create plate comments at string offsets. `readMutf8String()` is package-visible for testing. Also annotates literal arrays with element counts.
+- **Null method guard:** `decompileMethod(null, null, null)` returns `"/* unknown method */"` instead of NPE. Always null-check method parameter before accessing method.getName().
+- **Disassembler truncated instruction rejection:** `ArkDisassembler` throws `DisassemblyException` for truncated instructions (e.g., LDAI with only 2 bytes instead of 5). Tests should catch this or use try/catch patterns.
+- **Robustness test patterns:** For edge case tests, prefer try/catch with assertions on exception message content, or relaxed assertions (assertNotNull only) rather than asserting specific output format.
 <!-- LINT_RULES_END -->
 
 ---
