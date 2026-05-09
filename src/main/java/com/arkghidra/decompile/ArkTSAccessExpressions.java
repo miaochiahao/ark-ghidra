@@ -220,7 +220,12 @@ public class ArkTSAccessExpressions {
                 } else if (prop.key == null) {
                     joiner.add(prop.value.toArkTS());
                 } else {
-                    joiner.add(prop.key + ": " + prop.value.toArkTS());
+                    String valueStr = prop.value.toArkTS();
+                    if (prop.key.equals(valueStr)) {
+                        joiner.add(prop.key);
+                    } else {
+                        joiner.add(prop.key + ": " + valueStr);
+                    }
                 }
             }
             return "{ " + joiner + " }";
