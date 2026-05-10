@@ -45,8 +45,7 @@ class ObjectKeyResolutionTest {
 
     /**
      * Encodes a string as raw null-terminated bytes (no ULEB128 length
-     * prefix) suitable for LNP string entries read by
-     * {@code AbcFile.readMutf8At()}.
+     * prefix). Used only for legacy fallback testing.
      */
     private static byte[] rawNullTerminated(String s) {
         byte[] strBytes = s.getBytes(java.nio.charset.StandardCharsets.UTF_8);
@@ -81,7 +80,7 @@ class ObjectKeyResolutionTest {
         ByteBuffer bb = ByteBuffer.allocate(bufSize)
                 .order(ByteOrder.LITTLE_ENDIAN);
 
-        int lnpAreaOff = 200;
+        int strAreaOff = 200;
         int stringAreaOff = 500;
         int classAreaOff = 800;
         int codeAreaOff = 2000;
@@ -95,14 +94,14 @@ class ObjectKeyResolutionTest {
         int literalArrayIdxOff = 4330;
         int lnpIdxOff = 4350;
 
-        // --- LNP strings (null-terminated, no ULEB128 length prefix) ---
-        int str0Off = lnpAreaOff;
-        byte[] str0Bytes = rawNullTerminated("name");
+        // --- String constants (proper MUTF-8 with uleb128 length prefix) ---
+        int str0Off = strAreaOff;
+        byte[] str0Bytes = AbcTestFixture.mutf8String("name");
         bb.position(str0Off);
         bb.put(str0Bytes);
 
         int str1Off = str0Off + str0Bytes.length;
-        byte[] str1Bytes = rawNullTerminated("age");
+        byte[] str1Bytes = AbcTestFixture.mutf8String("age");
         bb.position(str1Off);
         bb.put(str1Bytes);
 
@@ -169,12 +168,13 @@ class ObjectKeyResolutionTest {
         bb.put(methodCode);
 
         // --- Region headers ---
+        // method_idx_size=2 points to combined index with 2 string offsets
         bb.position(regionHeaderOff);
         bb.putInt(classAreaOff);
         bb.putInt(codeAreaOff + 200);
         bb.putInt(1);
         bb.putInt(classRegionIdxOff);
-        bb.putInt(1);
+        bb.putInt(2);
         bb.putInt(methodRegionIdxOff);
         bb.putInt(0);
         bb.putInt(fieldRegionIdxOff);
@@ -188,8 +188,10 @@ class ObjectKeyResolutionTest {
         bb.position(classRegionIdxOff);
         bb.putInt(classAreaOff);
 
+        // Combined method/string/literal index: string offsets
         bb.position(methodRegionIdxOff);
-        bb.putInt(0);
+        bb.putInt(str0Off);
+        bb.putInt(str1Off);
 
         bb.position(fieldRegionIdxOff);
 
@@ -482,7 +484,7 @@ class ObjectKeyResolutionTest {
             ByteBuffer bb = ByteBuffer.allocate(bufSize)
                     .order(ByteOrder.LITTLE_ENDIAN);
 
-            int lnpAreaOff = 200;
+            int strAreaOff = 200;
             int stringAreaOff = 400;
             int classAreaOff = 700;
             int codeAreaOff = 1800;
@@ -496,9 +498,9 @@ class ObjectKeyResolutionTest {
             int literalArrayIdxOff = 3230;
             int lnpIdxOff = 3250;
 
-            // LNP string 0: "color" (null-terminated, no length prefix)
-            int str0Off = lnpAreaOff;
-            byte[] str0 = rawNullTerminated("color");
+            // String constant 0: "color" (proper MUTF-8 with length prefix)
+            int str0Off = strAreaOff;
+            byte[] str0 = AbcTestFixture.mutf8String("color");
             bb.position(str0Off);
             bb.put(str0);
 
@@ -556,7 +558,7 @@ class ObjectKeyResolutionTest {
             bb.put(AbcTestFixture.uleb128(0));
             bb.put(methodCode);
 
-            // Region
+            // Region - method_idx_size=1 for combined index with 1 string
             bb.position(regionHeaderOff);
             bb.putInt(classAreaOff);
             bb.putInt(codeAreaOff + 200);
@@ -574,8 +576,9 @@ class ObjectKeyResolutionTest {
             bb.putInt(classAreaOff);
             bb.position(classRegionIdxOff);
             bb.putInt(classAreaOff);
+            // Combined index: string offset for "color"
             bb.position(methodRegionIdxOff);
-            bb.putInt(0);
+            bb.putInt(str0Off);
             bb.position(fieldRegionIdxOff);
             bb.position(protoIdxOff);
             bb.putShort((short) 0x0007);

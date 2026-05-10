@@ -59,8 +59,18 @@ public class AbcFile {
     private final Map<Integer, AbcDebugInfo> debugInfoCache = new HashMap<>();
 
     /**
-     * Cache of LNP string index to decoded string. Populated once on first
-     * access, then shared across all decompilation contexts for this file.
+     * Combined method/string/literal index from region headers.
+     * In ABC files, the region header's method_idx_off/size points to a
+     * MethodStringLiteralRegionIndex -- a combined array of offsets that
+     * includes methods, string constants, and literal arrays.
+     * LDA_STR's string_id indexes into this combined array.
+     */
+    private final List<Long> combinedIndex;
+
+    /**
+     * Cache of string index to decoded string. Populated once on first
+     * access from the combined method/string/literal index, then shared
+     * across all decompilation contexts for this file.
      * Eliminates per-method string re-decoding overhead.
      */
     private volatile String[] lnpStringCache;
@@ -116,6 +126,7 @@ public class AbcFile {
         this.lnpIndex = Collections.unmodifiableList(lnpIndex);
         this.literalArrayIndex = Collections.unmodifiableList(literalArrayIndex);
         this.rawData = rawData;
+        this.combinedIndex = buildCombinedIndex();
         initModuleRecordOffsets();
     }
 
@@ -181,6 +192,38 @@ public class AbcFile {
                 annotationToClassIdx, annotationToFieldOff,
                 annotationToMethodOff);
         return abcFile;
+    }
+
+    /**
+     * Builds the combined method/string/literal index from all region headers.
+     * In ABC files (as opposed to standard Panda), the region header's
+     * method_idx_off/method_idx_size fields point to a combined index
+     * (MethodStringLiteralRegionIndex) that interleaves method offsets,
+     * string constant offsets, and literal array offsets.
+     * LDA_STR's string_id indexes into this combined array.
+     *
+     * @return the combined index, or an empty list if no region headers exist
+     */
+    private List<Long> buildCombinedIndex() {
+        if (rawData == null || regionHeaders.isEmpty()) {
+            return Collections.emptyList();
+        }
+        // Use the first region header's combined index
+        // (typically there's only one region for most ABC files)
+        AbcRegionHeader rh = regionHeaders.get(0);
+        long idxSize = rh.getMethodIdxSize();
+        long idxOff = rh.getMethodIdxOff();
+        if (idxSize <= 0 || idxSize > 65536
+                || idxOff <= 0 || idxOff >= rawData.length) {
+            return Collections.emptyList();
+        }
+        List<Long> result = new ArrayList<>((int) idxSize);
+        AbcReader r = new AbcReader(rawData);
+        r.position((int) idxOff);
+        for (int i = 0; i < (int) idxSize; i++) {
+            result.add(r.readU32());
+        }
+        return Collections.unmodifiableList(result);
     }
 
     /**
@@ -737,10 +780,11 @@ public class AbcFile {
 
     /**
      * Resolves a string by LNP index using a file-level cache.
-     * The cache is populated lazily on first access and shared across
-     * all decompilation contexts, avoiding per-method re-decoding.
+     * The cache is populated lazily on first access from the combined
+     * method/string/literal index in the region header, and shared across
+     * all decompilation contexts for this file.
      *
-     * @param stringIdx the LNP string index
+     * @param stringIdx the string index (from LDA_STR's string_id operand)
      * @return the decoded string, or a placeholder if resolution fails
      */
     public String resolveStringByIndex(int stringIdx) {
@@ -759,15 +803,35 @@ public class AbcFile {
     }
 
     private String[] buildLnpStringCache() {
-        List<Long> index = lnpIndex;
+        // Use the combined method/string/literal index from region headers,
+        // not the LNP index. LDA_STR's string_id indexes into this combined
+        // array, which interleaves method offsets, string constants, and
+        // literal arrays.
+        List<Long> index = combinedIndex;
+        if (index.isEmpty()) {
+            // Fallback to lnpIndex for backward compatibility with files
+            // that may use the standard Panda format (separate indexes)
+            index = lnpIndex;
+        }
         String[] cache = new String[index.size()];
         if (rawData == null) {
             return cache;
         }
+        // Each offset in the combined index points to a Panda String structure:
+        // uleb128 utf16_length followed by null-terminated MUTF-8 data.
+        // AbcReader.readMutf8() handles this format correctly.
+        // Non-string entries (methods, literal arrays) will fail to parse
+        // and are left as null in the cache.
+        AbcReader reader = new AbcReader(rawData);
         for (int i = 0; i < index.size(); i++) {
             long off = index.get(i);
-            if (off >= 0 && off < rawData.length) {
-                cache[i] = readMutf8At(rawData, (int) off);
+            if (off > 0 && off < rawData.length) {
+                try {
+                    reader.position((int) off);
+                    cache[i] = reader.readMutf8();
+                } catch (Exception e) {
+                    // Not a valid String structure -- skip
+                }
             }
         }
         return cache;

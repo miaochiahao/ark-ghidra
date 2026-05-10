@@ -292,7 +292,8 @@ class DeclarationBuilder {
 
         List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
                 MethodSignatureBuilder.buildParamsWithDefaults(proto, code,
-                        decompiler.getDebugParamNames(method, abcFile));
+                        decompiler.getDebugParamNames(method, abcFile),
+                        abcFile);
         String returnType = MethodSignatureBuilder.getReturnType(proto);
         ArkTSStatement body =
                 new ArkTSStatement.BlockStatement(bodyStmts);
@@ -390,7 +391,8 @@ class DeclarationBuilder {
 
         List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
                 MethodSignatureBuilder.buildParamsWithDefaults(proto, code,
-                        decompiler.getDebugParamNames(method, abcFile));
+                        decompiler.getDebugParamNames(method, abcFile),
+                        abcFile);
 
         // Detect parameter properties: params assigned to this.paramName
         List<ConstructorParamProperty> paramProps =

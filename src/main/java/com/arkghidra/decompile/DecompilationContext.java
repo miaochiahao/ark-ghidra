@@ -295,19 +295,10 @@ public class DecompilationContext {
 
     private String resolveStringUncached(int stringIdx) {
         if (abcFile != null) {
-            try {
-                List<Long> lnpIndex = abcFile.getLnpIndex();
-                if (stringIdx >= 0 && stringIdx < lnpIndex.size()) {
-                    long strOff = lnpIndex.get(stringIdx);
-                    byte[] data = abcFile.getRawData();
-                    if (data != null && strOff >= 0
-                            && strOff < data.length) {
-                        return readMutf8At(data, (int) strOff);
-                    }
-                }
-            } catch (Exception e) {
-                // Fall through to placeholder
-            }
+            // resolveString() already delegates to abcFile.resolveStringByIndex()
+            // which uses the combined index. This method is only reached when
+            // the file-level cache is not available, so delegate directly.
+            return abcFile.resolveStringByIndex(stringIdx);
         }
         return "str_" + stringIdx;
     }

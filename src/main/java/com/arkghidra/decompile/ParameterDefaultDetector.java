@@ -7,6 +7,7 @@ import com.arkghidra.disasm.ArkDisassembler;
 import com.arkghidra.disasm.ArkInstruction;
 import com.arkghidra.disasm.ArkOperand;
 import com.arkghidra.format.AbcCode;
+import com.arkghidra.format.AbcFile;
 
 /**
  * Detects parameter default values from a method's instruction prologue.
@@ -444,6 +445,22 @@ class ParameterDefaultDetector {
      * @return list of detected defaults
      */
     static List<ParamDefault> detectDefaults(AbcCode code, int numArgs) {
+        return detectDefaults(code, numArgs, null);
+    }
+
+    /**
+     * Detects parameter defaults from an AbcCode section with string resolution.
+     *
+     * <p>When abcFile is provided, resolves str_N placeholders from LDA_STR
+     * instructions into actual string constants.
+     *
+     * @param code the ABC code section (may be null)
+     * @param numArgs the number of declared arguments
+     * @param abcFile the ABC file for string resolution (may be null)
+     * @return list of detected defaults
+     */
+    static List<ParamDefault> detectDefaults(AbcCode code, int numArgs,
+            AbcFile abcFile) {
         if (code == null || code.getInstructions() == null
                 || code.getCodeSize() == 0 || numArgs == 0) {
             List<ParamDefault> empty = new ArrayList<>(numArgs);
@@ -456,6 +473,28 @@ class ParameterDefaultDetector {
         List<ArkInstruction> instructions =
                 disasm.disassemble(code.getInstructions(),
                         0, (int) code.getCodeSize());
-        return detectDefaults(instructions, numArgs);
+        List<ParamDefault> result =
+                detectDefaults(instructions, numArgs);
+
+        // Post-process: resolve str_N placeholders using AbcFile
+        if (abcFile != null) {
+            for (int i = 0; i < result.size(); i++) {
+                ParamDefault pd = result.get(i);
+                if (pd != null && pd.defaultValue != null
+                        && pd.defaultValue.startsWith("str_")) {
+                    try {
+                        int idx = Integer.parseInt(
+                                pd.defaultValue.substring(4));
+                        String resolved =
+                                abcFile.resolveStringByIndex(idx);
+                        result.set(i, new ParamDefault(
+                                resolved, pd.isOptional));
+                    } catch (NumberFormatException e) {
+                        // Not a str_N placeholder, leave as-is
+                    }
+                }
+            }
+        }
+        return result;
     }
 }

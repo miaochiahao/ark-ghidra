@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.List;
 
 import com.arkghidra.format.AbcCode;
+import com.arkghidra.format.AbcFile;
 import com.arkghidra.format.AbcMethod;
 import com.arkghidra.format.AbcProto;
 
@@ -137,6 +138,21 @@ public class MethodSignatureBuilder {
     public static List<ArkTSDeclarations.FunctionDeclaration.FunctionParam>
             buildParamsWithDefaults(AbcProto proto, AbcCode code,
                     List<String> debugNames) {
+        return buildParamsWithDefaults(proto, code, debugNames, null);
+    }
+
+    /**
+     * Builds parameter list with defaults and string resolution.
+     *
+     * @param proto the method prototype
+     * @param code the method's code section (for scanning defaults)
+     * @param debugNames the debug parameter names (may be null or contain nulls)
+     * @param abcFile the ABC file for string resolution (may be null)
+     * @return the list of parameters with defaults applied
+     */
+    public static List<ArkTSDeclarations.FunctionDeclaration.FunctionParam>
+            buildParamsWithDefaults(AbcProto proto, AbcCode code,
+                    List<String> debugNames, AbcFile abcFile) {
         long numArgs = code != null ? code.getNumArgs() : 0;
         List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
                 buildParams(proto, numArgs, debugNames);
@@ -147,7 +163,7 @@ public class MethodSignatureBuilder {
 
         List<ParameterDefaultDetector.ParamDefault> defaults =
                 ParameterDefaultDetector.detectDefaults(
-                        code, (int) numArgs);
+                        code, (int) numArgs, abcFile);
 
         List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> result =
                 new ArrayList<>();

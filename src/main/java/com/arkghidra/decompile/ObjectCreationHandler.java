@@ -466,8 +466,9 @@ class ObjectCreationHandler {
                     ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
         }
         if (opcode == ArkOpcodesCompat.LDA_STR) {
-            return new ArkTSExpression.LiteralExpression(
-                    "str_" + insn.getOperands().get(0).getValue(),
+            String resolved = ctx.resolveString(
+                    (int) insn.getOperands().get(0).getValue());
+            return new ArkTSExpression.LiteralExpression(resolved,
                     ArkTSExpression.LiteralExpression.LiteralKind.STRING);
         }
         if (opcode == ArkOpcodesCompat.LDTRUE) {
