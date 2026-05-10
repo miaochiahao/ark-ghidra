@@ -902,11 +902,25 @@ class DeclarationBuilder {
         if (rawName == null || rawName.isEmpty()) {
             return "AnonymousClass";
         }
-        int lastSlash = rawName.lastIndexOf('/');
-        if (lastSlash >= 0 && lastSlash < rawName.length() - 1) {
-            return rawName.substring(lastSlash + 1);
+        String name = rawName;
+        // Strip L prefix and ; suffix from ABC class name format (Lcom/example/Foo;)
+        if (name.startsWith("L") && name.endsWith(";")) {
+            name = name.substring(1, name.length() - 1);
         }
-        return rawName;
+        // Strip module version suffix (&1.0.3) — find last & followed by digits
+        int lastAmp = name.lastIndexOf('&');
+        if (lastAmp > 0) {
+            String afterAmp = name.substring(lastAmp + 1);
+            if (afterAmp.matches("\\d[\\d.]*")) {
+                name = name.substring(0, lastAmp);
+            }
+        }
+        // Take the last path component
+        int lastSlash = name.lastIndexOf('/');
+        if (lastSlash >= 0 && lastSlash < name.length() - 1) {
+            return name.substring(lastSlash + 1);
+        }
+        return name;
     }
 
     /**

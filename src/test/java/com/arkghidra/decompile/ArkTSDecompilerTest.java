@@ -6840,6 +6840,28 @@ class ArkTSDecompilerTest {
     }
 
     @Test
+    void testDeclarationBuilder_sanitizeClassName() {
+        assertEquals("MyClass",
+                DeclarationBuilder.sanitizeClassName("Lcom/example/MyClass;"));
+        assertEquals("Index",
+                DeclarationBuilder.sanitizeClassName(
+                        "L&@hadss/super_fast_file_trans/Index&1.0.3;"));
+        assertEquals("DownloadConstants",
+                DeclarationBuilder.sanitizeClassName(
+                        "L&@pkg/module/DownloadConstants&1.0.3;"));
+        assertEquals("Foo",
+                DeclarationBuilder.sanitizeClassName("LFoo;"));
+        assertEquals("Bar",
+                DeclarationBuilder.sanitizeClassName("Bar"));
+        assertEquals("AnonymousClass",
+                DeclarationBuilder.sanitizeClassName(null));
+        assertEquals("AnonymousClass",
+                DeclarationBuilder.sanitizeClassName(""));
+        assertEquals("Baz",
+                DeclarationBuilder.sanitizeClassName("a/b/c/Baz"));
+    }
+
+    @Test
     void testDeclarationBuilder_isGetterMethod() {
         assertTrue(DeclarationBuilder.isGetterMethod("get_value"));
         assertTrue(DeclarationBuilder.isGetterMethod("get_name"));
