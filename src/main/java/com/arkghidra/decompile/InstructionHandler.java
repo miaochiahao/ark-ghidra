@@ -67,12 +67,19 @@ class InstructionHandler {
         }
 
         // --- Throw (0xFE-prefixed) instructions ---
+        // Only sub-opcode 0x00 (throw) is a real throw statement.
+        // Sub-opcodes 0x01-0x09 are runtime assertion checks
+        // (throw.notexists, throw.undefinedifhole, etc.) inserted
+        // by the compiler — they should not appear in decompiled output.
         if (insn.isThrow()) {
-            ArkTSExpression val = accValue != null
-                    ? accValue
-                    : new ArkTSExpression.VariableExpression(ACC);
-            return new StatementResult(
-                    new ArkTSStatement.ThrowStatement(val), null);
+            if (rawOpcode == ArkOpcodes.THROW) {
+                ArkTSExpression val = accValue != null
+                        ? accValue
+                        : new ArkTSExpression.VariableExpression(ACC);
+                return new StatementResult(
+                        new ArkTSStatement.ThrowStatement(val), null);
+            }
+            return StatementResult.NO_OP;
         }
 
         // --- Loads that set the accumulator ---

@@ -12527,6 +12527,41 @@ class ArkTSDecompilerTest {
     }
 
     @Test
+    void testThrowPrefix_notExists_producesNoOp() {
+        // throw.notexists (0xFE 0x01) is a runtime assertion,
+        // not a real throw — should produce no output
+        byte[] code = concat(
+                bytes(0x62), le32(42),       // ldai 42    offset 0
+                bytes(0x61, 0x00),           // sta v0     offset 5
+                bytes(0xFE, 0x01),           // throw.notexists  offset 7
+                bytes(0x60, 0x00),           // lda v0     offset 9
+                bytes(0x64)                  // return     offset 11
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertFalse(result.contains("throw"),
+                "throw.notexists should not emit throw, got: " + result);
+        assertTrue(result.contains("return"),
+                "Should contain return statement, got: " + result);
+    }
+
+    @Test
+    void testThrowPrefix_undefinedIfHole_producesNoOp() {
+        // throw.undefinedifhole (0xFE 0x06) is a TDZ check — no output
+        byte[] code = concat(
+                bytes(0x62), le32(1),        // ldai 1     offset 0
+                bytes(0x61, 0x00),           // sta v0     offset 5
+                bytes(0xFE, 0x06, 0x00, 0x01), // throw.undefinedifhole v0, v1  offset 7
+                bytes(0x60, 0x00),           // lda v0     offset 11
+                bytes(0x64)                  // return     offset 13
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertFalse(result.contains("throw"),
+                "throw.undefinedifhole should not emit throw, got: " + result);
+    }
+
+    @Test
     void testNestedTryCatch_innerTypedOuterGeneric() {
         // Build nested try: inner has typed catch, outer has catch-all
         // Inner try: offsets 0-7, typed catch at 8

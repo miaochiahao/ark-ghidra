@@ -103,7 +103,7 @@ public class ControlFlowGraph {
         // Instruction after a terminator is a leader (fall-through start)
         for (int i = 0; i < instructions.size(); i++) {
             ArkInstruction insn = instructions.get(i);
-            if (ArkOpcodesCompat.isTerminator(insn.getOpcode())) {
+            if (isTerminatorInstruction(insn)) {
                 int nextOffset = insn.getNextOffset();
                 // Check if there is a next instruction
                 if (i + 1 < instructions.size()
@@ -201,6 +201,18 @@ public class ControlFlowGraph {
      * @param insn the instruction
      * @return the absolute target offset, or -1
      */
+    private static boolean isTerminatorInstruction(ArkInstruction insn) {
+        if (ArkOpcodesCompat.isTerminator(insn.getOpcode())) {
+            return true;
+        }
+        // Throw-prefixed instructions: only real throw (sub-opcode 0x00)
+        // terminates control flow; runtime assertion throws do not.
+        if (insn.isThrow()) {
+            return insn.getOpcode() == ArkOpcodes.THROW;
+        }
+        return false;
+    }
+
     private static int getJumpTarget(ArkInstruction insn) {
         int opcode = insn.getOpcode();
         List<ArkOperand> operands = insn.getOperands();
