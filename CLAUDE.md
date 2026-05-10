@@ -182,12 +182,25 @@ Many Ark instructions have **multiple `opcode_idx` values** — an 8-bit IC slot
 
 **Authoritative source:** `https://gitee.com/openharmony/arkcompiler_runtime_core/raw/master/isa/isa.yaml` — contains all opcode_idx values, formats, and properties. Always consult this when adding opcode support.
 - **Class-level catch still exists** in `ArkTSDecompiler.decompileFile()` as a safety net for non-method errors (field parsing, decorator detection, etc.).
-- **Known issue:** "Not enough bytes for instruction" errors at offset 5 are common in real .abc files — likely ABC version differences in method body format. These are now isolated to individual methods AND produce partial disassembly instead of total failure.
+
+### E2E Test Pipeline
+
+- **Ghidra extension must be rebuilt and reinstalled** before running headless E2E tests. The headless script uses the installed extension JAR, not the local build. Without reinstalling, old code produces false errors.
+- **ABC_BLOCK_PADDING:** HAP loader uses dynamic spacing based on actual block sizes, with 1MB alignment. Previous fixed 1MB spacing caused memory conflicts for large ABC blocks (>1MB).
+- **Encoding:** Use `result.getBytes(StandardCharsets.UTF_8)` + `Files.write()` instead of `Files.writeString()` to handle unmappable characters in decompiled output.
+- **Shell compatibility:** Use `while IFS= read -r` instead of bash-only `mapfile` in test scripts.
+
+### Output Quality
+
+- **sanitizeClassName:** Strips `L...;` wrapper, `&version` suffix, and extracts short name from ABC class names (e.g., `L&@pkg/Index&1.0.3;` → `Index`).
+- **sanitizePropertyName:** Replaces control characters with `_XX` hex escapes in property names.
+- **MemberExpression:** Falls back to bracket notation for non-identifier property names.
 
 ### Loop Iteration Notes
 
-- **Open issues as of 2026-05-10:** #25 (test with real .abc files), #72 (module.json5), #73 (UI jumps), #184 (JEB-like UI). #183 (assignment-in-condition) was closed.
-- **Priority for next iteration:** Investigate the "Not enough bytes" root cause in `AbcFile.parseCode()` — the method body format may have additional ULEB128 fields in newer ABC versions. Also: string decoding/obfuscation resolution, missing opcode handlers (unknown_91, unknown_C1, unknown_D1), and module metadata formatting improvements.
+- **Open issues as of 2026-05-11:** #72 (module.json5), #73 (UI jumps), #184 (JEB-like UI). All are UI/UX features requiring Ghidra plugin API.
+- **E2E stats:** 27,337 methods across 5 HAP files, 0 failures, 0 timeouts, 0 unhandled opcodes.
+- **Priority:** UI features (#184, #73, #72) or further decompiler output quality improvements.
 - **Wide opcode format:** Wide sub-opcodes are in the 0x80+ range. Sub-opcodes below 0x80 (like 0x28) produce `wide_unknown_XX` mnemonic with UNKNOWN format (length=1) — they don't throw. Test only recognized wide opcodes when testing truncation behavior.
 
 ---
