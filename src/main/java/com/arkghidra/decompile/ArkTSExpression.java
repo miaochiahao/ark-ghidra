@@ -469,7 +469,28 @@ public abstract class ArkTSExpression {
                 }
                 return object.toArkTS() + "[" + property.toArkTS() + "]";
             }
-            return object.toArkTS() + "." + property.toArkTS();
+            // For dot notation, check if the property is a valid identifier
+            String propStr = property.toArkTS();
+            if (isValidDotProperty(propStr)) {
+                return object.toArkTS() + "." + propStr;
+            }
+            // Fall back to bracket notation for non-identifier names
+            return object.toArkTS() + "[\"" + propStr + "\"]";
+        }
+
+        private static boolean isValidDotProperty(String name) {
+            if (name == null || name.isEmpty()) {
+                return false;
+            }
+            if (!Character.isJavaIdentifierStart(name.charAt(0))) {
+                return false;
+            }
+            for (int i = 1; i < name.length(); i++) {
+                if (!Character.isJavaIdentifierPart(name.charAt(i))) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         private static String tryExtractIdentifier(ArkTSExpression expr) {
