@@ -538,14 +538,13 @@ class DeclarationBuilder {
             boolean isAbstractClass, Set<String> superMethodNames) {
         String methodName = method.getName();
 
-        // Check for getter pattern: method name starts with "get_"
-        // or the method is annotated as a getter
-        if (isGetterMethod(methodName)) {
+        // Check for getter: get_ prefix or ABC-encoded accessor with 0 params
+        if (isGetterMethod(method, abcFile)) {
             return buildGetterDeclaration(method, abcFile);
         }
 
-        // Check for setter pattern: method name starts with "set_"
-        if (isSetterMethod(methodName)) {
+        // Check for setter: set_ prefix or ABC-encoded accessor with 1 param
+        if (isSetterMethod(method, abcFile)) {
             return buildSetterDeclaration(method, abcFile);
         }
 
@@ -1026,17 +1025,56 @@ class DeclarationBuilder {
                 && methodName.length() > 4;
     }
 
-    /**
-     * Returns true if the method name indicates a setter accessor.
-     * Setter methods in Ark bytecode are named "set_PropertyName".
-     *
-     * @param methodName the method name
-     * @return true if this is a setter
-     */
+    boolean isGetterMethod(AbcMethod method, AbcFile abcFile) {
+        String name = method.getName();
+        if (isGetterMethod(name)) {
+            return true;
+        }
+        if (name != null && name.startsWith("#~@")
+                && isAccessorPrefix(name)) {
+            AbcProto proto = decompiler.resolveProto(method, abcFile);
+            int paramCount = proto != null
+                    ? proto.getShorty().size() - 1 : 0;
+            return paramCount == 0;
+        }
+        return false;
+    }
+
     static boolean isSetterMethod(String methodName) {
         return methodName != null
                 && methodName.startsWith("set_")
                 && methodName.length() > 4;
+    }
+
+    boolean isSetterMethod(AbcMethod method, AbcFile abcFile) {
+        String name = method.getName();
+        if (isSetterMethod(name)) {
+            return true;
+        }
+        if (name != null && name.startsWith("#~@")
+                && isAccessorPrefix(name)) {
+            AbcProto proto = decompiler.resolveProto(method, abcFile);
+            int paramCount = proto != null
+                    ? proto.getShorty().size() - 1 : 0;
+            return paramCount == 1;
+        }
+        return false;
+    }
+
+    static boolean isAccessorPrefix(String name) {
+        if (!name.startsWith("#~@")) {
+            return false;
+        }
+        for (int i = 3; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (c == '<') {
+                return true;
+            }
+            if (c == '>' || c == '=') {
+                return false;
+            }
+        }
+        return false;
     }
 
     /**

@@ -14597,4 +14597,26 @@ class ArkTSDecompilerTest {
                 ArkTSDecompiler.removeAlwaysFalseConditions(stmts);
         assertEquals(1, result.size());
     }
+
+    // --- ABC getter/setter detection ---
+
+    @Test
+    void testIsAccessorPrefix() {
+        assertTrue(DeclarationBuilder.isAccessorPrefix("#~@4<#circleArea"));
+        assertTrue(DeclarationBuilder.isAccessorPrefix("#~@0<#value"));
+        assertFalse(DeclarationBuilder.isAccessorPrefix("#~@0>#onCreate"));
+        assertFalse(DeclarationBuilder.isAccessorPrefix("#~@1=#Dog"));
+        assertFalse(DeclarationBuilder.isAccessorPrefix("#*#test"));
+        assertFalse(DeclarationBuilder.isAccessorPrefix("get_value"));
+    }
+
+    @Test
+    void testGetterSetterMethod_withAbcEncoding() {
+        // ABC-encoded getter: #~@4<#circleArea with 0 extra params
+        AbcMethod getterMethod = new AbcMethod(0, 0,
+                "#~@4<#circleArea", 0, 0, 0);
+        assertTrue(DeclarationBuilder.isAccessorPrefix(
+                getterMethod.getName()));
+        assertFalse(DeclarationBuilder.isAccessorPrefix("#~@0>#method"));
+    }
 }
