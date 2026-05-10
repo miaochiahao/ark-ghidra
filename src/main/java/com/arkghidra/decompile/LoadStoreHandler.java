@@ -842,37 +842,22 @@ class LoadStoreHandler {
             int varIdx, DecompilationContext ctx) {
         if (ctx != null && ctx.abcFile != null) {
             try {
+                // Try the current method's class first
+                int classIdx = ctx.method.getClassIdx();
+                String resolved = resolveFromModuleRecord(
+                        classIdx, varIdx, ctx);
+                if (resolved != null) {
+                    return resolved;
+                }
+                // Fallback: scan all classes
                 for (int ci = 0;
                         ci < ctx.abcFile.getClasses().size(); ci++) {
-                    com.arkghidra.format.AbcModuleRecord record =
-                            ctx.abcFile.getModuleRecord(ci);
-                    if (record == null) {
+                    if (ci == classIdx) {
                         continue;
                     }
-                    List<com.arkghidra.format
-                            .AbcModuleRecord.RegularImport> regImports =
-                            record.getRegularImports();
-                    if (varIdx >= 0 && varIdx < regImports.size()) {
-                        String localName = ctx.abcFile.getSourceFileName(
-                                regImports.get(varIdx)
-                                        .getLocalNameOffset());
-                        if (localName != null) {
-                            return localName;
-                        }
-                    }
-                    // Namespace imports follow regular imports
-                    int nsBase = regImports.size();
-                    List<com.arkghidra.format
-                            .AbcModuleRecord.NamespaceImport> nsImports =
-                            record.getNamespaceImports();
-                    int nsIdx = varIdx - nsBase;
-                    if (nsIdx >= 0 && nsIdx < nsImports.size()) {
-                        String localName = ctx.abcFile.getSourceFileName(
-                                nsImports.get(nsIdx)
-                                        .getLocalNameOffset());
-                        if (localName != null) {
-                            return localName;
-                        }
+                    resolved = resolveFromModuleRecord(ci, varIdx, ctx);
+                    if (resolved != null) {
+                        return resolved;
                     }
                 }
             } catch (Exception e) {
@@ -880,6 +865,39 @@ class LoadStoreHandler {
             }
         }
         return "import_" + varIdx;
+    }
+
+    private static String resolveFromModuleRecord(int classIdx,
+            int varIdx, DecompilationContext ctx) {
+        com.arkghidra.format.AbcModuleRecord record =
+                ctx.abcFile.getModuleRecord(classIdx);
+        if (record == null) {
+            return null;
+        }
+        List<com.arkghidra.format
+                .AbcModuleRecord.RegularImport> regImports =
+                record.getRegularImports();
+        if (varIdx >= 0 && varIdx < regImports.size()) {
+            String localName = ctx.abcFile.getSourceFileName(
+                    regImports.get(varIdx).getLocalNameOffset());
+            if (localName != null && !localName.isEmpty()) {
+                return localName;
+            }
+        }
+        // Namespace imports follow regular imports
+        int nsBase = regImports.size();
+        List<com.arkghidra.format
+                .AbcModuleRecord.NamespaceImport> nsImports =
+                record.getNamespaceImports();
+        int nsIdx = varIdx - nsBase;
+        if (nsIdx >= 0 && nsIdx < nsImports.size()) {
+            String localName = ctx.abcFile.getSourceFileName(
+                    nsImports.get(nsIdx).getLocalNameOffset());
+            if (localName != null && !localName.isEmpty()) {
+                return localName;
+            }
+        }
+        return null;
     }
 
     /**
