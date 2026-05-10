@@ -65,6 +65,36 @@ Output goes to `build/ghidra_test_output/`: decompiled `.ts` files, per-HAP logs
 
 Requires: Ghidra extension installed at `~/Documents/ghidra_12.0.4_PUBLIC/Ghidra/Extensions/ark-ghidra/` (run `./gradlew buildExtension` and unzip `build/dist/*.zip` to that location first).
 
+### Building Test HAPs from Source
+
+Use DevEco Studio's toolchain to compile ArkTS source into HAP files for decompiler validation.
+
+**Prerequisites**: DevEco Studio installed at `/Applications/DevEco-Studio.app` (SDK API 24, v6.1.1.115).
+
+**Project location**: `/Users/anakin/DevEcoStudioProjects/MyApplication/`
+
+**Build command**:
+```bash
+cd /Users/anakin/DevEcoStudioProjects/MyApplication && \
+export DEVECO_SDK_HOME=/Applications/DevEco-Studio.app/Contents/sdk && \
+/Applications/DevEco-Studio.app/Contents/tools/node/bin/node \
+  /Applications/DevEco-Studio.app/Contents/tools/hvigor/bin/hvigorw.js \
+  --mode module -p module=entry@default -p product=default assembleHap --no-daemon
+```
+
+**Output**: `entry/build/default/outputs/default/entry-default-unsigned.hap`
+
+**Full validation workflow**:
+```bash
+# 1. Edit source in /Users/anakin/DevEcoStudioProjects/MyApplication/entry/src/main/ets/pages/Index.ets
+# 2. Build HAP
+# 3. Decompile
+./scripts/ghidra_headless_decompile_test.sh /Users/anakin/DevEcoStudioProjects/MyApplication/entry/build/default/outputs/default/entry-default-unsigned.hap
+# 4. Compare: data/test_hap/arkts-decompile-test_original_index.ets vs build/ghidra_test_output/arkts-decompile-test.hap__abc_0.ts
+```
+
+**ArkTS strict mode restrictions**: No `enum` merging, no constructor property declarations (`private x: string` in constructor params), no nested functions, no `any`/`unknown` types. Use explicit field declarations in the class body instead.
+
 ---
 
 ## Claude Loop Workflow
@@ -198,9 +228,10 @@ Many Ark instructions have **multiple `opcode_idx` values** — an 8-bit IC slot
 
 ### Loop Iteration Notes
 
-- **Open issues as of 2026-05-11:** #72 (module.json5), #73 (UI jumps), #184 (JEB-like UI). All are UI/UX features requiring Ghidra plugin API.
-- **E2E stats:** 27,337 methods across 5 HAP files, 0 failures, 0 timeouts, 0 unhandled opcodes.
-- **Priority:** UI features (#184, #73, #72) or further decompiler output quality improvements.
+- **Open issues as of 2026-05-11:** #72 (module.json5), #73 (UI jumps), #184 (JEB-like UI), #185 (decompiler quality audit with known-source HAP). #185 is the current priority.
+- **E2E stats:** 27,337 methods across 5 HAP files (real-world), 52 methods on known-source test HAP — 0 failures, 0 timeouts across all.
+- **Known-source test HAP:** Built from `/Users/anakin/DevEcoStudioProjects/MyApplication` with explicit code patterns (if/else, switch, for, while, class, inheritance, static members, lambdas, recursion). See `data/test_hap/arkts-decompile-test_original_index.ets` for original source.
+- **Priority:** Fix decompiler quality issues identified in #185 (method names, control flow, strings, imports, unhandled opcodes E0/E1/DD/DE/DF).
 - **Wide opcode format:** Wide sub-opcodes are in the 0x80+ range. Sub-opcodes below 0x80 (like 0x28) produce `wide_unknown_XX` mnemonic with UNKNOWN format (length=1) — they don't throw. Test only recognized wide opcodes when testing truncation behavior.
 
 ---
