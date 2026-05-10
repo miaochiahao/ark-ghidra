@@ -2100,10 +2100,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testDecompile_throw() {
-        // lda.str 0; throw
+        // lda.str 0; throw (0xFE 0x00 = throw sub-opcode 0)
         byte[] code = concat(
             bytes(0x3E, 0x00, 0x00),  // lda.str 0
-            bytes(0xFE)                // throw (0xFE is PREFIX_THROW)
+            bytes(0xFE, 0x00)         // throw
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
@@ -9103,7 +9103,7 @@ class ArkTSDecompilerTest {
                 bytes(0x62), le32(42),    // ldai 42       offset 0
                 bytes(0x61, 0x00),         // sta v0        offset 5
                 bytes(0x60, 0x00),         // lda v0        offset 7
-                bytes(0xFE)                // throw         offset 9
+                bytes(0xFE, 0x00)         // throw         offset 9
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
@@ -9213,7 +9213,7 @@ class ArkTSDecompilerTest {
         // lda.str 0 -> throw  (throws the string value)
         byte[] code = concat(
                 bytes(0x3E, 0x00, 0x00),       // lda.str 0    offset 0
-                bytes(0xFE)                      // throw        offset 3
+                bytes(0xFE, 0x00)             // throw        offset 3
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
@@ -9260,7 +9260,7 @@ class ArkTSDecompilerTest {
                 bytes(0x62), le32(0),          // ldai 0        offset 0
                 bytes(0x61, 0x00),             // sta v0         offset 5
                 bytes(0x60, 0x00),             // lda v0         offset 7
-                bytes(0xFE)                      // throw          offset 9
+                bytes(0xFE, 0x00)             // throw          offset 9
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
@@ -12390,7 +12390,7 @@ class ArkTSDecompilerTest {
                 bytes(0x08, 0x01, 0x00, 0x00),  // newobjrange 1, 0, v0  offset 7
                 bytes(0x61, 0x01),              // sta v1     offset 11
                 bytes(0x60, 0x01),              // lda v1     offset 13
-                bytes(0xFE)                      // throw      offset 15
+                bytes(0xFE, 0x00)                // throw      offset 15
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);

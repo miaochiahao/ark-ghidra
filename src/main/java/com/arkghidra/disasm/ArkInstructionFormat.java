@@ -136,6 +136,8 @@ public enum ArkInstructionFormat {
     /** CallRuntime: prefix + sub-opcode + 8-bit immediate + 8-bit immediate
      *  + 8-bit register. */
     PREF_IMM8_IMM8_V8(5),
+    /** Throw: prefix + sub-opcode + two 8-bit registers. */
+    PREF_V8_V8(4),
 
     /** Opcode + two 16-bit immediates (16-bit IC variant). */
     IMM16_IMM16(5),

@@ -101,6 +101,15 @@ public class ArkInstruction {
     }
 
     /**
+     * Returns true if this is a throw (0xFE-prefixed) instruction.
+     *
+     * @return true if throw prefixed
+     */
+    public boolean isThrow() {
+        return mnemonic.startsWith("throw");
+    }
+
+    /**
      * Returns the byte offset immediately following this instruction.
      *
      * @return offset + length

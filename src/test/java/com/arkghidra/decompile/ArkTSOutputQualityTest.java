@@ -1151,7 +1151,7 @@ class ArkTSOutputQualityTest {
             byte[] code = concat(bytes(0x62), le32(42),
                     bytes(0x61, 0x00),
                     bytes(0x60, 0x00),
-                    bytes(0xFE));
+                    bytes(0xFE, 0x00));
             List<ArkInstruction> insns = dis(code);
             String result = decompiler.decompileInstructions(insns);
             assertTrue(result.contains("throw 42"),

@@ -65,6 +65,15 @@ class InstructionHandler {
             return handleCallRuntime(rawOpcode, operands, accValue, ctx);
         }
 
+        // --- Throw (0xFE-prefixed) instructions ---
+        if (insn.isThrow()) {
+            ArkTSExpression val = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            return new StatementResult(
+                    new ArkTSStatement.ThrowStatement(val), null);
+        }
+
         // --- Loads that set the accumulator ---
         switch (opcode) {
             case ArkOpcodesCompat.LDAI: {
@@ -364,15 +373,6 @@ class InstructionHandler {
                     : new ArkTSExpression.VariableExpression(ACC);
             return new StatementResult(null,
                     new ArkTSExpression.UnaryExpression("!", operand, true));
-        }
-
-        // --- Throw ---
-        if (opcode == ArkOpcodesCompat.THROW) {
-            ArkTSExpression val = accValue != null
-                    ? accValue
-                    : new ArkTSExpression.VariableExpression(ACC);
-            return new StatementResult(
-                    new ArkTSStatement.ThrowStatement(val), null);
         }
 
         // --- Store from accumulator ---

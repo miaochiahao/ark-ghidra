@@ -52,6 +52,9 @@ public class ArkDisassembler {
         if (opcode == ArkOpcodes.PREFIX_CALLRUNTIME) {
             return decodeCallRuntime(buf, offset);
         }
+        if (opcode == ArkOpcodes.PREFIX_THROW) {
+            return decodeThrow(buf, offset);
+        }
 
         return decodePrimary(opcode, buf, offset, false);
     }
@@ -169,6 +172,33 @@ public class ArkDisassembler {
 
         return new ArkInstruction(subOpcode, mnemonic, crtFormat, offset,
                 formatLen, operands, false, true);
+    }
+
+    private ArkInstruction decodeThrow(ByteBuffer buf, int offset) {
+        if (buf.remaining() < 1) {
+            throw new DisassemblyException(
+                "Truncated throw instruction at offset " + offset);
+        }
+
+        int subOpcode = buf.get() & 0xFF;
+        ArkInstructionFormat throwFormat =
+                ArkOpcodes.getThrowFormat(subOpcode);
+        String mnemonic = ArkOpcodes.getThrowMnemonic(subOpcode);
+        int formatLen = throwFormat.getLength();
+
+        int operandsLen = formatLen - 2;
+        if (buf.remaining() < operandsLen) {
+            throw new DisassemblyException(
+                "Not enough bytes for throw instruction " + mnemonic
+                + " at offset " + offset
+                + ": need " + formatLen + ", have " + (buf.remaining() + 2));
+        }
+
+        List<ArkOperand> operands = new ArrayList<>();
+        decodeThrowOperands(throwFormat, buf, operands);
+
+        return new ArkInstruction(subOpcode, mnemonic, throwFormat, offset,
+                formatLen, operands, false);
     }
 
     private void decodeOperands(int opcode, ArkInstructionFormat format,
@@ -470,6 +500,39 @@ public class ArkDisassembler {
             case PREF_IMM8_IMM8_V8:
                 operands.add(imm8(buf));
                 operands.add(imm8(buf));
+                operands.add(reg(buf));
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    private void decodeThrowOperands(ArkInstructionFormat format,
+            ByteBuffer buf, List<ArkOperand> operands) {
+        switch (format) {
+            case PREF_NONE:
+                break;
+
+            case PREF_V8:
+                operands.add(reg(buf));
+                break;
+
+            case PREF_IMM8:
+                operands.add(imm8(buf));
+                break;
+
+            case PREF_IMM16:
+                operands.add(imm16(buf));
+                break;
+
+            case PREF_IMM8_V8:
+                operands.add(imm8(buf));
+                operands.add(reg(buf));
+                break;
+
+            case PREF_V8_V8:
+                operands.add(reg(buf));
                 operands.add(reg(buf));
                 break;
 

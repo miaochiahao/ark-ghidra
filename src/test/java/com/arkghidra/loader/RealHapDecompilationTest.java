@@ -116,7 +116,9 @@ class RealHapDecompilationTest {
             Path outputPath = Path.of(OUTPUT_DIR,
                     baseName + "_" + abcName + ".ts");
             Files.createDirectories(outputPath.getParent());
-            Files.writeString(outputPath, result);
+            byte[] bytes = result.getBytes(
+                    java.nio.charset.StandardCharsets.UTF_8);
+            Files.write(outputPath, bytes);
             System.out.println("    Saved to: " + outputPath);
 
             // Print first 3000 chars as preview

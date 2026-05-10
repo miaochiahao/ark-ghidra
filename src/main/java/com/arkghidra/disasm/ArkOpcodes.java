@@ -1143,4 +1143,61 @@ public final class ArkOpcodes {
                 return ArkInstructionFormat.UNKNOWN;
         }
     }
+
+    // --- Throw (0xFE) sub-opcodes ---
+    public static final int THROW = 0x00;
+    public static final int THROW_NOTEXISTS = 0x01;
+    public static final int THROW_PATTERNNONCOERCIBLE = 0x02;
+    public static final int THROW_DELETESUPERPROPERTY = 0x03;
+    public static final int THROW_CONSTASSIGNMENT = 0x04;
+    public static final int THROW_IFNOTOBJECT = 0x05;
+    public static final int THROW_UNDEFINEDIFHOLE = 0x06;
+    public static final int THROW_IFSUPERNOTCORRECTCALL_8 = 0x07;
+    public static final int THROW_IFSUPERNOTCORRECTCALL_16 = 0x08;
+    public static final int THROW_UNDEFINEDIFHOLEWITHNAME = 0x09;
+
+    public static String getThrowMnemonic(int subOpcode) {
+        switch (subOpcode & 0xFF) {
+            case THROW: return "throw";
+            case THROW_NOTEXISTS: return "throw.notexists";
+            case THROW_PATTERNNONCOERCIBLE: return "throw.patternnoncoercible";
+            case THROW_DELETESUPERPROPERTY: return "throw.deletesuperproperty";
+            case THROW_CONSTASSIGNMENT: return "throw.constassignment";
+            case THROW_IFNOTOBJECT: return "throw.ifnotobject";
+            case THROW_UNDEFINEDIFHOLE: return "throw.undefinedifhole";
+            case THROW_IFSUPERNOTCORRECTCALL_8: return "throw.ifsupernotcorrectcall";
+            case THROW_IFSUPERNOTCORRECTCALL_16: return "throw.ifsupernotcorrectcall";
+            case THROW_UNDEFINEDIFHOLEWITHNAME: return "throw.undefinedifholewithname";
+            default: return String.format("throw.unknown_%02X", subOpcode & 0xFF);
+        }
+    }
+
+    public static ArkInstructionFormat getThrowFormat(int subOpcode) {
+        switch (subOpcode & 0xFF) {
+            case THROW:
+            case THROW_NOTEXISTS:
+            case THROW_PATTERNNONCOERCIBLE:
+            case THROW_DELETESUPERPROPERTY:
+                return ArkInstructionFormat.PREF_NONE;
+
+            case THROW_CONSTASSIGNMENT:
+            case THROW_IFNOTOBJECT:
+                return ArkInstructionFormat.PREF_V8;
+
+            case THROW_UNDEFINEDIFHOLE:
+                return ArkInstructionFormat.PREF_V8_V8;
+
+            case THROW_IFSUPERNOTCORRECTCALL_8:
+                return ArkInstructionFormat.PREF_IMM8;
+
+            case THROW_IFSUPERNOTCORRECTCALL_16:
+                return ArkInstructionFormat.PREF_IMM16;
+
+            case THROW_UNDEFINEDIFHOLEWITHNAME:
+                return ArkInstructionFormat.PREF_IMM16; // pref_op_id_16
+
+            default:
+                return ArkInstructionFormat.PREF_NONE;
+        }
+    }
 }
