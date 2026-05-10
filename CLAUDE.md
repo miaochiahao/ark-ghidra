@@ -46,6 +46,25 @@ export PATH="$JAVA_HOME/bin:$PATH"
 ./gradlew lint                   # Run static analysis
 ```
 
+### E2E Headless Decompilation Test
+
+Full-pipeline test: import HAP → Ghidra auto-analysis → decompile all methods → collect metrics → compare baselines.
+
+```bash
+# Test a single HAP file
+./scripts/ghidra_headless_decompile_test.sh ~/Downloads/entry-default-unsigned.hap
+
+# Test all HAP files in ~/Downloads/
+./scripts/ghidra_headless_decompile_test.sh
+
+# Custom timeout (default 30000ms per method)
+METHOD_TIMEOUT=60000 ./scripts/ghidra_headless_decompile_test.sh ~/Downloads/large.hap
+```
+
+Output goes to `build/ghidra_test_output/`: decompiled `.ts` files, per-HAP logs, and `summary.json` with aggregated metrics. Baseline comparison against `data/test_hap/` detects regression in decompiler output.
+
+Requires: Ghidra extension installed at `~/Documents/ghidra_12.0.4_PUBLIC/Ghidra/Extensions/ark-ghidra/` (run `./gradlew buildExtension` and unzip `build/dist/*.zip` to that location first).
+
 ---
 
 ## Claude Loop Workflow
@@ -151,6 +170,17 @@ export PATH="$JAVA_HOME/bin:$PATH"
 - Prefer agents for NEW files only. Reset and re-implement manually if agents break builds.
 - Always compile and run full test suite after agent changes.
 - Watch for code added outside class closing `}` in test files.
+
+### Error Handling
+
+- **Method-level isolation:** Each method in `DeclarationBuilder.buildClassDeclaration()` and `buildAnnotationClassDeclaration()` is wrapped in its own try-catch. A DisassemblyException in one method emits a comment placeholder and continues with the rest of the class.
+- **Class-level catch still exists** in `ArkTSDecompiler.decompileFile()` as a safety net for non-method errors (field parsing, decorator detection, etc.).
+- **Known issue:** "Not enough bytes for instruction" errors at offset 5 are common in real .abc files — likely ABC version differences in method body format. These are now isolated to individual methods instead of killing the whole class.
+
+### Loop Iteration Notes
+
+- **Open issues as of 2026-05-10:** #25 (test with real .abc files), #72 (module.json5), #73 (UI jumps), #184 (JEB-like UI). #183 (assignment-in-condition) was closed.
+- **Priority for next iteration:** Investigate the "Not enough bytes" root cause in `ArkDisassembler` / `AbcFile.parseCode()` — may need version-specific code section parsing. This would unlock decompilation of many more classes in real HAP files.
 
 ---
 
