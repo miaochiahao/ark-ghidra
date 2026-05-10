@@ -117,7 +117,8 @@ public class HeadlessDecompileAllMethods extends GhidraScript {
             Path outputPath = Path.of(outputDir,
                     sanitizeFileName(programName) + "__" + blockTag + ".ts");
             Files.createDirectories(outputPath.getParent());
-            Files.writeString(outputPath, result);
+            Files.write(outputPath, result.getBytes(
+                    java.nio.charset.StandardCharsets.UTF_8));
             println("  Output: " + lines + " lines, "
                     + result.length() / 1024 + " KB -> " + outputPath.getFileName());
         }

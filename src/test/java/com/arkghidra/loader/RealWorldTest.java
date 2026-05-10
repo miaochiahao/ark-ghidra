@@ -271,11 +271,11 @@ class RealWorldTest {
                 HapLoader.extractAbcEntries(hap);
         abcEntries.sort((a, b) -> a.path.compareTo(b.path));
 
-        long spacing = HapLoader.ABC_BLOCK_SPACING;
+        long spacing = HapLoader.ABC_BLOCK_PADDING;
         assertTrue(abc1.length < spacing,
-                "ABC data must be smaller than block spacing");
+                "ABC data must be smaller than block padding");
         assertTrue(abc2.length < spacing,
-                "ABC data must be smaller than block spacing");
+                "ABC data must be smaller than block padding");
     }
 
     @Test

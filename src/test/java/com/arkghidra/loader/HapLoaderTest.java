@@ -487,8 +487,8 @@ class HapLoaderTest {
     }
 
     @Test
-    void testAbcBlockSpacing_value() {
-        assertEquals(0x100000L, HapLoader.ABC_BLOCK_SPACING);
+    void testAbcBlockPadding_value() {
+        assertEquals(0x100000L, HapLoader.ABC_BLOCK_PADDING);
     }
 
     // ---------------------------------------------------------------

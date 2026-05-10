@@ -58,7 +58,7 @@ fi
 # --- Collect HAP files ---
 HAPS=("$@")
 if [ ${#HAPS[@]} -eq 0 ]; then
-    mapfile -t HAPS < <(ls ~/Downloads/*.hap 2>/dev/null || true)
+    while IFS= read -r f; do HAPS+=("$f"); done < <(ls ~/Downloads/*.hap 2>/dev/null || true)
 fi
 
 if [ ${#HAPS[@]} -eq 0 ]; then

@@ -45,8 +45,8 @@ public class HapLoader extends AbstractProgramWrapperLoader {
     /** ZIP local file header magic (PK\x03\x04). */
     static final byte[] ZIP_MAGIC = {0x50, 0x4B, 0x03, 0x04};
 
-    /** Address spacing between consecutive ABC blocks. */
-    static final long ABC_BLOCK_SPACING = 0x100000L;
+    /** Minimum padding between consecutive ABC blocks (1 MB). */
+    static final long ABC_BLOCK_PADDING = 0x100000L;
 
     static final String LANG_ID = "ArkBytecode:LE:32:default";
     static final String COMPILER_ID = "default";
@@ -122,12 +122,17 @@ public class HapLoader extends AbstractProgramWrapperLoader {
                 + " ABC entries...");
         monitor.initialize(abcEntries.size());
 
+        long nextOffset = 0;
         for (int i = 0; i < abcEntries.size(); i++) {
             if (monitor.isCancelled()) {
                 return;
             }
             AbcEntry entry = abcEntries.get(i);
-            long baseOffset = (long) i * ABC_BLOCK_SPACING;
+            long baseOffset = nextOffset;
+            // Next block starts after this one plus padding, aligned up to 1MB
+            long nextRaw = baseOffset + entry.bytes.length + ABC_BLOCK_PADDING;
+            nextOffset = ((nextRaw + ABC_BLOCK_PADDING - 1) / ABC_BLOCK_PADDING)
+                    * ABC_BLOCK_PADDING;
             String blockName = sanitizeBlockName(entry.path, i);
 
             AbcLoaderUtils.createMemoryBlock(memory, space, blockName,
