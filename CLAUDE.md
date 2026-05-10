@@ -172,12 +172,15 @@ export DEVECO_SDK_HOME=/Applications/DevEco-Studio.app/Contents/sdk && \
 ### Decompiler Architecture Rules
 
 - **Three entry points:** `decompileInstructions()`, `decompileMethod()`, `decompileFile()`. All three must receive the same post-processing pipeline.
-- **Post-processing pipeline order (critical):** `applyConstOptimization → inlineSingleUseVariables → mergeNestedIfConditions → detectSwitchExpressions → simplifyReturnIfTernary → convertIfElseChainToSwitch → removeUnreachableCode → removeAlwaysFalseConditions → removeUnusedVariables → simplifyIncrementDecrement → eliminateRedundantCopies`. Order matters — each depends on prior transforms. Pipeline is now linear (not nested) for readability and line-length compliance.
+- **Post-processing pipeline order (critical):** `applyConstOptimization → inlineSingleUseVariables → mergeNestedIfConditions → detectSwitchExpressions → simplifyReturnIfTernary → convertIfElseChainToSwitch → removeUnreachableCode → removeAlwaysFalseConditions → removeUnusedVariables → eliminateDeadPropertyLoads → simplifyIncrementDecrement → eliminateRedundantCopies`. Order matters — each depends on prior transforms. Pipeline is now linear (not nested) for readability and line-length compliance.
 - **StatementResult.NO_OP:** Use for handled instructions producing no statement. Return `null` for unhandled (falls through to `/* opcode */` comment).
 - **AST node immutability:** `BlockStatement.body`, `SwitchCase.body`, `VariableDeclaration` use `Collections.unmodifiableList`. Use `setKind()` or rebuild nodes — never `List.set()`.
 - **BinaryExpression constructor:** `BinaryExpression(left, operator, right)` — left operand first.
 - **ForStatement:** `init`/`condition`/`update` have NO public getters — only `getBody()` is public.
 - **Dead store elimination:** Too aggressive — only inline into terminal statements (return/throw) with exactly one usage.
+- **Dead property load elimination:** New pass `eliminateDeadPropertyLoads` removes `let ref = obj.method; ref = obj.method(args)` pattern. Uses read-aware counting (`countVariableReadUsage`) to only remove variables never read (only used as assignment targets).
+- **Logical NOT compiler pattern:** ArkTS compiler converts `!flag` to `istrue → jnez → ldtrue/ldfalse → return` (not a NOT opcode). The decompiler's block-by-block processing loses the accumulator value at merge points, producing empty method bodies. Needs accumulator propagation across basic blocks (tracked in issue #191 defect 3).
+- **Constructor args lost:** `new Pair(1, 2)` decompiles to `new 2()` because accumulator at NEWOBJRANGE time contains a literal (last STA preserves accValue). Needs `resolveCallee` enhancement or pre-instruction accumulator tracking (tracked in issue #191 defect 4).
 - **replaceVariable guard:** Never replace variable in LHS of assignment. Leaf expressions must return themselves.
 - **When adding new AST types:** Add to `ExpressionVisitor.replaceVariable()`, `countVariableUsage()`, `OperatorHandler.getAccType()`, `InstructionHandler.inferNameFromExpression()`, and const optimization collectors in `ArkTSDecompiler`.
 
