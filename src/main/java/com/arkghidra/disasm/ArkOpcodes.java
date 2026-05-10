@@ -657,7 +657,7 @@ public final class ArkOpcodes {
                 return ArkInstructionFormat.V8;
 
             // V8_V8 format — opcode + 2 registers
-            case MOV:
+            case MOV_8:
             case CREATEITERRESULTOBJ:
             case STARRAYSPREAD:
                 return ArkInstructionFormat.V8_V8;
@@ -753,6 +753,7 @@ public final class ArkOpcodes {
                 return ArkInstructionFormat.IMM16;
 
             // IMM4_IMM4 format — packed 4-bit pair
+            case MOV:
             case LDLEXVAR:
             case STLEXVAR:
                 return ArkInstructionFormat.IMM4_IMM4;
@@ -880,8 +881,6 @@ public final class ArkOpcodes {
                 return ArkInstructionFormat.NONE;
 
             // --- 16-bit variant opcodes reusing existing formats ---
-            case MOV_8:
-                return ArkInstructionFormat.V8_V8;
             case CREATEEMPTYARRAY_16:
             case TYPEOF_16:
             case LDTHISBYVALUE_16:

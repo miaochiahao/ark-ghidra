@@ -217,8 +217,13 @@ public class ArkDisassembler {
 
             case IMM4_IMM4:
                 byte packed = buf.get();
-                operands.add(new ArkOperand(Type.IMMEDIATE4, packed & 0x0F));
-                operands.add(new ArkOperand(Type.IMMEDIATE4, (packed >> 4) & 0x0F));
+                if (opcode == ArkOpcodes.MOV) {
+                    operands.add(new ArkOperand(Type.REGISTER, packed & 0x0F));
+                    operands.add(new ArkOperand(Type.REGISTER, (packed >> 4) & 0x0F));
+                } else {
+                    operands.add(new ArkOperand(Type.IMMEDIATE4, packed & 0x0F));
+                    operands.add(new ArkOperand(Type.IMMEDIATE4, (packed >> 4) & 0x0F));
+                }
                 break;
 
             case IMM8_V8:

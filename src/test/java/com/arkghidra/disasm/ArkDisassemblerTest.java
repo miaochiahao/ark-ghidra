@@ -224,15 +224,34 @@ class ArkDisassemblerTest {
     // --- V8_V8 format ---
 
     @Test
-    void testDecodeInstruction_mov_v8_v8() {
-        byte[] code = bytes(0x44, 0x03, 0x05);
+    void testDecodeInstruction_mov_imm4_imm4() {
+        // MOV (0x44) uses IMM4_IMM4 format: packed 4-bit register pair
+        // Packed byte 0x53 → low nibble=3 (dst), high nibble=5 (src)
+        byte[] code = bytes(0x44, 0x53);
+        ArkInstruction insn = disasm.decodeInstruction(code, 0);
+        assertEquals("mov", insn.getMnemonic());
+        assertEquals(ArkInstructionFormat.IMM4_IMM4, insn.getFormat());
+        assertEquals(2, insn.getLength());
+        assertEquals(2, insn.getOperands().size());
+        assertEquals(Type.REGISTER, insn.getOperands().get(0).getType());
+        assertEquals(3, insn.getOperands().get(0).getValue());
+        assertEquals(Type.REGISTER, insn.getOperands().get(1).getType());
+        assertEquals(5, insn.getOperands().get(1).getValue());
+    }
+
+    @Test
+    void testDecodeInstruction_mov_8_v8_v8() {
+        // MOV_8 (0x45) uses V8_V8 format: two 8-bit registers
+        byte[] code = bytes(0x45, 0x10, 0x20);
         ArkInstruction insn = disasm.decodeInstruction(code, 0);
         assertEquals("mov", insn.getMnemonic());
         assertEquals(ArkInstructionFormat.V8_V8, insn.getFormat());
         assertEquals(3, insn.getLength());
         assertEquals(2, insn.getOperands().size());
         assertEquals(Type.REGISTER, insn.getOperands().get(0).getType());
+        assertEquals(0x10, insn.getOperands().get(0).getValue());
         assertEquals(Type.REGISTER, insn.getOperands().get(1).getType());
+        assertEquals(0x20, insn.getOperands().get(1).getValue());
     }
 
     // --- IMM32 format ---
