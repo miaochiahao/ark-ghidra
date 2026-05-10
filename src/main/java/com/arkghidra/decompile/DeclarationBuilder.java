@@ -306,7 +306,8 @@ class DeclarationBuilder {
                 && superMethodNames.contains(sanitizeMethodName(
                         method.getName()));
         boolean isAbstract = (method.getAccessFlags()
-                & AbcAccessFlags.ACC_ABSTRACT) != 0;
+                & AbcAccessFlags.ACC_ABSTRACT) != 0
+                && bodyStmts.isEmpty();
 
         return new ArkTSDeclarations.ClassMethodDeclaration(
                 sanitizeMethodName(method.getName()), params, returnType, body,
