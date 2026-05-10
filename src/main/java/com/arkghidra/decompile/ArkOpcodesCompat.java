@@ -301,6 +301,47 @@ final class ArkOpcodesCompat {
             ArkOpcodes.WIDE_SUPERCALLTHISRANGE;
     static final int WIDE_MOV = ArkOpcodes.WIDE_MOV;
 
+    // --- 16-bit variant primary opcodes ---
+    static final int MOV_8 = ArkOpcodes.MOV_8;
+    static final int MOV_16 = ArkOpcodes.MOV_16;
+    static final int JMP_IMM32 = ArkOpcodes.JMP_IMM32;
+    static final int JEQZ_IMM32 = ArkOpcodes.JEQZ_IMM32;
+    static final int JNEZ_IMM32 = ArkOpcodes.JNEZ_IMM32;
+    static final int STOBJBYNAME_16 = ArkOpcodes.STOBJBYNAME_16;
+    static final int LDOBJBYNAME_16 = ArkOpcodes.LDOBJBYNAME_16;
+    static final int CREATEARRAYWITHBUFFER_16 = ArkOpcodes.CREATEARRAYWITHBUFFER_16;
+    static final int STOWNBYNAME_16 = ArkOpcodes.STOWNBYNAME_16;
+    static final int LDLEXVAR_8 = ArkOpcodes.LDLEXVAR_8;
+    static final int STLEXVAR_8 = ArkOpcodes.STLEXVAR_8;
+    static final int TRYLDGLOBALBYNAME_16 = ArkOpcodes.TRYLDGLOBALBYNAME_16;
+    static final int TRYSTGLOBALBYNAME_16 = ArkOpcodes.TRYSTGLOBALBYNAME_16;
+    static final int LDOBJBYVALUE_16 = ArkOpcodes.LDOBJBYVALUE_16;
+    static final int STOBJBYVALUE_16 = ArkOpcodes.STOBJBYVALUE_16;
+    static final int LDSUPERBYVALUE_16 = ArkOpcodes.LDSUPERBYVALUE_16;
+    static final int LDOBJBYINDEX_16 = ArkOpcodes.LDOBJBYINDEX_16;
+    static final int STOBJBYINDEX_16 = ArkOpcodes.STOBJBYINDEX_16;
+    static final int LDSUPERBYNAME_16 = ArkOpcodes.LDSUPERBYNAME_16;
+    static final int LDTHISBYNAME_16 = ArkOpcodes.LDTHISBYNAME_16;
+    static final int STTHISBYNAME_16 = ArkOpcodes.STTHISBYNAME_16;
+    static final int LDTHISBYVALUE_16 = ArkOpcodes.LDTHISBYVALUE_16;
+    static final int STTHISBYVALUE_16 = ArkOpcodes.STTHISBYVALUE_16;
+    static final int CREATEEMPTYARRAY_16 = ArkOpcodes.CREATEEMPTYARRAY_16;
+    static final int CREATEOBJECTWITHBUFFER_16 = ArkOpcodes.CREATEOBJECTWITHBUFFER_16;
+    static final int NEWOBJRANGE_16 = ArkOpcodes.NEWOBJRANGE_16;
+    static final int TYPEOF_16 = ArkOpcodes.TYPEOF_16;
+    static final int NEWOBJAPPLY_16 = ArkOpcodes.NEWOBJAPPLY_16;
+    static final int DEFINEMETHOD_16 = ArkOpcodes.DEFINEMETHOD_16;
+    static final int DEFINEFUNC_16 = ArkOpcodes.DEFINEFUNC_16;
+    static final int GETTEMPLATEOBJECT_16 = ArkOpcodes.GETTEMPLATEOBJECT_16;
+    static final int SETOBJECTWITHPROTO_16 = ArkOpcodes.SETOBJECTWITHPROTO_16;
+    static final int STOWNBYVALUE_16 = ArkOpcodes.STOWNBYVALUE_16;
+    static final int STOWNBYINDEX_16 = ArkOpcodes.STOWNBYINDEX_16;
+    static final int STSUPERBYNAME_16 = ArkOpcodes.STSUPERBYNAME_16;
+    static final int STSUPERBYVALUE_16 = ArkOpcodes.STSUPERBYVALUE_16;
+    static final int STOWNBYVALUEWITHNAMESET_16 = ArkOpcodes.STOWNBYVALUEWITHNAMESET_16;
+    static final int STOWNBYNAMEWITHNAMESET_16 = ArkOpcodes.STOWNBYNAMEWITHNAMESET_16;
+    static final int CREATEREGEXPWITHLITERAL_16 = ArkOpcodes.CREATEREGEXPWITHLITERAL_16;
+
     private ArkOpcodesCompat() {
     }
 
@@ -402,9 +443,100 @@ final class ArkOpcodesCompat {
      * @return the normalized opcode
      */
     static int getNormalizedOpcode(ArkInstruction insn) {
-        return insn.isWide()
-                ? normalizeWideOpcode(insn.getOpcode())
-                : insn.getOpcode();
+        if (insn.isWide()) {
+            return normalizeWideOpcode(insn.getOpcode());
+        }
+        return normalizeVariantOpcode(insn.getOpcode());
+    }
+
+    /**
+     * Maps 16-bit variant primary opcodes to their 8-bit equivalents.
+     * These opcodes appear as primary opcodes (no 0xFD prefix) but use wider
+     * IC slot fields. The decompiler treats them identically to their 8-bit
+     * counterparts since operand indices are the same.
+     */
+    static int normalizeVariantOpcode(int opcode) {
+        switch (opcode) {
+            case MOV_8:
+            case MOV_16:
+                return MOV;
+            case CREATEEMPTYARRAY_16:
+                return CREATEEMPTYARRAY;
+            case CREATEARRAYWITHBUFFER_16:
+                return CREATEARRAYWITHBUFFER;
+            case CREATEOBJECTWITHBUFFER_16:
+                return CREATEOBJECTWITHBUFFER;
+            case NEWOBJRANGE_16:
+                return NEWOBJRANGE;
+            case TYPEOF_16:
+                return TYPEOF;
+            case LDOBJBYVALUE_16:
+                return LDOBJBYVALUE;
+            case STOBJBYVALUE_16:
+                return STOBJBYVALUE;
+            case LDSUPERBYVALUE_16:
+                return LDSUPERBYVALUE;
+            case LDOBJBYINDEX_16:
+                return LDOBJBYINDEX;
+            case STOBJBYINDEX_16:
+                return STOBJBYINDEX;
+            case LDLEXVAR_8:
+                return LDLEXVAR;
+            case STLEXVAR_8:
+                return STLEXVAR;
+            case TRYLDGLOBALBYNAME_16:
+                return TRYLDGLOBALBYNAME;
+            case TRYSTGLOBALBYNAME_16:
+                return TRYSTGLOBALBYNAME;
+            case LDOBJBYNAME_16:
+                return LDOBJBYNAME;
+            case STOBJBYNAME_16:
+                return STOBJBYNAME;
+            case LDSUPERBYNAME_16:
+                return LDSUPERBYNAME;
+            case LDTHISBYNAME_16:
+                return LDTHISBYNAME;
+            case STTHISBYNAME_16:
+                return STTHISBYNAME;
+            case LDTHISBYVALUE_16:
+                return LDTHISBYVALUE;
+            case STTHISBYVALUE_16:
+                return STTHISBYVALUE;
+            case JMP_IMM32:
+                return JMP_IMM8;
+            case JEQZ_IMM32:
+                return JEQZ_IMM8;
+            case JNEZ_IMM32:
+                return JNEZ_IMM8;
+            case NEWOBJAPPLY_16:
+                return NEWOBJAPPLY;
+            case DEFINEMETHOD_16:
+                return DEFINEMETHOD;
+            case DEFINEFUNC_16:
+                return DEFINEFUNC;
+            case GETTEMPLATEOBJECT_16:
+                return GETTEMPLATEOBJECT;
+            case SETOBJECTWITHPROTO_16:
+                return SETOBJECTWITHPROTO;
+            case STOWNBYVALUE_16:
+                return STOWNBYVALUE;
+            case STOWNBYINDEX_16:
+                return STOWNBYINDEX;
+            case STOWNBYNAME_16:
+                return STOWNBYNAME;
+            case STSUPERBYNAME_16:
+                return STSUPERBYNAME;
+            case STSUPERBYVALUE_16:
+                return STSUPERBYVALUE;
+            case STOWNBYVALUEWITHNAMESET_16:
+                return STOWNBYVALUEWITHNAMESET;
+            case STOWNBYNAMEWITHNAMESET_16:
+                return STOWNBYNAMEWITHNAMESET;
+            case CREATEREGEXPWITHLITERAL_16:
+                return CREATEREGEXPWITHLITERAL;
+            default:
+                return opcode;
+        }
     }
 
     /**
@@ -414,7 +546,7 @@ final class ArkOpcodesCompat {
      * @return true if the opcode is jmp
      */
     static boolean isUnconditionalJump(int opcode) {
-        return opcode == JMP_IMM8 || opcode == JMP_IMM16;
+        return opcode == JMP_IMM8 || opcode == JMP_IMM16 || opcode == JMP_IMM32;
     }
 
     /**
@@ -424,8 +556,8 @@ final class ArkOpcodesCompat {
      * @return true if the opcode is a conditional branch
      */
     static boolean isConditionalBranch(int opcode) {
-        return opcode == JEQZ_IMM8 || opcode == JEQZ_IMM16
-                || opcode == JNEZ_IMM8 || opcode == JNEZ_IMM16
+        return opcode == JEQZ_IMM8 || opcode == JEQZ_IMM16 || opcode == JEQZ_IMM32
+                || opcode == JNEZ_IMM8 || opcode == JNEZ_IMM16 || opcode == JNEZ_IMM32
                 || opcode == JEQ_IMM8 || opcode == JEQ_IMM16
                 || opcode == JNE_IMM8 || opcode == JNE_IMM16
                 || opcode == JEQNULL_IMM8 || opcode == JEQNULL_IMM16

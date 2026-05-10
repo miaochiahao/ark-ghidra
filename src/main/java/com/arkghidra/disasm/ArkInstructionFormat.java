@@ -137,6 +137,19 @@ public enum ArkInstructionFormat {
      *  + 8-bit register. */
     PREF_IMM8_IMM8_V8(5),
 
+    /** Opcode + two 16-bit immediates (16-bit IC variant). */
+    IMM16_IMM16(5),
+    /** Opcode + two 16-bit immediates + 8-bit register (16-bit IC variant). */
+    IMM16_IMM16_V8(6),
+    /** Opcode + 16-bit immediate + two 8-bit registers (16-bit IC variant). */
+    IMM16_V8_V8(5),
+    /** Opcode + 16-bit immediate + 8-bit immediate + 8-bit register. */
+    IMM16_IMM8_V8(5),
+    /** Opcode + 16-bit immediate + 8-bit register + 16-bit immediate. */
+    IMM16_V8_IMM16(6),
+    /** Opcode + two 16-bit immediates + 8-bit immediate. */
+    IMM16_IMM16_IMM8(6),
+
     /** Unknown or invalid instruction format. */
     UNKNOWN(1);
 

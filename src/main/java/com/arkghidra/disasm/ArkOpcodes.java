@@ -328,6 +328,47 @@ public final class ArkOpcodes {
     public static final int WIDE_SUPERCALLTHISRANGE = 0x75;
     public static final int WIDE_MOV = 0x8F;
 
+    // --- 16-bit variant primary opcodes (second/third opcode_idx from isa.yaml) ---
+    public static final int MOV_8 = 0x45;
+    public static final int CREATEREGEXPWITHLITERAL_16 = 0x72;
+    public static final int DEFINEFUNC_16 = 0x74;
+    public static final int CREATEEMPTYARRAY_16 = 0x80;
+    public static final int CREATEARRAYWITHBUFFER_16 = 0x81;
+    public static final int CREATEOBJECTWITHBUFFER_16 = 0x82;
+    public static final int NEWOBJRANGE_16 = 0x83;
+    public static final int TYPEOF_16 = 0x84;
+    public static final int LDOBJBYVALUE_16 = 0x85;
+    public static final int STOBJBYVALUE_16 = 0x86;
+    public static final int LDSUPERBYVALUE_16 = 0x87;
+    public static final int LDOBJBYINDEX_16 = 0x88;
+    public static final int STOBJBYINDEX_16 = 0x89;
+    public static final int LDLEXVAR_8 = 0x8A;
+    public static final int STLEXVAR_8 = 0x8B;
+    public static final int TRYLDGLOBALBYNAME_16 = 0x8C;
+    public static final int TRYSTGLOBALBYNAME_16 = 0x8D;
+    public static final int MOV_16 = 0x8F;
+    public static final int LDOBJBYNAME_16 = 0x90;
+    public static final int STOBJBYNAME_16 = 0x91;
+    public static final int LDSUPERBYNAME_16 = 0x92;
+    public static final int LDTHISBYNAME_16 = 0x93;
+    public static final int STTHISBYNAME_16 = 0x94;
+    public static final int LDTHISBYVALUE_16 = 0x95;
+    public static final int STTHISBYVALUE_16 = 0x96;
+    public static final int JMP_IMM32 = 0x98;
+    public static final int JEQZ_IMM32 = 0x9A;
+    public static final int JNEZ_IMM32 = 0x9C;
+    public static final int NEWOBJAPPLY_16 = 0xB5;
+    public static final int DEFINEMETHOD_16 = 0xBE;
+    public static final int GETTEMPLATEOBJECT_16 = 0xC1;
+    public static final int SETOBJECTWITHPROTO_16 = 0xC7;
+    public static final int STOWNBYVALUE_16 = 0xC8;
+    public static final int STSUPERBYVALUE_16 = 0xCA;
+    public static final int STOWNBYINDEX_16 = 0xCB;
+    public static final int STOWNBYNAME_16 = 0xCC;
+    public static final int STSUPERBYNAME_16 = 0xD1;
+    public static final int STOWNBYVALUEWITHNAMESET_16 = 0xD2;
+    public static final int STOWNBYNAMEWITHNAMESET_16 = 0xD4;
+
     private ArkOpcodes() {
         // utility class — no instances
     }
@@ -520,6 +561,45 @@ public final class ArkOpcodes {
             case TESTIN: return "testin";
             case DEFINEFIELDBYNAME: return "definefieldbyname";
             case DEFINEPROPERTYBYNAME: return "definepropertybyname";
+            case MOV_8: return "mov";
+            case CREATEREGEXPWITHLITERAL_16: return "createregexpwithliteral";
+            case DEFINEFUNC_16: return "definefunc";
+            case CREATEEMPTYARRAY_16: return "createemptyarray";
+            case CREATEARRAYWITHBUFFER_16: return "createarraywithbuffer";
+            case CREATEOBJECTWITHBUFFER_16: return "createobjectwithbuffer";
+            case NEWOBJRANGE_16: return "newobjrange";
+            case TYPEOF_16: return "typeof";
+            case LDOBJBYVALUE_16: return "ldobjbyvalue";
+            case STOBJBYVALUE_16: return "stobjbyvalue";
+            case LDSUPERBYVALUE_16: return "ldsuperbyvalue";
+            case LDOBJBYINDEX_16: return "ldobjbyindex";
+            case STOBJBYINDEX_16: return "stobjbyindex";
+            case LDLEXVAR_8: return "ldlexvar";
+            case STLEXVAR_8: return "stlexvar";
+            case TRYLDGLOBALBYNAME_16: return "tryldglobalbyname";
+            case TRYSTGLOBALBYNAME_16: return "trystglobalbyname";
+            case MOV_16: return "mov";
+            case LDOBJBYNAME_16: return "ldobjbyname";
+            case STOBJBYNAME_16: return "stobjbyname";
+            case LDSUPERBYNAME_16: return "ldsuperbyname";
+            case LDTHISBYNAME_16: return "ldthisbyname";
+            case STTHISBYNAME_16: return "stthisbyname";
+            case LDTHISBYVALUE_16: return "ldthisbyvalue";
+            case STTHISBYVALUE_16: return "stthisbyvalue";
+            case JMP_IMM32: return "jmp";
+            case JEQZ_IMM32: return "jeqz";
+            case JNEZ_IMM32: return "jnez";
+            case NEWOBJAPPLY_16: return "newobjapply";
+            case DEFINEMETHOD_16: return "definemethod";
+            case GETTEMPLATEOBJECT_16: return "gettemplateobject";
+            case SETOBJECTWITHPROTO_16: return "setobjectwithproto";
+            case STOWNBYVALUE_16: return "stownbyvalue";
+            case STSUPERBYVALUE_16: return "stsuperbyvalue";
+            case STOWNBYINDEX_16: return "stownbyindex";
+            case STOWNBYNAME_16: return "stownbyname";
+            case STSUPERBYNAME_16: return "stsuperbyname";
+            case STOWNBYVALUEWITHNAMESET_16: return "stownbyvaluewithnameset";
+            case STOWNBYNAMEWITHNAMESET_16: return "stownbynamewithnameset";
             default: return String.format("unknown_%02X", opcode & 0xFF);
         }
     }
@@ -798,6 +878,60 @@ public final class ArkOpcodes {
             // Wide prefix
             case PREFIX_WIDE:
                 return ArkInstructionFormat.NONE;
+
+            // --- 16-bit variant opcodes reusing existing formats ---
+            case MOV_8:
+                return ArkInstructionFormat.V8_V8;
+            case CREATEEMPTYARRAY_16:
+            case TYPEOF_16:
+            case LDTHISBYVALUE_16:
+            case GETTEMPLATEOBJECT_16:
+                return ArkInstructionFormat.IMM16;
+            case LDOBJBYVALUE_16:
+            case LDSUPERBYVALUE_16:
+            case STTHISBYVALUE_16:
+            case SETOBJECTWITHPROTO_16:
+            case NEWOBJAPPLY_16:
+                return ArkInstructionFormat.IMM16_V8;
+            case LDLEXVAR_8:
+            case STLEXVAR_8:
+                return ArkInstructionFormat.IMM8_IMM8;
+            case JMP_IMM32:
+            case JEQZ_IMM32:
+            case JNEZ_IMM32:
+                return ArkInstructionFormat.IMM32;
+
+            // --- 16-bit variant opcodes using new formats ---
+            case CREATEARRAYWITHBUFFER_16:
+            case CREATEOBJECTWITHBUFFER_16:
+            case LDOBJBYINDEX_16:
+            case TRYLDGLOBALBYNAME_16:
+            case TRYSTGLOBALBYNAME_16:
+            case LDOBJBYNAME_16:
+            case LDSUPERBYNAME_16:
+            case LDTHISBYNAME_16:
+            case MOV_16:
+                return ArkInstructionFormat.IMM16_IMM16;
+            case STOBJBYNAME_16:
+            case STTHISBYNAME_16:
+            case STOWNBYNAME_16:
+            case STSUPERBYNAME_16:
+            case STOWNBYNAMEWITHNAMESET_16:
+                return ArkInstructionFormat.IMM16_IMM16_V8;
+            case STOBJBYVALUE_16:
+            case STOWNBYVALUE_16:
+            case STSUPERBYVALUE_16:
+            case STOWNBYVALUEWITHNAMESET_16:
+                return ArkInstructionFormat.IMM16_V8_V8;
+            case NEWOBJRANGE_16:
+                return ArkInstructionFormat.IMM16_IMM8_V8;
+            case STOBJBYINDEX_16:
+            case STOWNBYINDEX_16:
+                return ArkInstructionFormat.IMM16_V8_IMM16;
+            case CREATEREGEXPWITHLITERAL_16:
+            case DEFINEFUNC_16:
+            case DEFINEMETHOD_16:
+                return ArkInstructionFormat.IMM16_IMM16_IMM8;
 
             default:
                 return ArkInstructionFormat.UNKNOWN;
