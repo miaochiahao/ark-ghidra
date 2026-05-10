@@ -150,6 +150,18 @@ public class ArkTSControlFlow {
             return body;
         }
 
+        ArkTSStatement getInit() {
+            return init;
+        }
+
+        ArkTSExpression getConditionExpr() {
+            return condition;
+        }
+
+        ArkTSExpression getUpdate() {
+            return update;
+        }
+
         @Override
         public String toArkTS(int indent) {
             String initStr = init != null

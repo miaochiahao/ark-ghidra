@@ -14445,4 +14445,86 @@ class ArkTSDecompilerTest {
         assertTrue(result.contains("function isDisabled(): boolean"),
                 "Expected boolean return type, got: " + result);
     }
+
+    // --- removeUnreachableCode tests ---
+
+    @Test
+    void testRemoveUnreachableCode_afterThrow() {
+        List<ArkTSStatement> stmts = new ArrayList<>();
+        stmts.add(new ArkTSStatement.ExpressionStatement(
+                new ArkTSExpression.VariableExpression("x")));
+        stmts.add(new ArkTSStatement.ThrowStatement(
+                new ArkTSExpression.LiteralExpression("error",
+                        ArkTSExpression.LiteralExpression.LiteralKind.STRING)));
+        stmts.add(new ArkTSStatement.ExpressionStatement(
+                new ArkTSExpression.VariableExpression("unreachable")));
+        stmts.add(new ArkTSStatement.ExpressionStatement(
+                new ArkTSExpression.VariableExpression("alsoUnreachable")));
+        List<ArkTSStatement> result =
+                ArkTSDecompiler.removeUnreachableCode(stmts);
+        assertEquals(2, result.size());
+        assertTrue(result.get(1) instanceof ArkTSStatement.ThrowStatement);
+    }
+
+    @Test
+    void testRemoveUnreachableCode_afterReturn() {
+        List<ArkTSStatement> stmts = new ArrayList<>();
+        stmts.add(new ArkTSStatement.ExpressionStatement(
+                new ArkTSExpression.VariableExpression("x")));
+        stmts.add(new ArkTSStatement.ReturnStatement(
+                new ArkTSExpression.VariableExpression("v0")));
+        stmts.add(new ArkTSStatement.ExpressionStatement(
+                new ArkTSExpression.VariableExpression("unreachable")));
+        List<ArkTSStatement> result =
+                ArkTSDecompiler.removeUnreachableCode(stmts);
+        assertEquals(2, result.size());
+        assertTrue(result.get(1) instanceof ArkTSStatement.ReturnStatement);
+    }
+
+    @Test
+    void testRemoveUnreachableCode_noExitStatement() {
+        List<ArkTSStatement> stmts = new ArrayList<>();
+        stmts.add(new ArkTSStatement.ExpressionStatement(
+                new ArkTSExpression.VariableExpression("x")));
+        stmts.add(new ArkTSStatement.ExpressionStatement(
+                new ArkTSExpression.VariableExpression("y")));
+        List<ArkTSStatement> result =
+                ArkTSDecompiler.removeUnreachableCode(stmts);
+        assertEquals(2, result.size());
+    }
+
+    @Test
+    void testRemoveUnreachableCode_nestedBlock() {
+        List<ArkTSStatement> innerStmts = new ArrayList<>();
+        innerStmts.add(new ArkTSStatement.ThrowStatement(
+                new ArkTSExpression.LiteralExpression("e",
+                        ArkTSExpression.LiteralExpression.LiteralKind.STRING)));
+        innerStmts.add(new ArkTSStatement.ExpressionStatement(
+                new ArkTSExpression.VariableExpression("dead")));
+        ArkTSStatement block =
+                new ArkTSStatement.BlockStatement(innerStmts);
+        List<ArkTSStatement> outer = new ArrayList<>();
+        outer.add(block);
+        List<ArkTSStatement> result =
+                ArkTSDecompiler.removeUnreachableCode(outer);
+        // Outer list should have the block with cleaned inner
+        assertEquals(1, result.size());
+        ArkTSStatement cleanedBlock = result.get(0);
+        assertTrue(cleanedBlock instanceof ArkTSStatement.BlockStatement);
+        List<ArkTSStatement> cleanedBody =
+                ((ArkTSStatement.BlockStatement) cleanedBlock).getBody();
+        assertEquals(1, cleanedBody.size());
+        assertTrue(cleanedBody.get(0)
+                instanceof ArkTSStatement.ThrowStatement);
+    }
+
+    @Test
+    void testRemoveUnreachableCode_emptyAndSingle() {
+        List<ArkTSStatement> empty = Collections.emptyList();
+        assertEquals(empty, ArkTSDecompiler.removeUnreachableCode(empty));
+
+        List<ArkTSStatement> single = List.of(
+                new ArkTSStatement.ReturnStatement(null));
+        assertEquals(single, ArkTSDecompiler.removeUnreachableCode(single));
+    }
 }

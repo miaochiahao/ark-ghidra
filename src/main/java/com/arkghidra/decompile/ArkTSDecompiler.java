@@ -171,14 +171,16 @@ public class ArkTSDecompiler {
                         startTimeNs);
             }
 
-            bodyStmts = simplifyIncrementDecrement(
-                            removeUnusedVariables(
-                                    convertIfElseChainToSwitch(
-                                            simplifyReturnIfTernary(
-                                                    detectSwitchExpressions(
-                                                            mergeNestedIfConditions(
-                                                                    ExpressionVisitor.inlineSingleUseVariables(
-                                                                            applyConstOptimization(bodyStmts))))))));
+            bodyStmts = applyConstOptimization(bodyStmts);
+            bodyStmts = ExpressionVisitor.inlineSingleUseVariables(
+                    bodyStmts);
+            bodyStmts = mergeNestedIfConditions(bodyStmts);
+            bodyStmts = detectSwitchExpressions(bodyStmts);
+            bodyStmts = simplifyReturnIfTernary(bodyStmts);
+            bodyStmts = convertIfElseChainToSwitch(bodyStmts);
+            bodyStmts = removeUnreachableCode(bodyStmts);
+            bodyStmts = removeUnusedVariables(bodyStmts);
+            bodyStmts = simplifyIncrementDecrement(bodyStmts);
         } catch (Exception e) {
             List<ArkTSStatement> fallbackStmts = new ArrayList<>();
             fallbackStmts.add(new ArkTSStatement.ExpressionStatement(
@@ -1138,6 +1140,154 @@ public class ArkTSDecompiler {
     // --- Increment/decrement simplification ---
 
     /**
+     * Removes statements after throw/return in block-level statement lists.
+     *
+     * <p>Ark bytecode often has unreachable code after unconditional control
+     * flow (throw, return). This pass truncates statement lists at the first
+     * throw/return in each block, and recursively processes nested blocks
+     * (if/else, for, while, do-while, try/catch, switch).
+     */
+    static List<ArkTSStatement> removeUnreachableCode(
+            List<ArkTSStatement> stmts) {
+        if (stmts == null || stmts.isEmpty()) {
+            return stmts;
+        }
+        if (stmts.size() == 1) {
+            ArkTSStatement cleaned = removeUnreachableInStmt(stmts.get(0));
+            if (cleaned == stmts.get(0)) {
+                return stmts;
+            }
+            return List.of(cleaned);
+        }
+        List<ArkTSStatement> result = new ArrayList<>(stmts.size());
+        for (ArkTSStatement stmt : stmts) {
+            result.add(removeUnreachableInStmt(stmt));
+            if (isUnconditionalExit(stmt)) {
+                break;
+            }
+        }
+        return result;
+    }
+
+    private static boolean isUnconditionalExit(ArkTSStatement stmt) {
+        return stmt instanceof ArkTSStatement.ThrowStatement
+                || stmt instanceof ArkTSStatement.ReturnStatement;
+    }
+
+    private static ArkTSStatement removeUnreachableInStmt(
+            ArkTSStatement stmt) {
+        if (stmt instanceof ArkTSStatement.BlockStatement) {
+            List<ArkTSStatement> body =
+                    ((ArkTSStatement.BlockStatement) stmt).getBody();
+            List<ArkTSStatement> cleaned = removeUnreachableCode(body);
+            if (cleaned == body) {
+                return stmt;
+            }
+            return new ArkTSStatement.BlockStatement(cleaned);
+        }
+        if (stmt instanceof ArkTSControlFlow.IfStatement) {
+            ArkTSControlFlow.IfStatement ifStmt =
+                    (ArkTSControlFlow.IfStatement) stmt;
+            ArkTSStatement thenBlock =
+                    removeUnreachableInStmt(ifStmt.getThenBlock());
+            ArkTSStatement elseBlock = ifStmt.getElseBlock() != null
+                    ? removeUnreachableInStmt(ifStmt.getElseBlock())
+                    : null;
+            return new ArkTSControlFlow.IfStatement(
+                    ifStmt.getCondition(), thenBlock, elseBlock);
+        }
+        if (stmt instanceof ArkTSControlFlow.ForStatement) {
+            ArkTSControlFlow.ForStatement forStmt =
+                    (ArkTSControlFlow.ForStatement) stmt;
+            return new ArkTSControlFlow.ForStatement(
+                    forStmt.getInit(), forStmt.getConditionExpr(),
+                    forStmt.getUpdate(),
+                    removeUnreachableInStmt(forStmt.getBody()));
+        }
+        if (stmt instanceof ArkTSControlFlow.WhileStatement) {
+            ArkTSControlFlow.WhileStatement ws =
+                    (ArkTSControlFlow.WhileStatement) stmt;
+            return new ArkTSControlFlow.WhileStatement(
+                    ws.getCondition(),
+                    removeUnreachableInStmt(ws.getBody()));
+        }
+        if (stmt instanceof ArkTSControlFlow.DoWhileStatement) {
+            ArkTSControlFlow.DoWhileStatement dw =
+                    (ArkTSControlFlow.DoWhileStatement) stmt;
+            return new ArkTSControlFlow.DoWhileStatement(
+                    removeUnreachableInStmt(dw.getBody()),
+                    dw.getCondition());
+        }
+        if (stmt instanceof ArkTSControlFlow.TryCatchStatement) {
+            ArkTSControlFlow.TryCatchStatement tc =
+                    (ArkTSControlFlow.TryCatchStatement) stmt;
+            return new ArkTSControlFlow.TryCatchStatement(
+                    removeUnreachableInStmt(tc.getTryBlock()),
+                    tc.getCatchParam(), tc.getCatchParamType(),
+                    tc.getCatchBlock() != null
+                            ? removeUnreachableInStmt(tc.getCatchBlock())
+                            : null,
+                    tc.getFinallyBlock() != null
+                            ? removeUnreachableInStmt(tc.getFinallyBlock())
+                            : null);
+        }
+        if (stmt instanceof ArkTSControlFlow.SwitchStatement) {
+            ArkTSControlFlow.SwitchStatement sw =
+                    (ArkTSControlFlow.SwitchStatement) stmt;
+            List<ArkTSControlFlow.SwitchStatement.SwitchCase> cases =
+                    new ArrayList<>();
+            for (ArkTSControlFlow.SwitchStatement.SwitchCase sc :
+                    sw.getCases()) {
+                List<ArkTSStatement> cleanedBody =
+                        removeUnreachableCode(sc.getBody());
+                cases.add(new ArkTSControlFlow.SwitchStatement.SwitchCase(
+                        sc.getTests(), cleanedBody));
+            }
+            return new ArkTSControlFlow.SwitchStatement(
+                    sw.getDiscriminant(), cases,
+                    sw.getDefaultBlock() != null
+                            ? removeUnreachableInStmt(sw.getDefaultBlock())
+                            : null);
+        }
+        return stmt;
+    }
+
+    /**
+     * Removes return statements with values from void methods.
+     * Ark bytecode always emits RETURN with the accumulator, even in void
+     * methods. This strips the value from terminal return statements when
+     * the method return type is void.
+     */
+    private static List<ArkTSStatement> filterVoidMethodReturns(
+            List<ArkTSStatement> stmts, boolean isVoidMethod) {
+        if (stmts.isEmpty()) {
+            return stmts;
+        }
+        ArkTSStatement last = stmts.get(stmts.size() - 1);
+        if (last instanceof ArkTSStatement.ReturnStatement) {
+            ArkTSExpression val =
+                    ((ArkTSStatement.ReturnStatement) last).getValue();
+            if (val == null) {
+                // Plain return; — remove entirely
+                return stmts.subList(0, stmts.size() - 1);
+            }
+            // In void methods, strip return undefined;
+            if (isVoidMethod && isUndefinedLiteral(val)) {
+                return stmts.subList(0, stmts.size() - 1);
+            }
+        }
+        return stmts;
+    }
+
+    private static boolean isUndefinedLiteral(ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.LiteralExpression)) {
+            return false;
+        }
+        return ((ArkTSExpression.LiteralExpression) expr).getKind()
+                == ArkTSExpression.LiteralExpression.LiteralKind.UNDEFINED;
+    }
+
+    /**
      * Converts {@code x += 1} to {@code x++} and {@code x -= 1} to
      * {@code x--} when used as ExpressionStatement.
      */
@@ -2034,24 +2184,25 @@ public class ArkTSDecompiler {
     private String buildMethodSource(AbcMethod method, AbcProto proto,
             AbcCode code, List<ArkTSStatement> bodyStmts,
             AbcFile abcFile, int restParamIndex, boolean isAsync) {
-        List<ArkTSStatement> filteredStmts =
-                filterTrivialReturnUndefined(bodyStmts);
-
         List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
                 MethodSignatureBuilder.buildParams(proto,
                         code.getNumArgs(),
                         getDebugParamNames(method, abcFile),
                         restParamIndex);
         String returnType = MethodSignatureBuilder.getReturnType(proto);
+        boolean isVoidMethod = "void".equals(returnType);
         // When proto-based type is void (no proto or void shorty),
         // try to infer a more specific return type from the body
-        if ("void".equals(returnType)) {
+        if (isVoidMethod) {
             String inferred =
-                    inferReturnType(filteredStmts);
+                    inferReturnType(bodyStmts);
             if (inferred != null && !"void".equals(inferred)) {
                 returnType = inferred;
+                isVoidMethod = false;
             }
         }
+        List<ArkTSStatement> filteredStmts =
+                filterVoidMethodReturns(bodyStmts, isVoidMethod);
         ArkTSStatement body =
                 new ArkTSStatement.BlockStatement(filteredStmts);
         ArkTSDeclarations.FunctionDeclaration func =
