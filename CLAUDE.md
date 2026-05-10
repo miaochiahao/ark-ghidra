@@ -250,15 +250,23 @@ Many Ark instructions have **multiple `opcode_idx` values** — an 8-bit IC slot
 - **417 acc references outside comments** — raw accumulator leaking into output
 - **Method name decoding** — FIXED: `sanitizeMethodName()` decodes `#~@N>#name` patterns
 - **Constructor detection** — FIXED: `isConstructorMethod()` detects `#~@N=#name` patterns
-- **Remaining:** import resolution (`import_N` placeholders), string literal decoding, acc leaking
+- **Throw prefix handling** — FIXED: Only `throw` (0xFE 0x00) emits ThrowStatement; runtime assertion throws (0xFE 0x01-0x09) now produce NO_OP
+- **Async method abstract detection** — FIXED: Methods with ACC_ABSTRACT flag but non-empty bodies are no longer rendered as abstract
+- **Getter/setter ABC encoding** — FIXED: `isAccessorPrefix()` detects `#~@N<#name` pattern for getter/setter identification
+- **INSTANCEOF opcode** — VERIFIED: Already fully handled in OperatorHandler (binary operator "instanceof")
+- **STARRAYSPREAD opcode** — VERIFIED: Already handled in LoadStoreHandler with SpreadExpression AST node
+- **Remaining:** import resolution (`import_N` placeholders), string literal decoding (`str_N` for unresolved LNP strings), acc leaking, unknown opcodes DD-DF/E0-E1 (vendor-specific, not in standard isa.yaml)
 
 ### Loop Iteration Notes
 
-- **Open issues as of 2026-05-11:** #72 (module.json5), #73 (UI jumps), #184 (JEB-like UI), #185 (decompiler quality audit with known-source HAP). #185 is the current priority.
+- **Open issues as of 2026-05-11:** #72 (module.json5), #73 (UI jumps), #184 (JEB-like UI), #185 (decompiler quality audit with known-source HAP), #189 (async/Map/Set/getter/setter/spread patterns).
 - **E2E stats:** 27,337 methods across 5 HAP files (real-world), 52 methods on known-source test HAP — 0 failures, 0 timeouts across all.
 - **Known-source test HAP:** Built from `/Users/anakin/DevEcoStudioProjects/MyApplication` with explicit code patterns (if/else, switch, for, while, class, inheritance, static members, lambdas, recursion). See `data/test_hap/arkts-decompile-test_original_index.ets` for original source.
-- **Priority:** Fix decompiler quality issues identified in #185 (method names, control flow, strings, imports, unhandled opcodes E0/E1/DD/DE/DF).
+- **Test HAP 2:** Built with async/await, Map/Set, getter/setter, spread, instanceof, try-catch-finally patterns. See `data/test_hap/arkts-decompile-test2_original_index.ets`.
+- **Priority:** Fix decompiler quality issues identified in #185 and #189. Key remaining issues: string resolution (`str_N` placeholders), unknown opcodes DD-DF/E0-E1 (vendor-specific beyond standard isa.yaml `last_opcode_idx: 0xDC`), acc leaking.
 - **Wide opcode format:** Wide sub-opcodes are in the 0x80+ range. Sub-opcodes below 0x80 (like 0x28) produce `wide_unknown_XX` mnemonic with UNKNOWN format (length=1) — they don't throw. Test only recognized wide opcodes when testing truncation behavior.
+- **Throw prefix sub-opcodes (0xFE prefix):** Only 0x00 is a real throw. Sub-opcodes 0x01-0x09 (throw.notexists, throw.patternnoncoercible, throw.deletesuperproperty, throw.constassignment, throw.ifnotobject, throw.undefinedifhole, throw.ifsupernotcorrectcall, throw.undefinedifholewithname) are compiler-inserted runtime checks — they produce NO_OP, not ThrowStatement.
+- **ABC string resolution:** `resolveStringByIndex()` uses LNP index table (offsets). For some ABC files (newer compiler versions), certain string indices fail to resolve, producing `str_N` placeholders. Root cause may be LNP index format differences between compiler versions.
 
 ---
 
