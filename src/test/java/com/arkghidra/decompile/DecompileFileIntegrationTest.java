@@ -285,6 +285,30 @@ class DecompileFileIntegrationTest {
         }
     }
 
+    // =====================================================================
+    // Method-level error resilience
+    // =====================================================================
+
+    @Nested
+    @DisplayName("Method-level error resilience")
+    class MethodErrorResilienceTests {
+
+        @Test
+        @DisplayName("class with bad method still decompiles other methods")
+        void testClassWithBadMethodDecompilesOtherMethods() {
+            AbcTestFixture fixture = new AbcTestFixture();
+            byte[] data = fixture.buildComprehensiveAbc();
+            AbcFile abcFile = AbcFile.parse(data);
+
+            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+            String result = decompiler.decompileFile(abcFile);
+            assertNotNull(result);
+            assertFalse(result.isEmpty());
+            assertTrue(result.contains("class "),
+                    "Should still produce class declarations");
+        }
+    }
+
     // --- Helper methods ---
 
     private static long countOccurrences(String haystack, String needle) {

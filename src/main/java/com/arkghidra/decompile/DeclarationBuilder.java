@@ -105,16 +105,27 @@ class DeclarationBuilder {
         List<ArkTSStatement> methodDecls = new ArrayList<>();
         List<AbcField> classFields = abcClass.getFields();
         for (AbcMethod method : abcClass.getMethods()) {
-            if (isConstructorMethod(method, className)) {
-                constructorDecl = buildConstructorDeclaration(
-                        method, abcFile, classFields);
-            } else {
-                ArkTSStatement methodDecl = buildMethodOrAccessor(
-                        method, abcFile, className, isAbstractClass,
-                        superMethodNames);
-                if (methodDecl != null) {
-                    methodDecls.add(methodDecl);
+            try {
+                if (isConstructorMethod(method, className)) {
+                    constructorDecl = buildConstructorDeclaration(
+                            method, abcFile, classFields);
+                } else {
+                    ArkTSStatement methodDecl = buildMethodOrAccessor(
+                            method, abcFile, className, isAbstractClass,
+                            superMethodNames);
+                    if (methodDecl != null) {
+                        methodDecls.add(methodDecl);
+                    }
                 }
+            } catch (Exception e) {
+                String mName = sanitizeClassName(method.getName());
+                methodDecls.add(
+                        new ArkTSStatement.ExpressionStatement(
+                                new ArkTSExpression.VariableExpression(
+                                        "/* error decompiling method "
+                                                + mName + ": "
+                                                + e.getMessage()
+                                                + " */")));
             }
         }
         if (constructorDecl != null) {
@@ -1483,19 +1494,30 @@ class DeclarationBuilder {
             members.add(fieldDecl);
         }
         for (AbcMethod method : abcClass.getMethods()) {
-            if (isConstructorMethod(method, className)) {
-                ArkTSStatement constructor =
-                        buildConstructorDeclaration(method, abcFile,
-                                abcClass.getFields());
-                if (constructor != null) {
-                    members.add(constructor);
+            try {
+                if (isConstructorMethod(method, className)) {
+                    ArkTSStatement constructor =
+                            buildConstructorDeclaration(method, abcFile,
+                                    abcClass.getFields());
+                    if (constructor != null) {
+                        members.add(constructor);
+                    }
+                } else {
+                    ArkTSStatement methodDecl = buildMethodOrAccessor(
+                            method, abcFile, className, false);
+                    if (methodDecl != null) {
+                        members.add(methodDecl);
+                    }
                 }
-            } else {
-                ArkTSStatement methodDecl = buildMethodOrAccessor(
-                        method, abcFile, className, false);
-                if (methodDecl != null) {
-                    members.add(methodDecl);
-                }
+            } catch (Exception e) {
+                String mName = sanitizeClassName(method.getName());
+                members.add(
+                        new ArkTSStatement.ExpressionStatement(
+                                new ArkTSExpression.VariableExpression(
+                                        "/* error decompiling method "
+                                                + mName + ": "
+                                                + e.getMessage()
+                                                + " */")));
             }
         }
         return new ArkTSDeclarations.ClassDeclaration(
