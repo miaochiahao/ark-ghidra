@@ -1139,6 +1139,19 @@ class ExpressionVisitor {
         return false;
     }
 
+    static int countVariableReadUsage(ArkTSExpression expr,
+            String varName) {
+        if (expr == null) {
+            return 0;
+        }
+        if (expr instanceof ArkTSExpression.AssignExpression) {
+            return countVariableReadUsage(
+                    ((ArkTSExpression.AssignExpression) expr).getValue(),
+                    varName);
+        }
+        return countVariableUsage(expr, varName);
+    }
+
     /**
      * Recursively counts how many times a variable name appears as a
      * VariableExpression in an expression tree. Returns

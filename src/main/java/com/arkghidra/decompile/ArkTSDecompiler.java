@@ -181,6 +181,7 @@ public class ArkTSDecompiler {
             bodyStmts = removeUnreachableCode(bodyStmts);
             bodyStmts = removeAlwaysFalseConditions(bodyStmts);
             bodyStmts = removeUnusedVariables(bodyStmts);
+            bodyStmts = eliminateDeadPropertyLoads(bodyStmts);
             bodyStmts = simplifyIncrementDecrement(bodyStmts);
             bodyStmts = ExpressionVisitor.eliminateRedundantCopies(
                     bodyStmts);
@@ -239,6 +240,7 @@ public class ArkTSDecompiler {
             stmts = simplifyReturnIfTernary(stmts);
             stmts = convertIfElseChainToSwitch(stmts);
             stmts = removeUnusedVariables(stmts);
+            stmts = eliminateDeadPropertyLoads(stmts);
             stmts = simplifyIncrementDecrement(stmts);
             stmts = ExpressionVisitor.eliminateRedundantCopies(stmts);
         } catch (Exception e) {
@@ -482,13 +484,14 @@ public class ArkTSDecompiler {
 
             return ExpressionVisitor.eliminateRedundantCopies(
                     simplifyIncrementDecrement(
-                            removeUnusedVariables(
+                            eliminateDeadPropertyLoads(
+                                    removeUnusedVariables(
                                     convertIfElseChainToSwitch(
                                             simplifyReturnIfTernary(
                                                     detectSwitchExpressions(
                                                             mergeNestedIfConditions(
                                                                     ExpressionVisitor.inlineSingleUseVariables(
-                                                                            applyConstOptimization(stmts)))))))));
+                                                                            applyConstOptimization(stmts))))))))));
         } catch (Exception e) {
             ctx.warnings.add("Statement generation failed: "
                     + e.getMessage());
@@ -989,6 +992,40 @@ public class ArkTSDecompiler {
                 ? stmts : result;
     }
 
+    private static int countVarReadUsageInStmt(ArkTSStatement stmt,
+            String varName) {
+        if (stmt instanceof ArkTSStatement.VariableDeclaration) {
+            ArkTSStatement.VariableDeclaration decl =
+                    (ArkTSStatement.VariableDeclaration) stmt;
+            if (decl.getName().equals(varName)) {
+                return 0;
+            }
+            return decl.getInitializer() != null
+                    ? ExpressionVisitor.countVariableReadUsage(
+                            decl.getInitializer(), varName)
+                    : 0;
+        } else if (stmt instanceof ArkTSStatement.ExpressionStatement) {
+            return ExpressionVisitor.countVariableReadUsage(
+                    ((ArkTSStatement.ExpressionStatement) stmt)
+                            .getExpression(),
+                    varName);
+        } else if (stmt instanceof ArkTSStatement.ReturnStatement) {
+            ArkTSExpression val =
+                    ((ArkTSStatement.ReturnStatement) stmt).getValue();
+            return val != null
+                    ? ExpressionVisitor.countVariableReadUsage(
+                            val, varName)
+                    : 0;
+        } else if (stmt instanceof ArkTSStatement.ThrowStatement) {
+            return ExpressionVisitor.countVariableReadUsage(
+                    ((ArkTSStatement.ThrowStatement) stmt).getValue(),
+                    varName);
+        }
+        // For control flow (if/while/switch/try etc.), delegate to
+        // countVarUsageInStmt which handles nested blocks correctly.
+        return countVarUsageInStmt(stmt, varName);
+    }
+
     private static int countVarUsageInStmt(ArkTSStatement stmt,
             String varName) {
         if (stmt instanceof ArkTSStatement.VariableDeclaration) {
@@ -1433,6 +1470,82 @@ public class ArkTSDecompiler {
             default:
                 return false;
         }
+    }
+
+    static List<ArkTSStatement> eliminateDeadPropertyLoads(
+            List<ArkTSStatement> stmts) {
+        if (stmts == null || stmts.size() < 2) {
+            return stmts;
+        }
+        List<ArkTSStatement> result = new ArrayList<>(stmts);
+        boolean changed = true;
+        while (changed) {
+            changed = false;
+            for (int i = 0; i < result.size() - 1; i++) {
+                if (!(result.get(i)
+                        instanceof ArkTSStatement.VariableDeclaration)) {
+                    continue;
+                }
+                ArkTSStatement.VariableDeclaration decl =
+                        (ArkTSStatement.VariableDeclaration) result.get(i);
+                ArkTSExpression init = decl.getInitializer();
+                if (!(init instanceof ArkTSExpression.MemberExpression)
+                        && !(init
+                                instanceof ArkTSExpression
+                                        .VariableExpression)) {
+                    continue;
+                }
+                String varName = decl.getName();
+                if (isOnlyUsedAsAssignTarget(result, i, varName)) {
+                    result.remove(i);
+                    changed = true;
+                    break;
+                }
+            }
+        }
+        return result;
+    }
+
+    private static boolean isOnlyUsedAsAssignTarget(
+            List<ArkTSStatement> stmts, int declIdx, String varName) {
+        boolean hasAssignment = false;
+        for (int i = declIdx + 1; i < stmts.size(); i++) {
+            ArkTSStatement stmt = stmts.get(i);
+            if (stmt instanceof ArkTSStatement.ExpressionStatement) {
+                ArkTSExpression expr =
+                        ((ArkTSStatement.ExpressionStatement) stmt)
+                                .getExpression();
+                if (expr instanceof ArkTSExpression.AssignExpression) {
+                    ArkTSExpression.AssignExpression assign =
+                            (ArkTSExpression.AssignExpression) expr;
+                    if (isVariableTarget(assign.getTarget(), varName)) {
+                        hasAssignment = true;
+                        continue;
+                    }
+                }
+                if (ExpressionVisitor.countVariableReadUsage(expr, varName)
+                        > 0) {
+                    return false;
+                }
+            } else if (stmt instanceof ArkTSStatement.ReturnStatement
+                    || stmt instanceof ArkTSStatement.ThrowStatement) {
+                if (countVarReadUsageInStmt(stmt, varName) > 0) {
+                    return false;
+                }
+            } else if (countVarUsageInStmt(stmt, varName) > 0) {
+                return false;
+            }
+        }
+        return hasAssignment;
+    }
+
+    private static boolean isVariableTarget(ArkTSExpression target,
+            String varName) {
+        if (target instanceof ArkTSExpression.VariableExpression) {
+            return ((ArkTSExpression.VariableExpression) target)
+                    .getName().equals(varName);
+        }
+        return false;
     }
 
     /**
