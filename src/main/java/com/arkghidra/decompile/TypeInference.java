@@ -350,7 +350,12 @@ public class TypeInference {
                 || opcode == ArkOpcodesCompat.CALLTHIS0
                 || opcode == ArkOpcodesCompat.CALLTHIS1
                 || opcode == ArkOpcodesCompat.CALLTHIS2
-                || opcode == ArkOpcodesCompat.CALLTHIS3;
+                || opcode == ArkOpcodesCompat.CALLTHIS3
+                || opcode == ArkOpcodesCompat.CALLTHIS0WITHNAME
+                || opcode == ArkOpcodesCompat.CALLTHIS1WITHNAME
+                || opcode == ArkOpcodesCompat.CALLTHIS2WITHNAME
+                || opcode == ArkOpcodesCompat.CALLTHIS3WITHNAME
+                || opcode == ArkOpcodesCompat.CALLTHISRANGEWITHNAME;
     }
 
     private static final java.util.Map<String, String>

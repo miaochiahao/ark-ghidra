@@ -35,6 +35,8 @@ package com.arkghidra.disasm;
  *   <li>V8_IMM8: opcode + reg8 + imm8 (3 bytes)</li>
  *   <li>V8_IMM16: opcode + reg8 + imm16 (4 bytes)</li>
  *   <li>IMM8_V8_IMM16: opcode + imm8 + reg8 + imm16 (5 bytes)</li>
+ *   <li>IMM8_IMM16_V8_V8_V8: opcode + imm8 + imm16 + reg8 + reg8 + reg8 (7 bytes)</li>
+ *   <li>IMM8_IMM16_V8_V8_V8_V8: opcode + imm8 + imm16 + reg8 + reg8 + reg8 + reg8 (8 bytes)</li>
  * </ul>
  */
 public enum ArkInstructionFormat {
@@ -153,6 +155,10 @@ public enum ArkInstructionFormat {
     IMM16_IMM16_IMM8(6),
     /** Opcode + 8-bit IC + 16-bit string + two 8-bit registers (vendor-specific). */
     IMM8_IMM16_V8_V8(6),
+    /** Opcode + 8-bit IC + 16-bit string + three 8-bit registers (vendor-specific). */
+    IMM8_IMM16_V8_V8_V8(7),
+    /** Opcode + 8-bit IC + 16-bit string + four 8-bit registers (vendor-specific). */
+    IMM8_IMM16_V8_V8_V8_V8(8),
     /** Opcode + two 8-bit ICs + 16-bit string + 8-bit register (vendor-specific). */
     IMM8_IMM8_IMM16_V8(6),
 

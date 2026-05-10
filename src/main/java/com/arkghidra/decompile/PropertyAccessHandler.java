@@ -144,6 +144,109 @@ class PropertyAccessHandler {
                     }
                 }
                 break;
+
+            // --- Vendor-specific named call opcodes (HarmonyOS API 12+) ---
+            // These embed the method name (ID16) in operands[1].
+            // Operands layout: [0]=IC slot, [1]=string_id (method name),
+            // [2]=this register, [3..]=arg registers
+            case ArkOpcodesCompat.CALLTHIS0WITHNAME: {
+                int stringIdx = (int) operands.get(1).getValue();
+                String methodName = sanitizePropertyName(
+                        ctx.resolveString(stringIdx));
+                ArkTSExpression thisObj =
+                        new ArkTSExpression.VariableExpression(
+                                ctx.resolveRegisterName(
+                                        (int) operands.get(2).getValue()));
+                callee = new ArkTSExpression.MemberExpression(
+                        thisObj,
+                        new ArkTSExpression.VariableExpression(methodName),
+                        false);
+                break;
+            }
+            case ArkOpcodesCompat.CALLTHIS1WITHNAME: {
+                int stringIdx = (int) operands.get(1).getValue();
+                String methodName = sanitizePropertyName(
+                        ctx.resolveString(stringIdx));
+                ArkTSExpression thisObj =
+                        new ArkTSExpression.VariableExpression(
+                                ctx.resolveRegisterName(
+                                        (int) operands.get(2).getValue()));
+                callee = new ArkTSExpression.MemberExpression(
+                        thisObj,
+                        new ArkTSExpression.VariableExpression(methodName),
+                        false);
+                args.add(new ArkTSExpression.VariableExpression(
+                        ctx.resolveRegisterName(
+                                (int) operands.get(3).getValue())));
+                break;
+            }
+            case ArkOpcodesCompat.CALLTHIS2WITHNAME: {
+                int stringIdx = (int) operands.get(1).getValue();
+                String methodName = sanitizePropertyName(
+                        ctx.resolveString(stringIdx));
+                ArkTSExpression thisObj =
+                        new ArkTSExpression.VariableExpression(
+                                ctx.resolveRegisterName(
+                                        (int) operands.get(2).getValue()));
+                callee = new ArkTSExpression.MemberExpression(
+                        thisObj,
+                        new ArkTSExpression.VariableExpression(methodName),
+                        false);
+                args.add(new ArkTSExpression.VariableExpression(
+                        ctx.resolveRegisterName(
+                                (int) operands.get(3).getValue())));
+                args.add(new ArkTSExpression.VariableExpression(
+                        ctx.resolveRegisterName(
+                                (int) operands.get(4).getValue())));
+                break;
+            }
+            case ArkOpcodesCompat.CALLTHIS3WITHNAME: {
+                int stringIdx = (int) operands.get(1).getValue();
+                String methodName = sanitizePropertyName(
+                        ctx.resolveString(stringIdx));
+                ArkTSExpression thisObj =
+                        new ArkTSExpression.VariableExpression(
+                                ctx.resolveRegisterName(
+                                        (int) operands.get(2).getValue()));
+                callee = new ArkTSExpression.MemberExpression(
+                        thisObj,
+                        new ArkTSExpression.VariableExpression(methodName),
+                        false);
+                args.add(new ArkTSExpression.VariableExpression(
+                        ctx.resolveRegisterName(
+                                (int) operands.get(3).getValue())));
+                args.add(new ArkTSExpression.VariableExpression(
+                        ctx.resolveRegisterName(
+                                (int) operands.get(4).getValue())));
+                args.add(new ArkTSExpression.VariableExpression(
+                        ctx.resolveRegisterName(
+                                (int) operands.get(5).getValue())));
+                break;
+            }
+            case ArkOpcodesCompat.CALLTHISRANGEWITHNAME: {
+                // IMM8_IMM8_IMM16_V8: [0]=IC, [1]=numArgs, [2]=string_id, [3]=firstReg
+                int stringIdx = (int) operands.get(2).getValue();
+                String methodName = sanitizePropertyName(
+                        ctx.resolveString(stringIdx));
+                ArkTSExpression thisObj =
+                        new ArkTSExpression.VariableExpression(
+                                ctx.resolveRegisterName(
+                                        (int) operands.get(3).getValue()));
+                callee = new ArkTSExpression.MemberExpression(
+                        thisObj,
+                        new ArkTSExpression.VariableExpression(methodName),
+                        false);
+                int numRangeArgs = (int) operands.get(1).getValue();
+                int firstReg = (int) operands.get(3).getValue();
+                // numRangeArgs includes 'this' as the first element;
+                // actual method args start at firstReg+1
+                int numMethodArgs = numRangeArgs - 1;
+                for (int a = 0; a < numMethodArgs; a++) {
+                    args.add(new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(firstReg + 1 + a)));
+                }
+                break;
+            }
             default:
                 break;
         }

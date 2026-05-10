@@ -364,6 +364,23 @@ public class ArkDisassembler {
                 operands.add(reg(buf));
                 break;
 
+            case IMM8_IMM16_V8_V8_V8:
+                operands.add(imm8(buf));
+                operands.add(imm16(buf));
+                operands.add(reg(buf));
+                operands.add(reg(buf));
+                operands.add(reg(buf));
+                break;
+
+            case IMM8_IMM16_V8_V8_V8_V8:
+                operands.add(imm8(buf));
+                operands.add(imm16(buf));
+                operands.add(reg(buf));
+                operands.add(reg(buf));
+                operands.add(reg(buf));
+                operands.add(reg(buf));
+                break;
+
             case IMM8_IMM8_IMM16_V8:
                 operands.add(imm8(buf));
                 operands.add(imm8(buf));

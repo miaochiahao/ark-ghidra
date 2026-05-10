@@ -1325,7 +1325,12 @@ class OperatorHandler {
                 || opcode == ArkOpcodesCompat.CALLTHIS2
                 || opcode == ArkOpcodesCompat.CALLTHIS3
                 || opcode == ArkOpcodesCompat.CALLTHISRANGE
-                || opcode == ArkOpcodesCompat.CALLRANGE;
+                || opcode == ArkOpcodesCompat.CALLRANGE
+                || opcode == ArkOpcodesCompat.CALLTHIS0WITHNAME
+                || opcode == ArkOpcodesCompat.CALLTHIS1WITHNAME
+                || opcode == ArkOpcodesCompat.CALLTHIS2WITHNAME
+                || opcode == ArkOpcodesCompat.CALLTHIS3WITHNAME
+                || opcode == ArkOpcodesCompat.CALLTHISRANGEWITHNAME;
     }
 
     // --- Property opcode classification ---

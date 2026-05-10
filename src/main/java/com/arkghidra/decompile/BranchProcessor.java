@@ -309,9 +309,11 @@ class BranchProcessor {
         // --- Guard clause detection ---
         // If the branch block is a simple return, emit as guard clause
         BasicBlock branchBlock = pattern.trueBlock;
+        BasicBlock otherBlock = pattern.falseBlock;
         List<ArkTSStatement> guardResult =
                 tryProcessGuardClause(condBlock, pattern, ctx,
-                        lastOpcode, condition, branchBlock, visited);
+                        lastOpcode, condition, branchBlock,
+                        otherBlock, visited);
         if (guardResult != null) {
             stmts.addAll(guardResult);
             return stmts;
@@ -430,9 +432,18 @@ class BranchProcessor {
             ControlFlowReconstructor.ControlFlowPattern pattern,
             DecompilationContext ctx, int lastOpcode,
             ArkTSExpression condition, BasicBlock branchBlock,
+            BasicBlock otherBlock,
             Set<BasicBlock> visited) {
 
         if (!isGuardReturnBlock(branchBlock)) {
+            return null;
+        }
+
+        // If the other branch also has significant code (not just a return),
+        // this is not a guard clause — it's a normal if-then (e.g., default
+        // parameter assignment). Guard clauses require the fall-through to
+        // be the main continuation, not an alternative return path.
+        if (otherBlock != null && !isGuardReturnBlock(otherBlock)) {
             return null;
         }
 
@@ -576,16 +587,30 @@ class BranchProcessor {
                     ControlFlowReconstructor.ACC);
         }
 
-        visited.add(pattern.falseBlock);
-        if (pattern.mergeBlock != null) {
-            visited.add(pattern.mergeBlock);
-        }
-
         ArkTSExpression combined =
                 new ArkTSExpression.BinaryExpression(
                         leftCond, "&&", rightCond);
 
-        stmts.add(new ArkTSStatement.ExpressionStatement(combined));
+        BasicBlock thenBody = findShortCircuitThenBody(
+                secondCondBlock, pattern.mergeBlock, cfg);
+        if (thenBody != null && !visited.contains(thenBody)) {
+            visited.add(thenBody);
+            visited.add(pattern.falseBlock);
+            if (pattern.mergeBlock != null) {
+                visited.add(pattern.mergeBlock);
+            }
+            List<ArkTSStatement> thenStmts =
+                    reconstructor.processBlockInstructions(thenBody, ctx);
+            ArkTSStatement body =
+                    new ArkTSStatement.BlockStatement(thenStmts);
+            stmts.add(new ArkTSControlFlow.IfStatement(combined, body, null));
+        } else {
+            visited.add(pattern.falseBlock);
+            if (pattern.mergeBlock != null) {
+                visited.add(pattern.mergeBlock);
+            }
+            stmts.add(new ArkTSStatement.ExpressionStatement(combined));
+        }
 
         return stmts;
     }
@@ -627,18 +652,65 @@ class BranchProcessor {
                     ControlFlowReconstructor.ACC);
         }
 
-        visited.add(pattern.falseBlock);
-        if (pattern.mergeBlock != null) {
-            visited.add(pattern.mergeBlock);
-        }
-
         ArkTSExpression combined =
                 new ArkTSExpression.BinaryExpression(
                         leftCond, "||", rightCond);
 
-        stmts.add(new ArkTSStatement.ExpressionStatement(combined));
+        BasicBlock thenBody = findShortCircuitThenBody(
+                secondCondBlock, pattern.mergeBlock, cfg);
+        if (thenBody != null && !visited.contains(thenBody)) {
+            visited.add(thenBody);
+            visited.add(pattern.falseBlock);
+            if (pattern.mergeBlock != null) {
+                visited.add(pattern.mergeBlock);
+            }
+            List<ArkTSStatement> thenStmts =
+                    reconstructor.processBlockInstructions(thenBody, ctx);
+            ArkTSStatement body =
+                    new ArkTSStatement.BlockStatement(thenStmts);
+            stmts.add(new ArkTSControlFlow.IfStatement(combined, body, null));
+        } else {
+            visited.add(pattern.falseBlock);
+            if (pattern.mergeBlock != null) {
+                visited.add(pattern.mergeBlock);
+            }
+            stmts.add(new ArkTSStatement.ExpressionStatement(combined));
+        }
 
         return stmts;
+    }
+
+    // --- Short-circuit then-body detection ---
+
+    /**
+     * Finds the "then" body block after a short-circuit condition pair.
+     *
+     * <p>For {@code if (a && b) { body } }, after the second jeqz,
+     * the fall-through block (CONDITIONAL_FALSE successor of
+     * secondCondBlock) is the then-body, and the jump target is the
+     * merge point. If the fall-through differs from the merge, it
+     * contains the guarded code.
+     *
+     * @param secondCondBlock the block containing the second condition
+     * @param mergeBlock the merge block (jump target of both conditions)
+     * @param cfg the control flow graph
+     * @return the then-body block, or null if none found
+     */
+    private BasicBlock findShortCircuitThenBody(BasicBlock secondCondBlock,
+            BasicBlock mergeBlock, ControlFlowGraph cfg) {
+        List<CFGEdge> succs = secondCondBlock.getSuccessors();
+        for (CFGEdge edge : succs) {
+            if (edge.getType() == EdgeType.CONDITIONAL_FALSE) {
+                BasicBlock fallThrough =
+                        cfg.getBlockAt(edge.getToOffset());
+                if (fallThrough != null
+                        && fallThrough != mergeBlock
+                        && fallThrough != secondCondBlock) {
+                    return fallThrough;
+                }
+            }
+        }
+        return null;
     }
 
     // --- Logical compound assignment detection ---

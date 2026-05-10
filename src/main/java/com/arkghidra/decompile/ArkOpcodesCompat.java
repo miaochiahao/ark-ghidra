@@ -76,6 +76,13 @@ final class ArkOpcodesCompat {
     static final int CALLRANGE = ArkOpcodes.CALLRANGE;
     static final int NEWOBJRANGE = ArkOpcodes.NEWOBJRANGE;
 
+    // --- Vendor-specific named call opcodes (HarmonyOS API 12+) ---
+    static final int CALLTHIS0WITHNAME = ArkOpcodes.CALLTHIS0WITHNAME;
+    static final int CALLTHIS1WITHNAME = ArkOpcodes.CALLTHIS1WITHNAME;
+    static final int CALLTHIS2WITHNAME = ArkOpcodes.CALLTHIS2WITHNAME;
+    static final int CALLTHIS3WITHNAME = ArkOpcodes.CALLTHIS3WITHNAME;
+    static final int CALLTHISRANGEWITHNAME = ArkOpcodes.CALLTHISRANGEWITHNAME;
+
     static final int JMP_IMM8 = ArkOpcodes.JMP_IMM8;
     static final int JMP_IMM16 = ArkOpcodes.JMP_IMM16;
     static final int JEQZ_IMM8 = ArkOpcodes.JEQZ_IMM8;
@@ -534,6 +541,17 @@ final class ArkOpcodesCompat {
                 return STOWNBYNAMEWITHNAMESET;
             case CREATEREGEXPWITHLITERAL_16:
                 return CREATEREGEXPWITHLITERAL;
+            // Vendor-specific named call opcodes map to their base equivalents
+            case CALLTHIS0WITHNAME:
+                return CALLTHIS0;
+            case CALLTHIS1WITHNAME:
+                return CALLTHIS1;
+            case CALLTHIS2WITHNAME:
+                return CALLTHIS2;
+            case CALLTHIS3WITHNAME:
+                return CALLTHIS3;
+            case CALLTHISRANGEWITHNAME:
+                return CALLTHISRANGE;
             default:
                 return opcode;
         }

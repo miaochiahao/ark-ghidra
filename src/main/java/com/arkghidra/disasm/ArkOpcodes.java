@@ -369,14 +369,15 @@ public final class ArkOpcodes {
     public static final int STOWNBYVALUEWITHNAMESET_16 = 0xD2;
     public static final int STOWNBYNAMEWITHNAMESET_16 = 0xD4;
 
-    // --- Vendor-specific opcodes (HarmonyOS API 12+, beyond isa.yaml 0xDC) ---
-    // Format determined by empirical binary analysis across multiple HAP files.
-    // These opcodes appear in ABC files compiled with ArkTS v12+ compilers.
-    public static final int VENDOR_DD = 0xDD;
-    public static final int VENDOR_DE = 0xDE;
-    public static final int VENDOR_DF = 0xDF;
-    public static final int VENDOR_E0 = 0xE0;
-    public static final int VENDOR_E1 = 0xE1;
+    // --- Vendor-specific call opcodes (HarmonyOS API 12+, beyond isa.yaml 0xDC) ---
+    // These are named call variants that embed the method name (ID16) in the instruction.
+    // They appear in ABC files compiled with newer ArkTS compilers (DevEco Studio SDK 12+).
+    // Confirmed via official ark_disasm tool from HarmonyOS SDK.
+    public static final int CALLTHIS0WITHNAME = 0xDD;
+    public static final int CALLTHIS1WITHNAME = 0xDE;
+    public static final int CALLTHIS2WITHNAME = 0xDF;
+    public static final int CALLTHIS3WITHNAME = 0xE0;
+    public static final int CALLTHISRANGEWITHNAME = 0xE1;
 
     private ArkOpcodes() {
         // utility class — no instances
@@ -609,12 +610,12 @@ public final class ArkOpcodes {
             case STSUPERBYNAME_16: return "stsuperbyname";
             case STOWNBYVALUEWITHNAMESET_16: return "stownbyvaluewithnameset";
             case STOWNBYNAMEWITHNAMESET_16: return "stownbynamewithnameset";
-            // Vendor-specific opcodes (HarmonyOS API 12+)
-            case VENDOR_DD: return "vendor.definepropertybyname";
-            case VENDOR_DE: return "vendor.definepropertybyvalue";
-            case VENDOR_DF: return "vendor.ldpropertybyname";
-            case VENDOR_E0: return "vendor.callinit";
-            case VENDOR_E1: return "vendor.definefunc.dyn";
+            // Vendor-specific named call opcodes (HarmonyOS API 12+)
+            case CALLTHIS0WITHNAME: return "callthis0withname";
+            case CALLTHIS1WITHNAME: return "callthis1withname";
+            case CALLTHIS2WITHNAME: return "callthis2withname";
+            case CALLTHIS3WITHNAME: return "callthis3withname";
+            case CALLTHISRANGEWITHNAME: return "callthisrangewithname";
             default: return String.format("unknown_%02X", opcode & 0xFF);
         }
     }
@@ -947,22 +948,22 @@ public final class ArkOpcodes {
             case DEFINEMETHOD_16:
                 return ArkInstructionFormat.IMM16_IMM16_IMM8;
 
-            // Vendor-specific opcodes (HarmonyOS API 12+)
-            // Formats determined by empirical binary analysis:
-            // DD = vendor.definepropertybyname: IMM8 IC + IMM16 string + V8 obj
-            // DE = vendor.definepropertybyvalue: IMM8 IC + IMM16 string + V8 obj + V8 val
-            // DF = vendor.ldpropertybyname: IMM8 IC + IMM16 string + V8 obj
-            // E0 = vendor.callinit: IMM8 IC + IMM16 method
-            // E1 = vendor.definefunc.dyn: IMM8 + IMM8 + IMM16 string + V8
-            case VENDOR_DD:
+            // Vendor-specific named call opcodes (HarmonyOS API 12+)
+            // Formats confirmed via official ark_disasm tool:
+            // DD = callthis0withname: IMM8 IC + IMM16 method_name + V8 this
+            // DE = callthis1withname: IMM8 IC + IMM16 method_name + V8 this + V8 arg0
+            // DF = callthis2withname: IMM8 IC + IMM16 method_name + V8 this + V8 arg0 + V8 arg1
+            // E0 = callthis3withname: IMM8 IC + IMM16 method_name + V8 this + V8 arg0 + V8 arg1 + V8 arg2
+            // E1 = callthisrangewithname: IMM8 IC + IMM8 numArgs + IMM16 method_name + V8 firstReg
+            case CALLTHIS0WITHNAME:
                 return ArkInstructionFormat.IMM8_IMM16_V8;
-            case VENDOR_DE:
+            case CALLTHIS1WITHNAME:
                 return ArkInstructionFormat.IMM8_IMM16_V8_V8;
-            case VENDOR_DF:
-                return ArkInstructionFormat.IMM8_IMM16_V8;
-            case VENDOR_E0:
-                return ArkInstructionFormat.IMM8_IMM16;
-            case VENDOR_E1:
+            case CALLTHIS2WITHNAME:
+                return ArkInstructionFormat.IMM8_IMM16_V8_V8_V8;
+            case CALLTHIS3WITHNAME:
+                return ArkInstructionFormat.IMM8_IMM16_V8_V8_V8_V8;
+            case CALLTHISRANGEWITHNAME:
                 return ArkInstructionFormat.IMM8_IMM8_IMM16_V8;
 
             default:
