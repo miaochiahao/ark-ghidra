@@ -182,6 +182,8 @@ public class ArkTSDecompiler {
             bodyStmts = removeAlwaysFalseConditions(bodyStmts);
             bodyStmts = removeUnusedVariables(bodyStmts);
             bodyStmts = simplifyIncrementDecrement(bodyStmts);
+            bodyStmts = ExpressionVisitor.eliminateRedundantCopies(
+                    bodyStmts);
         } catch (Exception e) {
             List<ArkTSStatement> fallbackStmts = new ArrayList<>();
             fallbackStmts.add(new ArkTSStatement.ExpressionStatement(
@@ -238,6 +240,7 @@ public class ArkTSDecompiler {
             stmts = convertIfElseChainToSwitch(stmts);
             stmts = removeUnusedVariables(stmts);
             stmts = simplifyIncrementDecrement(stmts);
+            stmts = ExpressionVisitor.eliminateRedundantCopies(stmts);
         } catch (Exception e) {
             return buildFallbackInstructionListing(instructions,
                     "statement generation failed: " + e);
@@ -477,14 +480,15 @@ public class ArkTSDecompiler {
                 return buildTimeoutBody(startTimeNs);
             }
 
-            return simplifyIncrementDecrement(
-                    removeUnusedVariables(
-                            convertIfElseChainToSwitch(
-                                    simplifyReturnIfTernary(
-                                            detectSwitchExpressions(
-                                                    mergeNestedIfConditions(
-                                                            ExpressionVisitor.inlineSingleUseVariables(
-                                                                    applyConstOptimization(stmts))))))));
+            return ExpressionVisitor.eliminateRedundantCopies(
+                    simplifyIncrementDecrement(
+                            removeUnusedVariables(
+                                    convertIfElseChainToSwitch(
+                                            simplifyReturnIfTernary(
+                                                    detectSwitchExpressions(
+                                                            mergeNestedIfConditions(
+                                                                    ExpressionVisitor.inlineSingleUseVariables(
+                                                                            applyConstOptimization(stmts)))))))));
         } catch (Exception e) {
             ctx.warnings.add("Statement generation failed: "
                     + e.getMessage());

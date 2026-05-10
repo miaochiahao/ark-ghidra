@@ -67,6 +67,193 @@ class ExpressionVisitor {
     }
 
     /**
+     * Eliminates redundant simple variable-to-variable copy assignments.
+     *
+     * <p>Patterns like {@code v0 = v4; v1 = v5; v2 = v6;} are common
+     * parameter register copies in Ark bytecode. This method replaces all
+     * subsequent uses of the destination variable with the source variable
+     * and removes the copy statement.
+     *
+     * <p>Only handles simple {@code dst = src} where both are plain
+     * variable references (no property access, no complex expressions).
+     *
+     * @param stmts the statement list
+     * @return the optimized statement list
+     */
+    static List<ArkTSStatement> eliminateRedundantCopies(
+            List<ArkTSStatement> stmts) {
+        if (stmts == null || stmts.size() < 2) {
+            return stmts;
+        }
+        List<ArkTSStatement> result = new ArrayList<>(stmts);
+        boolean changed = true;
+        int passes = 0;
+        while (changed && passes < 5) {
+            changed = false;
+            passes++;
+            for (int i = 0; i < result.size(); i++) {
+                String[] copyPair = extractSimpleCopy(result.get(i));
+                if (copyPair == null) {
+                    continue;
+                }
+                String dst = copyPair[0];
+                String src = copyPair[1];
+                // Don't eliminate copies where dst is re-assigned later
+                if (isReassignedLater(result, i, dst)) {
+                    continue;
+                }
+                // Replace all uses of dst with src in subsequent statements
+                for (int j = i + 1; j < result.size(); j++) {
+                    ArkTSStatement replaced =
+                            replaceVariableInStmt(result.get(j), dst, src);
+                    if (replaced != null) {
+                        result.set(j, replaced);
+                    }
+                }
+                result.remove(i);
+                changed = true;
+                break;
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Extracts the dst/src names from a simple copy assignment
+     * ({@code dst = src}). Returns null if not a simple copy.
+     * Only matches local variable copies (v0, v1, etc. pattern).
+     */
+    private static String[] extractSimpleCopy(ArkTSStatement stmt) {
+        if (!(stmt instanceof ArkTSStatement.ExpressionStatement)) {
+            return null;
+        }
+        ArkTSExpression expr =
+                ((ArkTSStatement.ExpressionStatement) stmt).getExpression();
+        if (!(expr instanceof ArkTSExpression.AssignExpression)) {
+            return null;
+        }
+        ArkTSExpression.AssignExpression assign =
+                (ArkTSExpression.AssignExpression) expr;
+        if (!(assign.getTarget()
+                instanceof ArkTSExpression.VariableExpression)) {
+            return null;
+        }
+        if (!(assign.getValue()
+                instanceof ArkTSExpression.VariableExpression)) {
+            return null;
+        }
+        String dst = ((ArkTSExpression.VariableExpression) assign.getTarget())
+                .getName();
+        String src = ((ArkTSExpression.VariableExpression) assign.getValue())
+                .getName();
+        if (dst.equals(src)) {
+            return null;
+        }
+        // Only eliminate copies between local variables (v0, v1, etc.)
+        if (!isLocalVariable(dst) || !isLocalVariable(src)) {
+            return null;
+        }
+        return new String[]{dst, src};
+    }
+
+    private static boolean isLocalVariable(String name) {
+        if (name == null || name.isEmpty()) {
+            return false;
+        }
+        if (!name.startsWith("v")) {
+            return false;
+        }
+        for (int i = 1; i < name.length(); i++) {
+            if (!Character.isDigit(name.charAt(i))) {
+                return false;
+            }
+        }
+        return name.length() > 1;
+    }
+
+    /**
+     * Checks if a variable is reassigned in any statement after index i.
+     */
+    private static boolean isReassignedLater(List<ArkTSStatement> stmts,
+            int afterIndex, String varName) {
+        for (int i = afterIndex + 1; i < stmts.size(); i++) {
+            if (isAssignmentTarget(stmts.get(i), varName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Checks if varName appears as the target of an assignment.
+     */
+    private static boolean isAssignmentTarget(ArkTSStatement stmt,
+            String varName) {
+        if (stmt instanceof ArkTSStatement.ExpressionStatement) {
+            ArkTSExpression expr =
+                    ((ArkTSStatement.ExpressionStatement) stmt)
+                            .getExpression();
+            if (expr instanceof ArkTSExpression.AssignExpression) {
+                ArkTSExpression target =
+                        ((ArkTSExpression.AssignExpression) expr).getTarget();
+                return countVariableUsage(target, varName) > 0;
+            }
+        }
+        if (stmt instanceof ArkTSStatement.VariableDeclaration) {
+            ArkTSStatement.VariableDeclaration decl =
+                    (ArkTSStatement.VariableDeclaration) stmt;
+            return decl.getName().equals(varName);
+        }
+        return false;
+    }
+
+    /**
+     * Replaces a variable reference in a statement (non-assignment LHS).
+     * Returns the modified statement or null if unchanged.
+     */
+    private static ArkTSStatement replaceVariableInStmt(ArkTSStatement stmt,
+            String varName, String replacement) {
+        ArkTSExpression replExpr =
+                new ArkTSExpression.VariableExpression(replacement);
+        if (stmt instanceof ArkTSStatement.ExpressionStatement) {
+            ArkTSExpression expr =
+                    ((ArkTSStatement.ExpressionStatement) stmt)
+                            .getExpression();
+            if (countVariableUsage(expr, varName) == 0) {
+                return null;
+            }
+            ArkTSExpression replaced =
+                    replaceVariable(expr, varName, replExpr);
+            if (replaced != null) {
+                return new ArkTSStatement.ExpressionStatement(replaced);
+            }
+        }
+        if (stmt instanceof ArkTSStatement.ReturnStatement) {
+            ArkTSExpression val =
+                    ((ArkTSStatement.ReturnStatement) stmt).getValue();
+            if (val != null && countVariableUsage(val, varName) > 0) {
+                ArkTSExpression replaced =
+                        replaceVariable(val, varName, replExpr);
+                if (replaced != null) {
+                    return new ArkTSStatement.ReturnStatement(replaced);
+                }
+            }
+        }
+        if (stmt instanceof ArkTSStatement.ThrowStatement) {
+            ArkTSExpression val =
+                    ((ArkTSStatement.ThrowStatement) stmt).getValue();
+            if (val != null && countVariableUsage(val, varName) > 0) {
+                ArkTSExpression replaced =
+                        replaceVariable(val, varName, replExpr);
+                if (replaced != null) {
+                    return new ArkTSStatement.ThrowStatement(replaced);
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * Tries to inline a variable's initializer into the next statement.
      * Handles return, throw, and expression statements.
      *

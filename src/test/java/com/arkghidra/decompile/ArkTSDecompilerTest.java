@@ -14563,6 +14563,91 @@ class ArkTSDecompilerTest {
         assertEquals(single, ArkTSDecompiler.removeUnreachableCode(single));
     }
 
+    // --- eliminateRedundantCopies tests ---
+
+    @Test
+    void testEliminateRedundantCopies_parameterCopy() {
+        // v0 = v4; v1 = v5; return v0 + v1;
+        // After elimination: return v4 + v5;
+        List<ArkTSStatement> stmts = new ArrayList<>();
+        stmts.add(new ArkTSStatement.ExpressionStatement(
+                new ArkTSExpression.AssignExpression(
+                        new ArkTSExpression.VariableExpression("v0"),
+                        new ArkTSExpression.VariableExpression("v4"))));
+        stmts.add(new ArkTSStatement.ExpressionStatement(
+                new ArkTSExpression.AssignExpression(
+                        new ArkTSExpression.VariableExpression("v1"),
+                        new ArkTSExpression.VariableExpression("v5"))));
+        stmts.add(new ArkTSStatement.ReturnStatement(
+                new ArkTSExpression.BinaryExpression(
+                        new ArkTSExpression.VariableExpression("v0"),
+                        "+",
+                        new ArkTSExpression.VariableExpression("v1"))));
+        List<ArkTSStatement> result =
+                ExpressionVisitor.eliminateRedundantCopies(stmts);
+        StringBuilder sb = new StringBuilder();
+        for (ArkTSStatement s : result) {
+            sb.append(s.toArkTS(0)).append("\n");
+        }
+        String output = sb.toString();
+        assertFalse(output.contains("v0"),
+                "v0 should be eliminated, got: " + output);
+        assertFalse(output.contains("v1"),
+                "v1 should be eliminated, got: " + output);
+        assertTrue(output.contains("v4"),
+                "v4 should remain, got: " + output);
+        assertTrue(output.contains("v5"),
+                "v5 should remain, got: " + output);
+    }
+
+    @Test
+    void testEliminateRedundantCopies_preservesModuleVars() {
+        // export_1 = import_0 should NOT be eliminated
+        List<ArkTSStatement> stmts = new ArrayList<>();
+        stmts.add(new ArkTSStatement.ExpressionStatement(
+                new ArkTSExpression.AssignExpression(
+                        new ArkTSExpression.VariableExpression("export_1"),
+                        new ArkTSExpression.VariableExpression("import_0"))));
+        stmts.add(new ArkTSStatement.ReturnStatement(null));
+        List<ArkTSStatement> result =
+                ExpressionVisitor.eliminateRedundantCopies(stmts);
+        StringBuilder sb = new StringBuilder();
+        for (ArkTSStatement s : result) {
+            sb.append(s.toArkTS(0)).append("\n");
+        }
+        String output = sb.toString();
+        assertTrue(output.contains("export_1"),
+                "export_1 should be preserved, got: " + output);
+        assertTrue(output.contains("import_0"),
+                "import_0 should be preserved, got: " + output);
+    }
+
+    @Test
+    void testEliminateRedundantCopies_reassignedDst() {
+        // v0 = v4; v0 = 42; — should NOT eliminate (v0 is reassigned)
+        List<ArkTSStatement> stmts = new ArrayList<>();
+        stmts.add(new ArkTSStatement.ExpressionStatement(
+                new ArkTSExpression.AssignExpression(
+                        new ArkTSExpression.VariableExpression("v0"),
+                        new ArkTSExpression.VariableExpression("v4"))));
+        stmts.add(new ArkTSStatement.ExpressionStatement(
+                new ArkTSExpression.AssignExpression(
+                        new ArkTSExpression.VariableExpression("v0"),
+                        new ArkTSExpression.LiteralExpression("42",
+                                ArkTSExpression.LiteralExpression
+                                        .LiteralKind.NUMBER))));
+        List<ArkTSStatement> result =
+                ExpressionVisitor.eliminateRedundantCopies(stmts);
+        StringBuilder sb = new StringBuilder();
+        for (ArkTSStatement s : result) {
+            sb.append(s.toArkTS(0)).append("\n");
+        }
+        String output = sb.toString();
+        assertTrue(output.contains("v0 = v4"),
+                "Copy should be preserved when dst is reassigned, got: "
+                        + output);
+    }
+
     // --- removeAlwaysFalseConditions tests ---
 
     @Test
