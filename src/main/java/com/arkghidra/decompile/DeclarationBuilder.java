@@ -95,6 +95,10 @@ class DeclarationBuilder {
                 analyzeFieldNullability(abcClass, abcFile);
 
         for (AbcField field : abcClass.getFields()) {
+            // Skip internal metadata fields that are not real class members
+            if (isInternalMetadataField(field.getName())) {
+                continue;
+            }
             FieldNullability fn = fieldNullability.get(field.getName());
             ArkTSStatement fieldDecl = buildFieldDeclaration(
                     field, abcFile, fn);
@@ -921,6 +925,14 @@ class DeclarationBuilder {
             return name.substring(lastSlash + 1);
         }
         return name;
+    }
+
+    private static final Set<String> INTERNAL_METADATA_FIELDS = Set.of(
+            "pkgName", "isCommonjs", "hasTopLevelAwait",
+            "isSharedModule", "scopeNames", "moduleRecordIdx");
+
+    private static boolean isInternalMetadataField(String name) {
+        return INTERNAL_METADATA_FIELDS.contains(name);
     }
 
     /**
