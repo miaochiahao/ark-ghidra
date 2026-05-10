@@ -225,6 +225,19 @@ Many Ark instructions have **multiple `opcode_idx` values** — an 8-bit IC slot
 - **sanitizeClassName:** Strips `L...;` wrapper, `&version` suffix, and extracts short name from ABC class names (e.g., `L&@pkg/Index&1.0.3;` → `Index`).
 - **sanitizePropertyName:** Replaces control characters with `_XX` hex escapes in property names.
 - **MemberExpression:** Falls back to bracket notation for non-identifier property names.
+- **Metadata field filtering:** Internal ABC fields (pkgName, isCommonjs, hasTopLevelAwait, isSharedModule, scopeNames, moduleRecordIdx) are excluded from output.
+- **definepropertybyname:** Simplified to direct property assignment (`obj.prop = value`) instead of verbose `Object.defineProperty(...)`.
+- **Variant opcode normalization:** `InstructionHandler.processInstruction()` now normalizes 16-bit variant primary opcodes (MOV_8, MOV_16, etc.) via `ArkOpcodesCompat.normalizeVariantOpcode()`. Previously only 0xFD wide sub-opcodes were normalized, causing 5462 mov instructions to appear as comments.
+
+### Decompiler Quality Audit (entry-default-unsigned.hap, 5595 methods)
+
+- **0 unhandled opcode comments** (all mov/ldlexvar/stlexvar now handled)
+- **16 unknown_ opcode references** remaining
+- **1103 trivial methods** (just parameter copying, ~20%)
+- **2257 unreachable code blocks after throw** — CFG should treat throw as terminator
+- **928 void methods with return <value>** — return type inference needs improvement
+- **198 `if (undefined)` always-false conditions** — from undefined register comparisons
+- **417 acc references outside comments** — raw accumulator leaking into output
 
 ### Loop Iteration Notes
 
