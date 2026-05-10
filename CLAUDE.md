@@ -172,7 +172,7 @@ export DEVECO_SDK_HOME=/Applications/DevEco-Studio.app/Contents/sdk && \
 ### Decompiler Architecture Rules
 
 - **Three entry points:** `decompileInstructions()`, `decompileMethod()`, `decompileFile()`. All three must receive the same post-processing pipeline.
-- **Post-processing pipeline order (critical):** `applyConstOptimization → inlineSingleUseVariables → mergeNestedIfConditions → detectSwitchExpressions → simplifyReturnIfTernary → convertIfElseChainToSwitch → removeUnreachableCode → removeAlwaysFalseConditions → removeUnusedVariables → simplifyIncrementDecrement`. Order matters — each depends on prior transforms. Pipeline is now linear (not nested) for readability and line-length compliance.
+- **Post-processing pipeline order (critical):** `applyConstOptimization → inlineSingleUseVariables → mergeNestedIfConditions → detectSwitchExpressions → simplifyReturnIfTernary → convertIfElseChainToSwitch → removeUnreachableCode → removeAlwaysFalseConditions → removeUnusedVariables → simplifyIncrementDecrement → eliminateRedundantCopies`. Order matters — each depends on prior transforms. Pipeline is now linear (not nested) for readability and line-length compliance.
 - **StatementResult.NO_OP:** Use for handled instructions producing no statement. Return `null` for unhandled (falls through to `/* opcode */` comment).
 - **AST node immutability:** `BlockStatement.body`, `SwitchCase.body`, `VariableDeclaration` use `Collections.unmodifiableList`. Use `setKind()` or rebuild nodes — never `List.set()`.
 - **BinaryExpression constructor:** `BinaryExpression(left, operator, right)` — left operand first.
