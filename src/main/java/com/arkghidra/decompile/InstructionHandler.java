@@ -53,11 +53,12 @@ class InstructionHandler {
             DecompilationContext ctx, ArkTSExpression accValue,
             Set<String> declaredVars, TypeInference typeInf) {
         int rawOpcode = insn.getOpcode();
-        // Normalize wide (0xFD-prefixed) sub-opcodes to their primary
-        // equivalents so all downstream dispatch logic works unchanged.
+        // Normalize wide (0xFD-prefixed) sub-opcodes and 16-bit variant
+        // primary opcodes to their canonical equivalents so all downstream
+        // dispatch logic works unchanged.
         int opcode = insn.isWide()
                 ? ArkOpcodesCompat.normalizeWideOpcode(rawOpcode)
-                : rawOpcode;
+                : ArkOpcodesCompat.normalizeVariantOpcode(rawOpcode);
         List<ArkOperand> operands = insn.getOperands();
 
         // --- CallRuntime (0xFB-prefixed) instructions ---
