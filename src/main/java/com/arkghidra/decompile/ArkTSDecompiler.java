@@ -179,6 +179,7 @@ public class ArkTSDecompiler {
             bodyStmts = simplifyReturnIfTernary(bodyStmts);
             bodyStmts = convertIfElseChainToSwitch(bodyStmts);
             bodyStmts = removeUnreachableCode(bodyStmts);
+            bodyStmts = removeAlwaysFalseConditions(bodyStmts);
             bodyStmts = removeUnusedVariables(bodyStmts);
             bodyStmts = simplifyIncrementDecrement(bodyStmts);
         } catch (Exception e) {
@@ -1285,6 +1286,149 @@ public class ArkTSDecompiler {
         }
         return ((ArkTSExpression.LiteralExpression) expr).getKind()
                 == ArkTSExpression.LiteralExpression.LiteralKind.UNDEFINED;
+    }
+
+    /**
+     * Removes if-statements with always-false literal conditions
+     * (undefined, false, null, 0, NaN, ""). Keeps the else-block if
+     * present. Recurses into nested blocks.
+     */
+    static List<ArkTSStatement> removeAlwaysFalseConditions(
+            List<ArkTSStatement> stmts) {
+        if (stmts == null || stmts.isEmpty()) {
+            return stmts;
+        }
+        List<ArkTSStatement> result = new ArrayList<>(stmts.size());
+        for (ArkTSStatement stmt : stmts) {
+            ArkTSStatement cleaned = simplifyFalseConditionStmt(stmt);
+            if (cleaned != null) {
+                result.add(cleaned);
+            }
+        }
+        return result;
+    }
+
+    private static ArkTSStatement simplifyFalseConditionStmt(
+            ArkTSStatement stmt) {
+        if (stmt instanceof ArkTSControlFlow.IfStatement) {
+            ArkTSControlFlow.IfStatement ifStmt =
+                    (ArkTSControlFlow.IfStatement) stmt;
+            if (isAlwaysFalsy(ifStmt.getCondition())) {
+                if (ifStmt.getElseBlock() != null) {
+                    return simplifyFalseConditionStmt(
+                            ifStmt.getElseBlock());
+                }
+                return null;
+            }
+            return new ArkTSControlFlow.IfStatement(
+                    ifStmt.getCondition(),
+                    simplifyFalseConditionInBlock(
+                            ifStmt.getThenBlock()),
+                    ifStmt.getElseBlock() != null
+                            ? simplifyFalseConditionInBlock(
+                                    ifStmt.getElseBlock())
+                            : null);
+        }
+        if (stmt instanceof ArkTSStatement.BlockStatement) {
+            List<ArkTSStatement> body =
+                    ((ArkTSStatement.BlockStatement) stmt).getBody();
+            List<ArkTSStatement> cleaned =
+                    removeAlwaysFalseConditions(body);
+            return new ArkTSStatement.BlockStatement(cleaned);
+        }
+        if (stmt instanceof ArkTSControlFlow.ForStatement) {
+            ArkTSControlFlow.ForStatement fs =
+                    (ArkTSControlFlow.ForStatement) stmt;
+            return new ArkTSControlFlow.ForStatement(
+                    fs.getInit(), fs.getConditionExpr(),
+                    fs.getUpdate(),
+                    simplifyFalseConditionInBlock(fs.getBody()));
+        }
+        if (stmt instanceof ArkTSControlFlow.WhileStatement) {
+            ArkTSControlFlow.WhileStatement ws =
+                    (ArkTSControlFlow.WhileStatement) stmt;
+            return new ArkTSControlFlow.WhileStatement(
+                    ws.getCondition(),
+                    simplifyFalseConditionInBlock(ws.getBody()));
+        }
+        if (stmt instanceof ArkTSControlFlow.DoWhileStatement) {
+            ArkTSControlFlow.DoWhileStatement dw =
+                    (ArkTSControlFlow.DoWhileStatement) stmt;
+            return new ArkTSControlFlow.DoWhileStatement(
+                    simplifyFalseConditionInBlock(dw.getBody()),
+                    dw.getCondition());
+        }
+        if (stmt instanceof ArkTSControlFlow.TryCatchStatement) {
+            ArkTSControlFlow.TryCatchStatement tc =
+                    (ArkTSControlFlow.TryCatchStatement) stmt;
+            return new ArkTSControlFlow.TryCatchStatement(
+                    simplifyFalseConditionInBlock(tc.getTryBlock()),
+                    tc.getCatchParam(), tc.getCatchParamType(),
+                    tc.getCatchBlock() != null
+                            ? simplifyFalseConditionInBlock(
+                                    tc.getCatchBlock())
+                            : null,
+                    tc.getFinallyBlock() != null
+                            ? simplifyFalseConditionInBlock(
+                                    tc.getFinallyBlock())
+                            : null);
+        }
+        if (stmt instanceof ArkTSControlFlow.SwitchStatement) {
+            ArkTSControlFlow.SwitchStatement sw =
+                    (ArkTSControlFlow.SwitchStatement) stmt;
+            List<ArkTSControlFlow.SwitchStatement.SwitchCase> cases =
+                    new ArrayList<>();
+            for (ArkTSControlFlow.SwitchStatement.SwitchCase sc :
+                    sw.getCases()) {
+                cases.add(
+                        new ArkTSControlFlow.SwitchStatement.SwitchCase(
+                                sc.getTests(),
+                                removeAlwaysFalseConditions(
+                                        sc.getBody())));
+            }
+            return new ArkTSControlFlow.SwitchStatement(
+                    sw.getDiscriminant(), cases,
+                    sw.getDefaultBlock() != null
+                            ? simplifyFalseConditionInBlock(
+                                    sw.getDefaultBlock())
+                            : null);
+        }
+        return stmt;
+    }
+
+    private static ArkTSStatement simplifyFalseConditionInBlock(
+            ArkTSStatement block) {
+        if (block == null) {
+            return null;
+        }
+        ArkTSStatement cleaned = simplifyFalseConditionStmt(block);
+        if (cleaned == null) {
+            return new ArkTSStatement.BlockStatement(
+                    Collections.emptyList());
+        }
+        return cleaned;
+    }
+
+    private static boolean isAlwaysFalsy(ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.LiteralExpression)) {
+            return false;
+        }
+        ArkTSExpression.LiteralExpression lit =
+                (ArkTSExpression.LiteralExpression) expr;
+        switch (lit.getKind()) {
+            case UNDEFINED:
+            case NULL:
+            case NAN:
+                return true;
+            case BOOLEAN:
+                return "false".equals(lit.getValue());
+            case NUMBER:
+                return "0".equals(lit.getValue());
+            case STRING:
+                return lit.getValue().isEmpty();
+            default:
+                return false;
+        }
     }
 
     /**

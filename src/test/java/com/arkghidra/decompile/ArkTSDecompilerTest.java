@@ -14527,4 +14527,74 @@ class ArkTSDecompilerTest {
                 new ArkTSStatement.ReturnStatement(null));
         assertEquals(single, ArkTSDecompiler.removeUnreachableCode(single));
     }
+
+    // --- removeAlwaysFalseConditions tests ---
+
+    @Test
+    void testRemoveAlwaysFalseConditions_undefined() {
+        ArkTSExpression undefined = new ArkTSExpression.LiteralExpression(
+                "undefined",
+                ArkTSExpression.LiteralExpression.LiteralKind.UNDEFINED);
+        ArkTSStatement thenBlock = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("dead"))));
+        ArkTSStatement ifStmt = new ArkTSControlFlow.IfStatement(
+                undefined, thenBlock, null);
+        List<ArkTSStatement> stmts = new ArrayList<>();
+        stmts.add(ifStmt);
+        List<ArkTSStatement> result =
+                ArkTSDecompiler.removeAlwaysFalseConditions(stmts);
+        assertTrue(result.isEmpty(), "if(undefined) should be removed");
+    }
+
+    @Test
+    void testRemoveAlwaysFalseConditions_withElse() {
+        ArkTSExpression undefined = new ArkTSExpression.LiteralExpression(
+                "undefined",
+                ArkTSExpression.LiteralExpression.LiteralKind.UNDEFINED);
+        ArkTSStatement thenBlock = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("dead"))));
+        ArkTSStatement elseBlock = new ArkTSStatement.BlockStatement(
+                List.of(new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.VariableExpression("live"))));
+        ArkTSStatement ifStmt = new ArkTSControlFlow.IfStatement(
+                undefined, thenBlock, elseBlock);
+        List<ArkTSStatement> stmts = new ArrayList<>();
+        stmts.add(ifStmt);
+        List<ArkTSStatement> result =
+                ArkTSDecompiler.removeAlwaysFalseConditions(stmts);
+        assertEquals(1, result.size());
+        assertFalse(result.get(0)
+                instanceof ArkTSControlFlow.IfStatement);
+    }
+
+    @Test
+    void testRemoveAlwaysFalseConditions_keepsTruthy() {
+        ArkTSExpression truthy = new ArkTSExpression.LiteralExpression(
+                "true",
+                ArkTSExpression.LiteralExpression.LiteralKind.BOOLEAN);
+        ArkTSStatement thenBlock = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSStatement ifStmt = new ArkTSControlFlow.IfStatement(
+                truthy, thenBlock, null);
+        List<ArkTSStatement> stmts = List.of(ifStmt);
+        List<ArkTSStatement> result =
+                ArkTSDecompiler.removeAlwaysFalseConditions(stmts);
+        assertEquals(1, result.size());
+    }
+
+    @Test
+    void testRemoveAlwaysFalseConditions_keepsVariables() {
+        ArkTSExpression varExpr = new ArkTSExpression.VariableExpression(
+                "x");
+        ArkTSStatement thenBlock = new ArkTSStatement.BlockStatement(
+                Collections.emptyList());
+        ArkTSStatement ifStmt = new ArkTSControlFlow.IfStatement(
+                varExpr, thenBlock, null);
+        List<ArkTSStatement> stmts = List.of(ifStmt);
+        List<ArkTSStatement> result =
+                ArkTSDecompiler.removeAlwaysFalseConditions(stmts);
+        assertEquals(1, result.size());
+    }
 }
