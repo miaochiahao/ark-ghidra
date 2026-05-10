@@ -13,6 +13,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import com.arkghidra.disasm.ArkDisassembler;
+import com.arkghidra.disasm.ArkInstruction;
 import com.arkghidra.disasm.DisassemblyException;
 import com.arkghidra.format.AbcFile;
 
@@ -699,30 +700,37 @@ class FuzzingTest {
     }
 
     @Test
-    void testDisassemble_truncatedInstruction_throwsDisassemblyException() {
+    void testDisassemble_truncatedInstruction_returnsPartialResult() {
         // ldai (0x28) expects IMM32 format (5 bytes total), but only 2 bytes provided
         ArkDisassembler disasm = new ArkDisassembler();
         byte[] code = {0x28, 0x01}; // opcode + partial operand
-        assertThrows(DisassemblyException.class,
-                () -> disasm.disassemble(code, 0, 2));
+        List<ArkInstruction> insns = disasm.disassemble(code, 0, 2);
+        assertFalse(insns.isEmpty(),
+                "Should return at least one instruction");
+        assertEquals("truncated", insns.get(0).getMnemonic());
     }
 
     @Test
-    void testDisassemble_truncatedWideInstruction_throwsDisassemblyException() {
+    void testDisassemble_truncatedWideInstruction_returnsPartialResult() {
         // Wide prefix (0xFD) with no sub-opcode
         ArkDisassembler disasm = new ArkDisassembler();
         byte[] code = {(byte) 0xFD};
-        assertThrows(DisassemblyException.class,
-                () -> disasm.disassemble(code, 0, 1));
+        List<ArkInstruction> insns = disasm.disassemble(code, 0, 1);
+        assertFalse(insns.isEmpty(),
+                "Should return at least one instruction");
+        assertEquals("truncated", insns.get(0).getMnemonic());
     }
 
     @Test
-    void testDisassemble_wideInstructionTruncatedOperands_throwsDisassemblyException() {
-        // Wide prefix + sub-opcode but not enough operand bytes
+    void testDisassemble_wideInstructionTruncatedOperands_returnsPartialResult() {
+        // Wide CREATEARRAYWITHBUFFER (0xFD + 0x81) needs WIDE_IMM16_IMM16 (6 bytes)
+        // but only 3 bytes provided — truncated operands
         ArkDisassembler disasm = new ArkDisassembler();
-        byte[] code = {(byte) 0xFD, 0x28, 0x01}; // wide ldai, only 1 byte of imm16
-        assertThrows(DisassemblyException.class,
-                () -> disasm.disassemble(code, 0, 3));
+        byte[] code = {(byte) 0xFD, (byte) 0x81, 0x01};
+        List<ArkInstruction> insns = disasm.disassemble(code, 0, 3);
+        assertFalse(insns.isEmpty(),
+                "Should return at least one instruction");
+        assertEquals("truncated", insns.get(0).getMnemonic());
     }
 
     @Test

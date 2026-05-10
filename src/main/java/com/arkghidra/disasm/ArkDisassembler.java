@@ -81,9 +81,16 @@ public class ArkDisassembler {
         int pc = offset;
 
         while (pc < end) {
-            ArkInstruction insn = decodeInstruction(bytes, pc);
-            result.add(insn);
-            pc = insn.getNextOffset();
+            try {
+                ArkInstruction insn = decodeInstruction(bytes, pc);
+                result.add(insn);
+                pc = insn.getNextOffset();
+            } catch (DisassemblyException e) {
+                result.add(new ArkInstruction(0, "truncated",
+                        ArkInstructionFormat.NONE, pc, end - pc,
+                        List.of(), false));
+                break;
+            }
         }
 
         return result;
