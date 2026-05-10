@@ -172,7 +172,7 @@ export DEVECO_SDK_HOME=/Applications/DevEco-Studio.app/Contents/sdk && \
 ### Decompiler Architecture Rules
 
 - **Three entry points:** `decompileInstructions()`, `decompileMethod()`, `decompileFile()`. All three must receive the same post-processing pipeline.
-- **Post-processing pipeline order (critical):** `applyConstOptimization → inlineSingleUseVariables → mergeNestedIfConditions → detectSwitchExpressions → simplifyReturnIfTernary → convertIfElseChainToSwitch → removeUnusedVariables`. Order matters — each depends on prior transforms.
+- **Post-processing pipeline order (critical):** `applyConstOptimization → inlineSingleUseVariables → mergeNestedIfConditions → detectSwitchExpressions → simplifyReturnIfTernary → convertIfElseChainToSwitch → removeUnreachableCode → removeAlwaysFalseConditions → removeUnusedVariables → simplifyIncrementDecrement`. Order matters — each depends on prior transforms. Pipeline is now linear (not nested) for readability and line-length compliance.
 - **StatementResult.NO_OP:** Use for handled instructions producing no statement. Return `null` for unhandled (falls through to `/* opcode */` comment).
 - **AST node immutability:** `BlockStatement.body`, `SwitchCase.body`, `VariableDeclaration` use `Collections.unmodifiableList`. Use `setKind()` or rebuild nodes — never `List.set()`.
 - **BinaryExpression constructor:** `BinaryExpression(left, operator, right)` — left operand first.
@@ -224,6 +224,8 @@ Many Ark instructions have **multiple `opcode_idx` values** — an 8-bit IC slot
 
 - **sanitizeClassName:** Strips `L...;` wrapper, `&version` suffix, and extracts short name from ABC class names (e.g., `L&@pkg/Index&1.0.3;` → `Index`).
 - **sanitizePropertyName:** Replaces control characters with `_XX` hex escapes in property names.
+- **sanitizeMethodName:** Decodes ABC-encoded method names (`#~@N>#name` → `name`, `#~@N=#name` → constructor detection, `#*#name` → static method). Falls back to `anonymous_method` for empty/invalid names.
+- **isConstructorMethod:** Detects constructors via `<init>`, `<ctor>`, class name match, and `#~@N=#name` ABC encoding pattern.
 - **MemberExpression:** Falls back to bracket notation for non-identifier property names.
 - **Metadata field filtering:** Internal ABC fields (pkgName, isCommonjs, hasTopLevelAwait, isSharedModule, scopeNames, moduleRecordIdx) are excluded from output.
 - **definepropertybyname:** Simplified to direct property assignment (`obj.prop = value`) instead of verbose `Object.defineProperty(...)`.
@@ -234,10 +236,13 @@ Many Ark instructions have **multiple `opcode_idx` values** — an 8-bit IC slot
 - **0 unhandled opcode comments** (all mov/ldlexvar/stlexvar now handled)
 - **16 unknown_ opcode references** remaining
 - **1103 trivial methods** (just parameter copying, ~20%)
-- **2257 unreachable code blocks after throw** — CFG should treat throw as terminator
-- **928 void methods with return <value>** — return type inference needs improvement
-- **198 `if (undefined)` always-false conditions** — from undefined register comparisons
+- **~2257 unreachable code blocks after throw** — FIXED: `removeUnreachableCode` post-processing
+- **~928 void methods with return <value>** — PARTIALLY FIXED: `filterVoidMethodReturns` strips `return undefined;`
+- **~198 `if (undefined)` always-false conditions** — FIXED: `removeAlwaysFalseConditions` post-processing
 - **417 acc references outside comments** — raw accumulator leaking into output
+- **Method name decoding** — FIXED: `sanitizeMethodName()` decodes `#~@N>#name` patterns
+- **Constructor detection** — FIXED: `isConstructorMethod()` detects `#~@N=#name` patterns
+- **Remaining:** import resolution (`import_N` placeholders), string literal decoding, acc leaking
 
 ### Loop Iteration Notes
 
