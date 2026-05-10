@@ -160,28 +160,52 @@ class PropertyAccessHandler {
                 : insn.getOpcode();
         List<ArkOperand> operands = insn.getOperands();
 
+        // For LDOBJBYVALUE: acc=key, register=object
+        // For LDOBJBYNAME/LDOBJBYINDEX: acc=object
+        if (opcode == ArkOpcodesCompat.LDOBJBYVALUE) {
+            // acc = key, register = object
+            ArkTSExpression key = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            int objReg = (int) operands.get(
+                    operands.size() - 1).getValue();
+            ArkTSExpression obj =
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(objReg));
+            return new ArkTSExpression.MemberExpression(obj, key, true);
+        }
+
+        if (opcode == ArkOpcodesCompat.LDTHISBYVALUE) {
+            int reg = (int) operands.get(
+                    operands.size() - 1).getValue();
+            ArkTSExpression key =
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(reg));
+            return new ArkTSExpression.MemberExpression(
+                    new ArkTSExpression.ThisExpression(), key, true);
+        }
+
+        if (opcode == ArkOpcodesCompat.LDSUPERBYVALUE) {
+            int reg = (int) operands.get(
+                    operands.size() - 1).getValue();
+            ArkTSExpression key =
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(reg));
+            return new ArkTSExpression.MemberExpression(
+                    new ArkTSPropertyExpressions.SuperExpression(),
+                    key, true);
+        }
+
+        // For name/index-based loads: acc = object
         ArkTSExpression obj;
-        if (opcode == ArkOpcodesCompat.LDTHISBYNAME
-                || opcode == ArkOpcodesCompat.LDTHISBYVALUE) {
+        if (opcode == ArkOpcodesCompat.LDTHISBYNAME) {
             obj = new ArkTSExpression.ThisExpression();
-        } else if (opcode == ArkOpcodesCompat.LDSUPERBYNAME
-                || opcode == ArkOpcodesCompat.LDSUPERBYVALUE) {
+        } else if (opcode == ArkOpcodesCompat.LDSUPERBYNAME) {
             obj = new ArkTSPropertyExpressions.SuperExpression();
         } else {
             obj = accValue != null
                     ? accValue
                     : new ArkTSExpression.VariableExpression(ACC);
-        }
-
-        if (opcode == ArkOpcodesCompat.LDOBJBYVALUE
-                || opcode == ArkOpcodesCompat.LDTHISBYVALUE
-                || opcode == ArkOpcodesCompat.LDSUPERBYVALUE) {
-            int reg = (int) operands.get(
-                    operands.size() - 1).getValue();
-            ArkTSExpression prop =
-                    new ArkTSExpression.VariableExpression(
-                            ctx.resolveRegisterName(reg));
-            return new ArkTSExpression.MemberExpression(obj, prop, true);
         }
 
         if (opcode == ArkOpcodesCompat.LDOBJBYINDEX) {
@@ -211,55 +235,115 @@ class PropertyAccessHandler {
                 : insn.getOpcode();
         List<ArkOperand> operands = insn.getOperands();
 
+        // STOBJBYVALUE (IMM8_V8_V8): acc=key, operands[1]=object, operands[2]=value
+        if (opcode == ArkOpcodesCompat.STOBJBYVALUE
+                || opcode == ArkOpcodesCompat.STOWNBYVALUE) {
+            ArkTSExpression key = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            int objReg = (int) operands.get(1).getValue();
+            ArkTSExpression obj =
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(objReg));
+            int valReg = (int) operands.get(2).getValue();
+            ArkTSExpression value =
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(valReg));
+            return new ArkTSExpression.AssignExpression(
+                    new ArkTSExpression.MemberExpression(obj, key, true),
+                    value);
+        }
+
+        // STTHISBYVALUE (IMM8_V8_V8): this is object, operands[1]=key, operands[2]=value
+        if (opcode == ArkOpcodesCompat.STTHISBYVALUE) {
+            int keyReg = (int) operands.get(1).getValue();
+            ArkTSExpression key =
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(keyReg));
+            int valReg = (int) operands.get(2).getValue();
+            ArkTSExpression value =
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(valReg));
+            return new ArkTSExpression.AssignExpression(
+                    new ArkTSExpression.MemberExpression(
+                            new ArkTSExpression.ThisExpression(), key, true),
+                    value);
+        }
+
+        // STSUPERBYVALUE (IMM8_V8_V8): super is object, operands[1]=key, operands[2]=value
+        if (opcode == ArkOpcodesCompat.STSUPERBYVALUE) {
+            int keyReg = (int) operands.get(1).getValue();
+            ArkTSExpression key =
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(keyReg));
+            int valReg = (int) operands.get(2).getValue();
+            ArkTSExpression value =
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(valReg));
+            return new ArkTSExpression.AssignExpression(
+                    new ArkTSExpression.MemberExpression(
+                            new ArkTSPropertyExpressions.SuperExpression(),
+                            key, true),
+                    value);
+        }
+
+        // STOBJBYINDEX (IMM8_IMM16_V8): acc=object, operands[1]=index, operands[2]=value
+        // STOWNBYINDEX (IMM8_IMM16_V8): same
+        if (opcode == ArkOpcodesCompat.STOBJBYINDEX
+                || opcode == ArkOpcodesCompat.STOWNBYINDEX) {
+            ArkTSExpression obj = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+            int index = (int) operands.get(1).getValue();
+            ArkTSExpression prop =
+                    new ArkTSExpression.LiteralExpression(
+                            String.valueOf(index),
+                            ArkTSExpression.LiteralExpression
+                                    .LiteralKind.NUMBER);
+            int valReg = (int) operands.get(2).getValue();
+            ArkTSExpression value =
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(valReg));
+            return new ArkTSExpression.AssignExpression(
+                    new ArkTSExpression.MemberExpression(obj, prop, true),
+                    value);
+        }
+
+        // Name-based stores: acc=object, operands[1]=string index, operands[2]=value register
         ArkTSExpression obj;
-        if (opcode == ArkOpcodesCompat.STTHISBYNAME
-                || opcode == ArkOpcodesCompat.STTHISBYVALUE) {
+        if (opcode == ArkOpcodesCompat.STTHISBYNAME) {
             obj = new ArkTSExpression.ThisExpression();
-        } else if (opcode == ArkOpcodesCompat.STSUPERBYNAME
-                || opcode == ArkOpcodesCompat.STSUPERBYVALUE) {
+        } else if (opcode == ArkOpcodesCompat.STSUPERBYNAME) {
             obj = new ArkTSPropertyExpressions.SuperExpression();
         } else {
-            int objReg = (int) operands.get(
-                    operands.size() - 1).getValue();
+            obj = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
+        }
+
+        // Name-based
+
+        // Name-based stores (IMM8_IMM16_V8): acc=value, operands[1]=name, operands[2]=object reg
+        // For STOBJBYNAME: object = register at operands[2], value = accValue
+        // For STTHISBYNAME/STSUPERBYNAME: object = this/super, value = accValue
+        if (opcode != ArkOpcodesCompat.STTHISBYNAME
+                && opcode != ArkOpcodesCompat.STSUPERBYNAME) {
+            // STOBJBYNAME: object comes from register at operands[2]
+            int objReg = (int) operands.get(2).getValue();
             obj = new ArkTSExpression.VariableExpression(
                     ctx.resolveRegisterName(objReg));
         }
 
-        ArkTSExpression prop;
-        if (opcode == ArkOpcodesCompat.STOBJBYVALUE
-                || opcode == ArkOpcodesCompat.STTHISBYVALUE
-                || opcode == ArkOpcodesCompat.STOWNBYVALUE
-                || opcode == ArkOpcodesCompat.STSUPERBYVALUE) {
-            int keyReg = (int) operands.get(
-                    operands.size() - 2).getValue();
-            prop = new ArkTSExpression.VariableExpression(
-                    ctx.resolveRegisterName(keyReg));
-            return new ArkTSExpression.AssignExpression(
-                    new ArkTSExpression.MemberExpression(obj, prop, true),
-                    accValue != null ? accValue
-                            : new ArkTSExpression.VariableExpression(ACC));
-        }
-
-        if (opcode == ArkOpcodesCompat.STOBJBYINDEX
-                || opcode == ArkOpcodesCompat.STOWNBYINDEX) {
-            int index = (int) operands.get(2).getValue();
-            prop = new ArkTSExpression.LiteralExpression(
-                    String.valueOf(index),
-                    ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
-            return new ArkTSExpression.AssignExpression(
-                    new ArkTSExpression.MemberExpression(obj, prop, true),
-                    accValue != null ? accValue
-                            : new ArkTSExpression.VariableExpression(ACC));
-        }
-
-        // Name-based
         String propName = sanitizePropertyName(ctx.resolveString(
                 (int) operands.get(1).getValue()));
-        prop = new ArkTSExpression.VariableExpression(propName);
+        ArkTSExpression prop =
+                new ArkTSExpression.VariableExpression(propName);
+        ArkTSExpression value = accValue != null
+                ? accValue
+                : new ArkTSExpression.VariableExpression(ACC);
         return new ArkTSExpression.AssignExpression(
                 new ArkTSExpression.MemberExpression(obj, prop, false),
-                accValue != null ? accValue
-                        : new ArkTSExpression.VariableExpression(ACC));
+                value);
     }
 
     // --- Private property access translation ---
