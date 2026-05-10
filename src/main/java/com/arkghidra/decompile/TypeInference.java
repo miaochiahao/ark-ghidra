@@ -108,6 +108,13 @@ public class TypeInference {
             return "string";
         }
         if (opcode == ArkOpcodesCompat.NOT) {
+            if (ctx != null && ctx.currentAccValue != null) {
+                String accType = OperatorHandler.getAccType(
+                        ctx.currentAccValue, this);
+                if ("number".equals(accType)) {
+                    return "number";
+                }
+            }
             return "boolean";
         }
         if (opcode == ArkOpcodesCompat.NEG || opcode == ArkOpcodesCompat.INC

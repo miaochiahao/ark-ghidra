@@ -445,7 +445,12 @@ class InstructionHandler {
 
         // --- Unary operations: acc = OP acc ---
         if (OperatorHandler.isUnaryOp(opcode)) {
-            String op = OperatorHandler.getUnaryOperator(opcode);
+            String op;
+            if (opcode == ArkOpcodesCompat.NOT) {
+                op = OperatorHandler.getNotOperator(accValue, typeInf);
+            } else {
+                op = OperatorHandler.getUnaryOperator(opcode);
+            }
             ArkTSExpression operand = accValue != null
                     ? accValue
                     : new ArkTSExpression.VariableExpression(ACC);

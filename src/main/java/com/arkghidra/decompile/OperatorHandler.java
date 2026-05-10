@@ -1132,6 +1132,9 @@ class OperatorHandler {
             if ("!".equals(op)) {
                 return "boolean";
             }
+            if ("~".equals(op)) {
+                return "number";
+            }
             if ("-".equals(op)) {
                 return "number";
             }
@@ -1311,6 +1314,18 @@ class OperatorHandler {
             case ArkOpcodesCompat.TYPEOF: return "typeof";
             default: return "/* unary */";
         }
+    }
+
+    static String getNotOperator(ArkTSExpression accValue,
+            TypeInference typeInf) {
+        if (accValue == null || typeInf == null) {
+            return "!";
+        }
+        String operandType = getAccType(accValue, typeInf);
+        if ("number".equals(operandType)) {
+            return "~";
+        }
+        return "!";
     }
 
     // --- Call opcode classification ---

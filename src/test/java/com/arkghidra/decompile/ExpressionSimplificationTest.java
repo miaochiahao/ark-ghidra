@@ -9,7 +9,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Tests for expression simplification improvements:
- * unary negation folding, redundant ternary, comparison normalization.
+ * unary negation folding, redundant ternary, comparison normalization,
+ * and bitwise NOT vs logical NOT distinction.
  */
 class ExpressionSimplificationTest {
 
@@ -426,6 +427,123 @@ class ExpressionSimplificationTest {
                     instanceof ArkTSExpression.VariableExpression);
             assertTrue(bin.getRight()
                     instanceof ArkTSExpression.ThisExpression);
+        }
+    }
+
+    // ========================================================================
+    // Bitwise NOT (~) vs logical NOT (!) distinction
+    // ========================================================================
+
+    @Nested
+    @DisplayName("Bitwise NOT (~) vs logical NOT (!) distinction")
+    class BitwiseVsLogicalNot {
+
+        @Test
+        @DisplayName("NOT on number literal produces ~ (bitwise)")
+        void testNotOnNumberLiteral() {
+            ArkTSExpression numberLit =
+                    new ArkTSExpression.LiteralExpression("42",
+                            ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
+            TypeInference typeInf = new TypeInference();
+            String op = OperatorHandler.getNotOperator(numberLit, typeInf);
+            assertEquals("~", op,
+                    "NOT on number literal should produce bitwise ~");
+        }
+
+        @Test
+        @DisplayName("NOT on boolean literal produces ! (logical)")
+        void testNotOnBooleanLiteral() {
+            ArkTSExpression boolLit =
+                    new ArkTSExpression.LiteralExpression("true",
+                            ArkTSExpression.LiteralExpression.LiteralKind.BOOLEAN);
+            TypeInference typeInf = new TypeInference();
+            String op = OperatorHandler.getNotOperator(boolLit, typeInf);
+            assertEquals("!", op,
+                    "NOT on boolean literal should produce logical !");
+        }
+
+        @Test
+        @DisplayName("NOT on string literal produces ! (logical)")
+        void testNotOnStringLiteral() {
+            ArkTSExpression strLit =
+                    new ArkTSExpression.LiteralExpression("hello",
+                            ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+            TypeInference typeInf = new TypeInference();
+            String op = OperatorHandler.getNotOperator(strLit, typeInf);
+            assertEquals("!", op,
+                    "NOT on string literal should produce logical !");
+        }
+
+        @Test
+        @DisplayName("NOT on number-typed variable produces ~ (bitwise)")
+        void testNotOnNumberVariable() {
+            TypeInference typeInf = new TypeInference();
+            typeInf.setRegisterType("x", "number");
+            ArkTSExpression varExpr =
+                    new ArkTSExpression.VariableExpression("x");
+            String op = OperatorHandler.getNotOperator(varExpr, typeInf);
+            assertEquals("~", op,
+                    "NOT on number-typed variable should produce bitwise ~");
+        }
+
+        @Test
+        @DisplayName("NOT on boolean-typed variable produces ! (logical)")
+        void testNotOnBooleanVariable() {
+            TypeInference typeInf = new TypeInference();
+            typeInf.setRegisterType("flag", "boolean");
+            ArkTSExpression varExpr =
+                    new ArkTSExpression.VariableExpression("flag");
+            String op = OperatorHandler.getNotOperator(varExpr, typeInf);
+            assertEquals("!", op,
+                    "NOT on boolean-typed variable should produce logical !");
+        }
+
+        @Test
+        @DisplayName("NOT on untyped variable defaults to ! (logical)")
+        void testNotOnUntypedVariable() {
+            TypeInference typeInf = new TypeInference();
+            ArkTSExpression varExpr =
+                    new ArkTSExpression.VariableExpression("unknown");
+            String op = OperatorHandler.getNotOperator(varExpr, typeInf);
+            assertEquals("!", op,
+                    "NOT on untyped variable should default to logical !");
+        }
+
+        @Test
+        @DisplayName("NOT on null accValue defaults to ! (logical)")
+        void testNotOnNullAccValue() {
+            TypeInference typeInf = new TypeInference();
+            String op = OperatorHandler.getNotOperator(null, typeInf);
+            assertEquals("!", op,
+                    "NOT with null accValue should default to logical !");
+        }
+
+        @Test
+        @DisplayName("~ operator returns number type via getAccType")
+        void testTildeReturnType() {
+            TypeInference typeInf = new TypeInference();
+            ArkTSExpression varExpr =
+                    new ArkTSExpression.VariableExpression("num");
+            ArkTSExpression tildeExpr =
+                    new ArkTSExpression.UnaryExpression("~", varExpr, true);
+            String resultType =
+                    OperatorHandler.getAccType(tildeExpr, typeInf);
+            assertEquals("number", resultType,
+                    "~x should produce number type");
+        }
+
+        @Test
+        @DisplayName("! operator returns boolean type via getAccType")
+        void testBangReturnType() {
+            TypeInference typeInf = new TypeInference();
+            ArkTSExpression varExpr =
+                    new ArkTSExpression.VariableExpression("flag");
+            ArkTSExpression bangExpr =
+                    new ArkTSExpression.UnaryExpression("!", varExpr, true);
+            String resultType =
+                    OperatorHandler.getAccType(bangExpr, typeInf);
+            assertEquals("boolean", resultType,
+                    "!x should produce boolean type");
         }
     }
 }
