@@ -230,6 +230,14 @@ Many Ark instructions have **multiple `opcode_idx` values** — an 8-bit IC slot
 - **Metadata field filtering:** Internal ABC fields (pkgName, isCommonjs, hasTopLevelAwait, isSharedModule, scopeNames, moduleRecordIdx) are excluded from output.
 - **definepropertybyname:** Simplified to direct property assignment (`obj.prop = value`) instead of verbose `Object.defineProperty(...)`.
 - **Variant opcode normalization:** `InstructionHandler.processInstruction()` now normalizes 16-bit variant primary opcodes (MOV_8, MOV_16, etc.) via `ArkOpcodesCompat.normalizeVariantOpcode()`. Previously only 0xFD wide sub-opcodes were normalized, causing 5462 mov instructions to appear as comments.
+- **Property access operand mapping (CRITICAL):** Ark bytecode property access opcodes have non-intuitive operand-to-semantics mapping:
+  - `LDOBJBYVALUE` (IMM8_V8): acc=key, V8=object → `object[key]`
+  - `LDOBJBYINDEX` (IMM8_IMM16): acc=object, IMM16=index → `object[index]`
+  - `STOBJBYVALUE` (IMM8_V8_V8): acc=key, V8₁=object, V8₂=value → `object[key] = value`
+  - `STOBJBYINDEX` (IMM8_IMM16_V8): acc=object, IMM16=index, V8=value → `object[index] = value`
+  - `STOBJBYNAME` (IMM8_IMM16_V8): acc=value, IMM16=name, V8=object → `object.name = acc`
+  - `STTHISBYNAME` (IMM8_IMM16_V8): acc=value, IMM16=name → `this.name = acc`
+  - The acc role differs between BYVALUE (acc=key), BYINDEX (acc=object), and BYNAME (acc=value) variants.
 
 ### Decompiler Quality Audit (entry-default-unsigned.hap, 5595 methods)
 
