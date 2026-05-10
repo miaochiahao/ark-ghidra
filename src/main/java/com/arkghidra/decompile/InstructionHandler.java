@@ -1548,23 +1548,23 @@ class InstructionHandler {
             List<ArkOperand> operands, ArkTSExpression accValue,
             DecompilationContext ctx) {
         int stringIdx = (int) operands.get(1).getValue();
-        String propName = ctx.resolveString(stringIdx);
+        String propName = PropertyAccessHandler.sanitizePropertyName(
+                ctx.resolveString(stringIdx));
         int objReg = (int) operands.get(
                 operands.size() - 1).getValue();
         ArkTSExpression obj =
                 new ArkTSExpression.VariableExpression(
                         ctx.resolveRegisterName(objReg));
         ArkTSExpression prop =
-                new ArkTSExpression.LiteralExpression(propName,
-                        ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+                new ArkTSExpression.VariableExpression(propName);
         ArkTSExpression value = accValue != null
                 ? accValue
                 : new ArkTSExpression.VariableExpression(ACC);
-        ArkTSExpression defineExpr =
-                new ArkTSPropertyExpressions.DefinePropertyExpression(
-                        obj, prop, value);
+        ArkTSExpression target =
+                new ArkTSExpression.MemberExpression(obj, prop, false);
         return new StatementResult(
-                new ArkTSStatement.ExpressionStatement(defineExpr),
+                new ArkTSStatement.ExpressionStatement(
+                        new ArkTSExpression.AssignExpression(target, value)),
                 value);
     }
 

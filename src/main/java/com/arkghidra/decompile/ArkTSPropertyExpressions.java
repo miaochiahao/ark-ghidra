@@ -599,9 +599,9 @@ public class ArkTSPropertyExpressions {
 
         @Override
         public String toArkTS() {
-            return "Object.defineProperty(" + object.toArkTS() + ", "
-                    + property.toArkTS() + ", { value: "
-                    + value.toArkTS() + " })";
+            // Simplify to direct property assignment for cleaner output
+            return object.toArkTS() + "." + property.toArkTS() + " = "
+                    + value.toArkTS();
         }
     }
 

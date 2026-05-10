@@ -10217,16 +10217,14 @@ class ArkTSDecompilerTest {
     void testDefinePropertyExpression_toArkTS() {
         ArkTSExpression obj =
                 new ArkTSExpression.VariableExpression("v0");
-        ArkTSExpression prop = new ArkTSExpression.LiteralExpression("name",
-                ArkTSExpression.LiteralExpression.LiteralKind.STRING);
+        ArkTSExpression prop = new ArkTSExpression.VariableExpression("name");
         ArkTSExpression value = new ArkTSExpression.LiteralExpression("42",
                 ArkTSExpression.LiteralExpression.LiteralKind.NUMBER);
-        ArkTSPropertyExpressions.DefinePropertyExpression expr =
-                new ArkTSPropertyExpressions.DefinePropertyExpression(
-                        obj, prop, value);
-        assertEquals(
-                "Object.defineProperty(v0, \"name\", { value: 42 })",
-                expr.toArkTS());
+        ArkTSExpression target =
+                new ArkTSExpression.MemberExpression(obj, prop, false);
+        ArkTSExpression.AssignExpression assign =
+                new ArkTSExpression.AssignExpression(target, value);
+        assertEquals("v0.name = 42", assign.toArkTS());
     }
 
     @Test
