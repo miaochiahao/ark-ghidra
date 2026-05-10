@@ -174,13 +174,15 @@ Requires: Ghidra extension installed at `~/Documents/ghidra_12.0.4_PUBLIC/Ghidra
 ### Error Handling
 
 - **Method-level isolation:** Each method in `DeclarationBuilder.buildClassDeclaration()` and `buildAnnotationClassDeclaration()` is wrapped in its own try-catch. A DisassemblyException in one method emits a comment placeholder and continues with the rest of the class.
+- **Disassembler partial results:** `ArkDisassembler.disassemble()` catches DisassemblyException per-instruction and emits a synthetic "truncated" instruction, returning all successfully decoded instructions before the truncation point. Tests must account for this — FuzzingTest now checks for `"truncated"` mnemonic instead of expecting exceptions.
 - **Class-level catch still exists** in `ArkTSDecompiler.decompileFile()` as a safety net for non-method errors (field parsing, decorator detection, etc.).
-- **Known issue:** "Not enough bytes for instruction" errors at offset 5 are common in real .abc files — likely ABC version differences in method body format. These are now isolated to individual methods instead of killing the whole class.
+- **Known issue:** "Not enough bytes for instruction" errors at offset 5 are common in real .abc files — likely ABC version differences in method body format. These are now isolated to individual methods AND produce partial disassembly instead of total failure.
 
 ### Loop Iteration Notes
 
 - **Open issues as of 2026-05-10:** #25 (test with real .abc files), #72 (module.json5), #73 (UI jumps), #184 (JEB-like UI). #183 (assignment-in-condition) was closed.
-- **Priority for next iteration:** Investigate the "Not enough bytes" root cause in `ArkDisassembler` / `AbcFile.parseCode()` — may need version-specific code section parsing. This would unlock decompilation of many more classes in real HAP files.
+- **Priority for next iteration:** Investigate the "Not enough bytes" root cause in `AbcFile.parseCode()` — the method body format may have additional ULEB128 fields in newer ABC versions. Also: string decoding/obfuscation resolution, missing opcode handlers (unknown_91, unknown_C1, unknown_D1), and module metadata formatting improvements.
+- **Wide opcode format:** Wide sub-opcodes are in the 0x80+ range. Sub-opcodes below 0x80 (like 0x28) produce `wide_unknown_XX` mnemonic with UNKNOWN format (length=1) — they don't throw. Test only recognized wide opcodes when testing truncation behavior.
 
 ---
 
