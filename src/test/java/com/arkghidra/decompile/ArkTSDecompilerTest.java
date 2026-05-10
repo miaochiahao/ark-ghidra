@@ -393,6 +393,22 @@ class ArkTSDecompilerTest {
     }
 
     @Test
+    void testDecompile_logicalNot_return() {
+        // lda v0; not 0; return
+        byte[] code = concat(
+            bytes(0x60, 0x00),   // lda v0
+            bytes(0x20, 0x00),   // not 0
+            bytes(0x64)          // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("return"),
+                "Should contain return statement, got: " + result);
+        assertTrue(result.contains("!v0"),
+                "Should contain !v0, got: " + result);
+    }
+
+    @Test
     void testDecompile_typeof() {
         // lda v0; typeof 0; sta v1
         byte[] code = concat(
