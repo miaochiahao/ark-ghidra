@@ -195,8 +195,8 @@ class PropertyAccessHandler {
         }
 
         // Name-based access
-        String propName = ctx.resolveString(
-                (int) operands.get(1).getValue());
+        String propName = sanitizePropertyName(ctx.resolveString(
+                (int) operands.get(1).getValue()));
         ArkTSExpression prop =
                 new ArkTSExpression.VariableExpression(propName);
         return new ArkTSExpression.MemberExpression(obj, prop, false);
@@ -253,8 +253,8 @@ class PropertyAccessHandler {
         }
 
         // Name-based
-        String propName = ctx.resolveString(
-                (int) operands.get(1).getValue());
+        String propName = sanitizePropertyName(ctx.resolveString(
+                (int) operands.get(1).getValue()));
         prop = new ArkTSExpression.VariableExpression(propName);
         return new ArkTSExpression.AssignExpression(
                 new ArkTSExpression.MemberExpression(obj, prop, false),
@@ -281,7 +281,7 @@ class PropertyAccessHandler {
             ArkTSExpression accValue, DecompilationContext ctx) {
         List<ArkOperand> operands = insn.getOperands();
         int stringIdx = (int) operands.get(1).getValue();
-        String propName = ctx.resolveString(stringIdx);
+        String propName = sanitizePropertyName(ctx.resolveString(stringIdx));
         ArkTSExpression obj = accValue != null
                 ? accValue
                 : new ArkTSExpression.ThisExpression();
@@ -306,7 +306,7 @@ class PropertyAccessHandler {
             DecompilationContext ctx) {
         List<ArkOperand> operands = insn.getOperands();
         int stringIdx = (int) operands.get(1).getValue();
-        String propName = ctx.resolveString(stringIdx);
+        String propName = sanitizePropertyName(ctx.resolveString(stringIdx));
         int objReg = (int) operands.get(
                 operands.size() - 1).getValue();
         ArkTSExpression target =
@@ -339,7 +339,7 @@ class PropertyAccessHandler {
     static InstructionHandler.StatementResult translateCreatePrivateProperty(
             List<ArkOperand> operands, DecompilationContext ctx) {
         int stringIdx = (int) operands.get(0).getValue();
-        String propName = ctx.resolveString(stringIdx);
+        String propName = sanitizePropertyName(ctx.resolveString(stringIdx));
         return new InstructionHandler.StatementResult(null,
                 new ArkTSPropertyExpressions
                         .PrivateFieldDeclarationExpression(propName));
@@ -361,7 +361,7 @@ class PropertyAccessHandler {
             List<ArkOperand> operands, ArkTSExpression accValue,
             DecompilationContext ctx) {
         int stringIdx = (int) operands.get(0).getValue();
-        String propName = ctx.resolveString(stringIdx);
+        String propName = sanitizePropertyName(ctx.resolveString(stringIdx));
         int objReg = (int) operands.get(1).getValue();
         ArkTSExpression obj =
                 new ArkTSExpression.VariableExpression(
@@ -393,7 +393,7 @@ class PropertyAccessHandler {
             ArkTSExpression accValue, DecompilationContext ctx) {
         List<ArkOperand> operands = insn.getOperands();
         int stringIdx = (int) operands.get(1).getValue();
-        String propName = ctx.resolveString(stringIdx);
+        String propName = sanitizePropertyName(ctx.resolveString(stringIdx));
         ArkTSExpression obj = accValue != null
                 ? accValue
                 : new ArkTSExpression.VariableExpression(ACC);
@@ -415,6 +415,33 @@ class PropertyAccessHandler {
         }
         return new ArkTSExpression.VariableExpression(
                 ctx.resolveRegisterName(reg));
+    }
+
+    /**
+     * Sanitizes a property name for use in decompiled output.
+     * Replaces control characters with readable placeholders
+     * and provides fallback for empty names.
+     */
+    static String sanitizePropertyName(String name) {
+        if (name == null || name.isEmpty()) {
+            return "_anonymous";
+        }
+        StringBuilder sb = new StringBuilder(name.length());
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (c < 0x20 || c == 0x7F) {
+                sb.append(String.format("_%02x", (int) c));
+            } else {
+                sb.append(c);
+            }
+        }
+        String result = sb.toString();
+        // If the name is not a valid JS identifier, wrap it
+        if (!result.isEmpty()
+                && !Character.isJavaIdentifierStart(result.charAt(0))) {
+            return "prop_" + result;
+        }
+        return result;
     }
 
     private static boolean isInlineableFunction(ArkTSExpression expr) {
