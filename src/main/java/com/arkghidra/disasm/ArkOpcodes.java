@@ -369,6 +369,15 @@ public final class ArkOpcodes {
     public static final int STOWNBYVALUEWITHNAMESET_16 = 0xD2;
     public static final int STOWNBYNAMEWITHNAMESET_16 = 0xD4;
 
+    // --- Vendor-specific opcodes (HarmonyOS API 12+, beyond isa.yaml 0xDC) ---
+    // Format determined by empirical binary analysis across multiple HAP files.
+    // These opcodes appear in ABC files compiled with ArkTS v12+ compilers.
+    public static final int VENDOR_DD = 0xDD;
+    public static final int VENDOR_DE = 0xDE;
+    public static final int VENDOR_DF = 0xDF;
+    public static final int VENDOR_E0 = 0xE0;
+    public static final int VENDOR_E1 = 0xE1;
+
     private ArkOpcodes() {
         // utility class — no instances
     }
@@ -600,6 +609,12 @@ public final class ArkOpcodes {
             case STSUPERBYNAME_16: return "stsuperbyname";
             case STOWNBYVALUEWITHNAMESET_16: return "stownbyvaluewithnameset";
             case STOWNBYNAMEWITHNAMESET_16: return "stownbynamewithnameset";
+            // Vendor-specific opcodes (HarmonyOS API 12+)
+            case VENDOR_DD: return "vendor.definepropertybyname";
+            case VENDOR_DE: return "vendor.definepropertybyvalue";
+            case VENDOR_DF: return "vendor.ldpropertybyname";
+            case VENDOR_E0: return "vendor.callinit";
+            case VENDOR_E1: return "vendor.definefunc.dyn";
             default: return String.format("unknown_%02X", opcode & 0xFF);
         }
     }
@@ -931,6 +946,24 @@ public final class ArkOpcodes {
             case DEFINEFUNC_16:
             case DEFINEMETHOD_16:
                 return ArkInstructionFormat.IMM16_IMM16_IMM8;
+
+            // Vendor-specific opcodes (HarmonyOS API 12+)
+            // Formats determined by empirical binary analysis:
+            // DD = vendor.definepropertybyname: IMM8 IC + IMM16 string + V8 obj
+            // DE = vendor.definepropertybyvalue: IMM8 IC + IMM16 string + V8 obj + V8 val
+            // DF = vendor.ldpropertybyname: IMM8 IC + IMM16 string + V8 obj
+            // E0 = vendor.callinit: IMM8 IC + IMM16 method
+            // E1 = vendor.definefunc.dyn: IMM8 + IMM8 + IMM16 string + V8
+            case VENDOR_DD:
+                return ArkInstructionFormat.IMM8_IMM16_V8;
+            case VENDOR_DE:
+                return ArkInstructionFormat.IMM8_IMM16_V8_V8;
+            case VENDOR_DF:
+                return ArkInstructionFormat.IMM8_IMM16_V8;
+            case VENDOR_E0:
+                return ArkInstructionFormat.IMM8_IMM16;
+            case VENDOR_E1:
+                return ArkInstructionFormat.IMM8_IMM8_IMM16_V8;
 
             default:
                 return ArkInstructionFormat.UNKNOWN;
