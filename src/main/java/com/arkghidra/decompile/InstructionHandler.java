@@ -1242,7 +1242,8 @@ class InstructionHandler {
         if (ctx != null && ctx.abcFile != null) {
             AbcMethod method = findMethodByIdx(ctx, methodIdx);
             if (method != null) {
-                return method.getName();
+                return DeclarationBuilder.sanitizeMethodName(
+                        method.getName());
             }
         }
         return null;

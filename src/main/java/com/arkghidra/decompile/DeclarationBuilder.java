@@ -122,7 +122,7 @@ class DeclarationBuilder {
                     }
                 }
             } catch (Exception e) {
-                String mName = sanitizeClassName(method.getName());
+                String mName = sanitizeMethodName(method.getName());
                 methodDecls.add(
                         new ArkTSStatement.ExpressionStatement(
                                 new ArkTSExpression.VariableExpression(
@@ -303,12 +303,13 @@ class DeclarationBuilder {
         boolean isAsync = code != null
                 && decompiler.detectAsyncMethod(code);
         boolean isOverride = !isStatic
-                && superMethodNames.contains(method.getName());
+                && superMethodNames.contains(sanitizeMethodName(
+                        method.getName()));
         boolean isAbstract = (method.getAccessFlags()
                 & AbcAccessFlags.ACC_ABSTRACT) != 0;
 
         return new ArkTSDeclarations.ClassMethodDeclaration(
-                method.getName(), params, returnType, body,
+                sanitizeMethodName(method.getName()), params, returnType, body,
                 isStatic, accessModifier, isAsync, isOverride,
                 isAbstract);
     }
@@ -722,7 +723,7 @@ class DeclarationBuilder {
                 method.getAccessFlags());
 
         return new ArkTSDeclarations.AbstractMethodDeclaration(
-                method.getName(), params, returnType, accessModifier);
+                sanitizeMethodName(method.getName()), params, returnType, accessModifier);
     }
 
     /**
@@ -758,8 +759,22 @@ class DeclarationBuilder {
 
     boolean isConstructorMethod(AbcMethod method, String className) {
         String name = method.getName();
-        return "<init>".equals(name) || "<ctor>".equals(name)
-                || className.equals(name);
+        if ("<init>".equals(name) || "<ctor>".equals(name)
+                || className.equals(name)) {
+            return true;
+        }
+        // ABC encoded constructor: #~@N=#name — '=' indicates constructor
+        if (name != null && name.startsWith("#~@")) {
+            int gtIdx = name.indexOf('>');
+            int eqIdx = name.indexOf('=');
+            int ltIdx = name.indexOf('<');
+            // '=' is the constructor indicator, and it must come before any '>' or '<'
+            if (eqIdx > 0 && (gtIdx < 0 || eqIdx < gtIdx)
+                    && (ltIdx < 0 || eqIdx < ltIdx)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     String resolveSuperClassName(long superClassOff, AbcFile abcFile) {
@@ -927,6 +942,69 @@ class DeclarationBuilder {
         return name;
     }
 
+    /**
+     * Sanitizes an ABC-encoded method name into a readable ArkTS identifier.
+     *
+     * <p>Ark bytecode encodes method names with prefixes that indicate the
+     * method's kind and inline cache slot:
+     * <ul>
+     *   <li>{@code #~@N>#name} — instance method</li>
+     *   <li>{@code #~@N=#name} — constructor</li>
+     *   <li>{@code #~@N<#name} — accessor (getter/setter)</li>
+     *   <li>{@code #~@N>@M*#name} — prototype method</li>
+     *   <li>{@code #*#name} — static method</li>
+     *   <li>{@code #**#name} — static method variant</li>
+     * </ul>
+     *
+     * <p>This method extracts the readable name after the last {@code #}.
+     * Standard special names ({@code <init>}, {@code func_main_0}, etc.)
+     * and accessor prefixes ({@code get_}, {@code set_}) are returned as-is.
+     *
+     * @param rawName the raw method name from the ABC file
+     * @return a readable method name
+     */
+    static String sanitizeMethodName(String rawName) {
+        if (rawName == null || rawName.isEmpty()) {
+            return "anonymous_method";
+        }
+        // Standard special names — return as-is
+        if (rawName.startsWith("<") || rawName.startsWith("func_")) {
+            return rawName;
+        }
+        // Accessor prefixes — return as-is (handled by isGetterMethod/isSetterMethod)
+        if (rawName.startsWith("get_") || rawName.startsWith("set_")) {
+            return rawName;
+        }
+        // Plain identifier (no ABC encoding)
+        if (!rawName.startsWith("#")) {
+            return rawName;
+        }
+        // ABC encoded names: extract name after last '#'
+        int lastHash = rawName.lastIndexOf('#');
+        if (lastHash >= 0 && lastHash < rawName.length() - 1) {
+            String candidate = rawName.substring(lastHash + 1);
+            if (!candidate.isEmpty() && isValidMethodIdentifier(candidate)) {
+                return candidate;
+            }
+        }
+        return "anonymous_method";
+    }
+
+    private static boolean isValidMethodIdentifier(String s) {
+        if (s.isEmpty()) {
+            return false;
+        }
+        if (!Character.isJavaIdentifierStart(s.charAt(0))) {
+            return false;
+        }
+        for (int i = 1; i < s.length(); i++) {
+            if (!Character.isJavaIdentifierPart(s.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private static final Set<String> INTERNAL_METADATA_FIELDS = Set.of(
             "pkgName", "isCommonjs", "hasTopLevelAwait",
             "isSharedModule", "scopeNames", "moduleRecordIdx");
@@ -982,7 +1060,15 @@ class DeclarationBuilder {
      * @return the property name
      */
     static String extractAccessorPropertyName(String accessorName) {
-        if (accessorName != null && accessorName.length() > 4) {
+        if (accessorName == null) {
+            return null;
+        }
+        // ABC encoded accessor: #~@N<#name — use sanitizeMethodName
+        if (accessorName.startsWith("#")) {
+            return sanitizeMethodName(accessorName);
+        }
+        // Standard get_/set_ prefix
+        if (accessorName.length() > 4) {
             return accessorName.substring(4);
         }
         return accessorName;
@@ -1021,8 +1107,9 @@ class DeclarationBuilder {
                         && !"<ctor>".equals(mName)
                         && !isGetterMethod(mName)
                         && !isSetterMethod(mName)
-                        && !isStaticInitMethod(mName)) {
-                    methodNames.add(mName);
+                        && !isStaticInitMethod(mName)
+                        && !isConstructorMethod(m, "")) {
+                    methodNames.add(sanitizeMethodName(mName));
                 }
             }
             currentSuperOff = superClass.getSuperClassOff();
@@ -1536,7 +1623,7 @@ class DeclarationBuilder {
                     }
                 }
             } catch (Exception e) {
-                String mName = sanitizeClassName(method.getName());
+                String mName = sanitizeMethodName(method.getName());
                 members.add(
                         new ArkTSStatement.ExpressionStatement(
                                 new ArkTSExpression.VariableExpression(

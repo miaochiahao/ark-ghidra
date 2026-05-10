@@ -223,7 +223,10 @@ public class MethodSignatureBuilder {
         List<ArkTSDeclarations.FunctionDeclaration.FunctionParam> params =
                 buildParams(proto, numArgs, debugNames);
         StringBuilder sb = new StringBuilder();
-        sb.append("function ").append(method.getName()).append("(");
+        sb.append("function ")
+                .append(DeclarationBuilder.sanitizeMethodName(
+                        method.getName()))
+                .append("(");
         for (int i = 0; i < params.size(); i++) {
             if (i > 0) {
                 sb.append(", ");

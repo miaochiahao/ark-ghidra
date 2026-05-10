@@ -1827,7 +1827,9 @@ public class ArkTSDecompiler {
                 new ArkTSStatement.BlockStatement(Collections.emptyList());
         ArkTSDeclarations.FunctionDeclaration func =
                 new ArkTSDeclarations.FunctionDeclaration(
-                        method.getName(), params, returnType, body);
+                        DeclarationBuilder.sanitizeMethodName(
+                                method.getName()),
+                        params, returnType, body);
         return func.toArkTS(0);
     }
 
@@ -2054,8 +2056,9 @@ public class ArkTSDecompiler {
                 new ArkTSStatement.BlockStatement(filteredStmts);
         ArkTSDeclarations.FunctionDeclaration func =
                 new ArkTSDeclarations.FunctionDeclaration(
-                        method.getName(), params, returnType, body,
-                        isAsync);
+                        DeclarationBuilder.sanitizeMethodName(
+                                method.getName()),
+                        params, returnType, body, isAsync);
         return func.toArkTS(0);
     }
 

@@ -6862,6 +6862,105 @@ class ArkTSDecompilerTest {
     }
 
     @Test
+    void testDeclarationBuilder_sanitizeMethodName() {
+        // Instance method: #~@N>#name
+        assertEquals("onCreate",
+                DeclarationBuilder.sanitizeMethodName("#~@0>#onCreate"));
+        assertEquals("initialRender",
+                DeclarationBuilder.sanitizeMethodName("#~@0>#initialRender"));
+        assertEquals("rerender",
+                DeclarationBuilder.sanitizeMethodName("#~@0>#rerender"));
+
+        // Constructor: #~@N=#name
+        assertEquals("Dog",
+                DeclarationBuilder.sanitizeMethodName("#~@1=#Dog"));
+
+        // Accessor: #~@N<#name
+        assertEquals("circleArea",
+                DeclarationBuilder.sanitizeMethodName("#~@4<#circleArea"));
+
+        // Prototype method: #~@N>@M*#name
+        assertEquals("methodName",
+                DeclarationBuilder.sanitizeMethodName("#~@0>@1*#methodName"));
+
+        // Static method: #*#name
+        assertEquals("testIfElse",
+                DeclarationBuilder.sanitizeMethodName("#*#testIfElse"));
+
+        // Static variant: #**#name
+        assertEquals("testStatic",
+                DeclarationBuilder.sanitizeMethodName("#**#testStatic"));
+
+        // Standard special names — returned as-is
+        assertEquals("<init>",
+                DeclarationBuilder.sanitizeMethodName("<init>"));
+        assertEquals("<ctor>",
+                DeclarationBuilder.sanitizeMethodName("<ctor>"));
+        assertEquals("func_main_0",
+                DeclarationBuilder.sanitizeMethodName("func_main_0"));
+        assertEquals("<static_init>",
+                DeclarationBuilder.sanitizeMethodName("<static_init>"));
+
+        // Accessor prefixes — returned as-is
+        assertEquals("get_value",
+                DeclarationBuilder.sanitizeMethodName("get_value"));
+        assertEquals("set_name",
+                DeclarationBuilder.sanitizeMethodName("set_name"));
+
+        // Plain identifiers — returned as-is
+        assertEquals("myMethod",
+                DeclarationBuilder.sanitizeMethodName("myMethod"));
+        assertEquals("toString",
+                DeclarationBuilder.sanitizeMethodName("toString"));
+
+        // Null/empty handling
+        assertEquals("anonymous_method",
+                DeclarationBuilder.sanitizeMethodName(null));
+        assertEquals("anonymous_method",
+                DeclarationBuilder.sanitizeMethodName(""));
+
+        // Empty name after prefix
+        assertEquals("anonymous_method",
+                DeclarationBuilder.sanitizeMethodName("#~@0>@0*#"));
+
+        // Non-identifier suffix
+        assertEquals("anonymous_method",
+                DeclarationBuilder.sanitizeMethodName("#*#^K"));
+    }
+
+    @Test
+    void testDeclarationBuilder_isConstructorMethod_encoded() {
+        DeclarationBuilder db = new DeclarationBuilder(decompiler);
+        // Standard constructors
+        assertTrue(db.isConstructorMethod(
+                makeMethod("<init>"), "MyClass"));
+        assertTrue(db.isConstructorMethod(
+                makeMethod("<ctor>"), "MyClass"));
+        assertTrue(db.isConstructorMethod(
+                makeMethod("MyClass"), "MyClass"));
+
+        // ABC encoded constructor: #~@N=#name
+        assertTrue(db.isConstructorMethod(
+                makeMethod("#~@1=#Dog"), "Dog"));
+        assertTrue(db.isConstructorMethod(
+                makeMethod("#~@0=#MyClass"), "MyClass"));
+
+        // Not constructors
+        assertFalse(db.isConstructorMethod(
+                makeMethod("#~@0>#onCreate"), "MyClass"));
+        assertFalse(db.isConstructorMethod(
+                makeMethod("#~@4<#circleArea"), "MyClass"));
+        assertFalse(db.isConstructorMethod(
+                makeMethod("#*#testIfElse"), "MyClass"));
+        assertFalse(db.isConstructorMethod(
+                makeMethod("toString"), "MyClass"));
+    }
+
+    private static AbcMethod makeMethod(String name) {
+        return new AbcMethod(0, 0, name, 0, 0, 0, 0);
+    }
+
+    @Test
     void testDeclarationBuilder_isGetterMethod() {
         assertTrue(DeclarationBuilder.isGetterMethod("get_value"));
         assertTrue(DeclarationBuilder.isGetterMethod("get_name"));
@@ -6895,6 +6994,12 @@ class ArkTSDecompilerTest {
                 DeclarationBuilder.extractAccessorPropertyName("set_name"));
         assertEquals("x",
                 DeclarationBuilder.extractAccessorPropertyName("get_x"));
+        // ABC encoded accessor: #~@N<#name
+        assertEquals("circleArea",
+                DeclarationBuilder.extractAccessorPropertyName(
+                        "#~@4<#circleArea"));
+        // Null safety
+        assertNull(DeclarationBuilder.extractAccessorPropertyName(null));
     }
 
     @Test
