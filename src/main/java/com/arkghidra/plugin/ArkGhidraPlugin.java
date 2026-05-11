@@ -61,6 +61,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
     private GlobalSearchProvider globalSearchProvider;
     private BookmarkProvider bookmarkProvider;
     private HistoryProvider historyProvider;
+    private StatsProvider statsProvider;
 
     public ArkGhidraPlugin(PluginTool tool) {
         super(tool);
@@ -134,6 +135,8 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         historyProvider = new HistoryProvider(tool, PLUGIN_NAME);
         historyProvider.setRestoreCallback((name, code) -> outputProvider.showDecompiledCode(name, code));
         tool.addComponentProvider(historyProvider, false);
+        statsProvider = new StatsProvider(tool, PLUGIN_NAME);
+        tool.addComponentProvider(statsProvider, false);
     }
 
     private void onMethodDoubleClicked(AbcMethod method) {
@@ -669,6 +672,16 @@ public class ArkGhidraPlugin extends ProgramPlugin {
     }
 
     /**
+     * Computes and displays ABC file statistics in the Stats panel and makes it visible.
+     *
+     * @param abcFile the parsed ABC file
+     */
+    public void showAbcStats(AbcFile abcFile) {
+        statsProvider.showStats(abcFile);
+        tool.showComponentProvider(statsProvider, true);
+    }
+
+    /**
      * Bookmarks the currently displayed method and makes the Bookmarks panel visible.
      */
     public void addCurrentBookmark() {
@@ -713,6 +726,9 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             }
             if (historyProvider != null) {
                 pluginTool.removeComponentProvider(historyProvider);
+            }
+            if (statsProvider != null) {
+                pluginTool.removeComponentProvider(statsProvider);
             }
         }
     }

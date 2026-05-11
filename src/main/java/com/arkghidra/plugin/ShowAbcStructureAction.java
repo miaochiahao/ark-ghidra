@@ -66,6 +66,7 @@ public class ShowAbcStructureAction extends DockingAction {
                     + abcFile.getClasses().size() + " classes");
 
             loadHapMetadata(program, abcFile);
+            plugin.showAbcStats(abcFile);
         } catch (Exception e) {
             Msg.error(OWNER, "Failed to parse ABC structure", e);
             plugin.getAbcStructureProvider().showError(

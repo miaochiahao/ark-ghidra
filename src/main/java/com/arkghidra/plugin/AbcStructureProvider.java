@@ -341,6 +341,10 @@ public class AbcStructureProvider extends ComponentProvider {
             hierarchyItem.addActionListener(ev -> showClassHierarchy(cls));
             menu.add(hierarchyItem);
 
+            JMenuItem subclassesItem = new JMenuItem("Show Subclasses");
+            subclassesItem.addActionListener(ev -> showSubclasses(cls));
+            menu.add(subclassesItem);
+
             menu.show(structureTree, e.getX(), e.getY());
         } else if (userObj instanceof String) {
             String label = (String) userObj;
@@ -406,6 +410,36 @@ public class AbcStructureProvider extends ComponentProvider {
 
         javax.swing.JOptionPane.showMessageDialog(
                 mainPanel, sb.toString(), "Class Hierarchy",
+                javax.swing.JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private void showSubclasses(AbcClass cls) {
+        if (currentAbcFile == null) {
+            javax.swing.JOptionPane.showMessageDialog(
+                    mainPanel, "No ABC file loaded.", "Show Subclasses",
+                    javax.swing.JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        String className = formatClassName(cls.getName());
+        long clsOffset = cls.getOffset();
+        List<String> subclasses = new ArrayList<>();
+        for (AbcClass c : currentAbcFile.getClasses()) {
+            if (c.getSuperClassOff() == clsOffset && c.getOffset() != clsOffset) {
+                subclasses.add(formatClassName(c.getName()));
+            }
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("Subclasses of ").append(className).append(":\n");
+        sb.append("----------------------------\n");
+        if (subclasses.isEmpty()) {
+            sb.append("(none found in this ABC file)");
+        } else {
+            for (String sub : subclasses) {
+                sb.append("  ").append(sub).append("\n");
+            }
+        }
+        javax.swing.JOptionPane.showMessageDialog(
+                mainPanel, sb.toString(), "Subclasses of " + className,
                 javax.swing.JOptionPane.INFORMATION_MESSAGE);
     }
 
