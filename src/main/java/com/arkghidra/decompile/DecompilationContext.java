@@ -359,8 +359,38 @@ public class DecompilationContext {
     public void setInferredName(int reg, String name) {
         if (name != null && !name.isEmpty()
                 && !registerNames.containsKey(reg)) {
-            inferredNames.put(reg, name);
+            String uniqueName = uniquifyName(name, reg);
+            inferredNames.put(reg, uniqueName);
         }
+    }
+
+    private String uniquifyName(String name, int skipReg) {
+        if (!isNameUsed(name, skipReg)) {
+            return name;
+        }
+        for (int i = 2; i < 100; i++) {
+            String candidate = name + i;
+            if (!isNameUsed(candidate, skipReg)) {
+                return candidate;
+            }
+        }
+        return name;
+    }
+
+    private boolean isNameUsed(String name, int skipReg) {
+        for (var entry : registerNames.entrySet()) {
+            if (entry.getKey() != skipReg
+                    && name.equals(entry.getValue())) {
+                return true;
+            }
+        }
+        for (var entry : inferredNames.entrySet()) {
+            if (entry.getKey() != skipReg
+                    && name.equals(entry.getValue())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
