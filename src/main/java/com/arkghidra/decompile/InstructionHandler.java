@@ -1552,24 +1552,44 @@ class InstructionHandler {
 
         // STA preserves accValue, so the accumulator may hold a literal
         // (e.g., the last stored argument) instead of the class reference.
-        // The first register in the range often holds the class reference.
-        // If accValue is a literal but firstReg has a class-like expression,
-        // use the register expression as callee and shift args.
         if (isLikelyLiteral(callee)) {
+            // Check firstReg — if it has a class-like expression, the
+            // compiler stored the class at firstReg and args after it.
             if (numArgs > 0) {
                 ArkTSExpression firstArgExpr =
                         ctx.getRegisterExpression(firstReg);
                 if (firstArgExpr != null
-                        && !isLikelyLiteral(firstArgExpr)) {
+                        && isClassLikeExpression(firstArgExpr)) {
                     callee = firstArgExpr;
                     args.remove(0);
                 }
             } else {
-                // Zero-arg case: the register may hold the class reference
                 ArkTSExpression regExpr =
                         ctx.getRegisterExpression(firstReg);
-                if (regExpr != null && !isLikelyLiteral(regExpr)) {
+                if (regExpr != null
+                        && !isLikelyLiteral(regExpr)) {
                     callee = regExpr;
+                }
+            }
+
+            // Fallback: scan ALL registers for a stored class reference.
+            // The Ark compiler stores the class in a register (often a
+            // higher-numbered one) before loading args into lower regs.
+            // Scan from highest register down to find the class ref.
+            if (isLikelyLiteral(callee)) {
+                int maxReg = ctx.getMaxTrackedRegister();
+                for (int r = maxReg; r >= 0; r--) {
+                    if (r >= firstReg
+                            && r < firstReg + numArgs) {
+                        continue; // Skip argument registers
+                    }
+                    ArkTSExpression stored =
+                            ctx.getRegisterExpression(r);
+                    if (stored != null
+                            && isClassLikeExpression(stored)) {
+                        callee = stored;
+                        break;
+                    }
                 }
             }
         }
@@ -1642,6 +1662,14 @@ class InstructionHandler {
                     || "Infinity".equals(name);
         }
         return false;
+    }
+
+    private static boolean isClassLikeExpression(ArkTSExpression expr) {
+        if (isLikelyLiteral(expr)) {
+            return false;
+        }
+        return expr instanceof ArkTSExpression.VariableExpression
+                || expr instanceof ArkTSExpression.MemberExpression;
     }
 
     private static StatementResult handleDefineByName(int opcode,

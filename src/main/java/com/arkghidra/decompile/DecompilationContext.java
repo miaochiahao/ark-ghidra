@@ -487,6 +487,21 @@ public class DecompilationContext {
     }
 
     /**
+     * Returns the highest register number that has a tracked expression.
+     *
+     * @return max register number with an expression, or 0 if none
+     */
+    public int getMaxTrackedRegister() {
+        int max = 0;
+        for (int r : registerExpressions.keySet()) {
+            if (r > max) {
+                max = r;
+            }
+        }
+        return max;
+    }
+
+    /**
      * Marks a register as captured by a closure (inner function).
      *
      * @param reg the register number captured by an inner function
