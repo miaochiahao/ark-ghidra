@@ -1146,6 +1146,11 @@ public class ArkTSOutputProvider extends ComponentProvider {
         copyButton.addActionListener(e -> copyToClipboard());
         toolBar.add(copyButton);
 
+        JButton copyAllButton = new JButton("Copy All");
+        copyAllButton.setToolTipText("Copy all decompiled code to clipboard");
+        copyAllButton.addActionListener(e -> copyAllToClipboard());
+        toolBar.add(copyAllButton);
+
         JButton saveButton = new JButton("Save...");
         saveButton.addActionListener(e -> saveToFile());
         toolBar.add(saveButton);
@@ -1390,6 +1395,16 @@ public class ArkTSOutputProvider extends ComponentProvider {
         Msg.info(OWNER, "Copied decompiled code to clipboard");
     }
 
+    private void copyAllToClipboard() {
+        String text = codePane.getText();
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        Toolkit.getDefaultToolkit().getSystemClipboard()
+                .setContents(new StringSelection(text), null);
+        Msg.info(OWNER, "Copied all decompiled code to clipboard");
+    }
+
     private void saveToFile() {
         String text = codePane.getText();
         if (text == null || text.isEmpty()) {
@@ -1522,6 +1537,15 @@ public class ArkTSOutputProvider extends ComponentProvider {
             @Override
             public void actionPerformed(ActionEvent e) {
                 copyCurrentLine();
+            }
+        });
+
+        KeyStroke ctrlA = KeyStroke.getKeyStroke(KeyEvent.VK_A, cmdMask);
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(ctrlA, "selectAll");
+        codePane.getActionMap().put("selectAll", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                codePane.selectAll();
             }
         });
     }

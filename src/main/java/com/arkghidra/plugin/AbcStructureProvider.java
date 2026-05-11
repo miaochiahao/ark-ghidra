@@ -20,6 +20,7 @@ import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
+import javax.swing.JToggleButton;
 import javax.swing.JTree;
 import javax.swing.KeyStroke;
 import javax.swing.event.DocumentEvent;
@@ -70,6 +71,9 @@ public class AbcStructureProvider extends ComponentProvider {
     private ClassNavigationListener classNavigationListener;
     private BiConsumer<AbcClass, File> exportClassCallback;
     private java.util.function.Consumer<AbcClass> copyAsArkTSCallback;
+    private JToggleButton filterPublicButton;
+    private JToggleButton filterPrivateButton;
+    private JToggleButton filterStaticButton;
 
     public AbcStructureProvider(Tool tool, String owner) {
         super(tool, "ABC Structure", owner);
@@ -154,6 +158,23 @@ public class AbcStructureProvider extends ComponentProvider {
         breadcrumbLabel.setForeground(Color.GRAY);
         breadcrumbLabel.setBorder(BorderFactory.createEmptyBorder(1, 4, 1, 4));
 
+        filterPublicButton = new JToggleButton("Pub");
+        filterPublicButton.setToolTipText("Show only public methods");
+        filterPublicButton.addActionListener(e -> rebuildTree());
+
+        filterPrivateButton = new JToggleButton("Priv");
+        filterPrivateButton.setToolTipText("Show only private methods");
+        filterPrivateButton.addActionListener(e -> rebuildTree());
+
+        filterStaticButton = new JToggleButton("Static");
+        filterStaticButton.setToolTipText("Show only static methods");
+        filterStaticButton.addActionListener(e -> rebuildTree());
+
+        JPanel modifierFilterPanel = new JPanel();
+        modifierFilterPanel.add(filterPublicButton);
+        modifierFilterPanel.add(filterPrivateButton);
+        modifierFilterPanel.add(filterStaticButton);
+
         structureTree.addTreeSelectionListener(new TreeSelectionListener() {
             @Override
             public void valueChanged(TreeSelectionEvent e) {
@@ -166,6 +187,7 @@ public class AbcStructureProvider extends ComponentProvider {
 
         JPanel topPanel = new JPanel(new BorderLayout());
         topPanel.add(filterField, BorderLayout.NORTH);
+        topPanel.add(modifierFilterPanel, BorderLayout.CENTER);
         topPanel.add(breadcrumbLabel, BorderLayout.SOUTH);
 
         mainPanel = new JPanel(new BorderLayout());
@@ -449,6 +471,26 @@ public class AbcStructureProvider extends ComponentProvider {
         return name.toLowerCase().contains(filter.toLowerCase());
     }
 
+    private boolean passesModifierFilter(AbcMethod method) {
+        boolean pubSelected = filterPublicButton != null && filterPublicButton.isSelected();
+        boolean privSelected = filterPrivateButton != null && filterPrivateButton.isSelected();
+        boolean staticSelected = filterStaticButton != null && filterStaticButton.isSelected();
+        if (!pubSelected && !privSelected && !staticSelected) {
+            return true;
+        }
+        long flags = method.getAccessFlags();
+        if (pubSelected && (flags & AbcAccessFlags.ACC_PUBLIC) != 0) {
+            return true;
+        }
+        if (privSelected && (flags & AbcAccessFlags.ACC_PRIVATE) != 0) {
+            return true;
+        }
+        if (staticSelected && (flags & AbcAccessFlags.ACC_STATIC) != 0) {
+            return true;
+        }
+        return false;
+    }
+
     private void rebuildTree() {
         rootNode.removeAllChildren();
 
@@ -477,7 +519,7 @@ public class AbcStructureProvider extends ComponentProvider {
             boolean anyMethodMatches = false;
             if (!classNameMatches && !filter.isEmpty()) {
                 for (AbcMethod method : cls.getMethods()) {
-                    if (matchesFilter(method.getName(), filter)) {
+                    if (matchesFilter(method.getName(), filter) && passesModifierFilter(method)) {
                         anyMethodMatches = true;
                         break;
                     }
@@ -485,6 +527,20 @@ public class AbcStructureProvider extends ComponentProvider {
             }
 
             if (!filter.isEmpty() && !classNameMatches && !anyMethodMatches) {
+                continue;
+            }
+
+            boolean anyMethodPassesModifier = false;
+            for (AbcMethod method : cls.getMethods()) {
+                if (passesModifierFilter(method)) {
+                    anyMethodPassesModifier = true;
+                    break;
+                }
+            }
+            boolean modifierFilterActive = (filterPublicButton != null && filterPublicButton.isSelected())
+                    || (filterPrivateButton != null && filterPrivateButton.isSelected())
+                    || (filterStaticButton != null && filterStaticButton.isSelected());
+            if (modifierFilterActive && !anyMethodPassesModifier) {
                 continue;
             }
 
@@ -506,6 +562,9 @@ public class AbcStructureProvider extends ComponentProvider {
             for (AbcMethod method : cls.getMethods()) {
                 if (!filter.isEmpty() && !classNameMatches
                         && !matchesFilter(method.getName(), filter)) {
+                    continue;
+                }
+                if (!passesModifierFilter(method)) {
                     continue;
                 }
                 DefaultMutableTreeNode methodNode =
