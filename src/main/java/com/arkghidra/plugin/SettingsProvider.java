@@ -454,4 +454,66 @@ public class SettingsProvider extends ComponentProvider {
         themeCombo.setSelectedItem("Auto (follow Ghidra)");
         tabSizeSpinner.setValue(4);
     }
+
+    /**
+     * Saves recent Quick Open queries to the settings file.
+     *
+     * @param queries the list of recent queries (most recent first)
+     */
+    public void saveRecentQueries(java.util.List<String> queries) {
+        File file = new File(SETTINGS_FILE);
+        if (!file.exists()) {
+            return;
+        }
+        Properties props = new Properties();
+        try (FileInputStream in = new FileInputStream(file)) {
+            props.load(in);
+        } catch (IOException e) {
+            return;
+        }
+        props.setProperty("recent.queries.count", String.valueOf(queries.size()));
+        for (int i = 0; i < queries.size(); i++) {
+            props.setProperty("recent.query." + i, queries.get(i));
+        }
+        try {
+            file.getParentFile().mkdirs();
+            try (FileOutputStream out = new FileOutputStream(file)) {
+                props.store(out, "ArkTS Decompiler Settings");
+            }
+        } catch (IOException e) {
+            // ignore
+        }
+    }
+
+    /**
+     * Loads recent Quick Open queries from the settings file.
+     *
+     * @return list of recent queries (most recent first), or empty list
+     */
+    public java.util.List<String> loadRecentQueries() {
+        File file = new File(SETTINGS_FILE);
+        if (!file.exists()) {
+            return new java.util.ArrayList<>();
+        }
+        Properties props = new Properties();
+        try (FileInputStream in = new FileInputStream(file)) {
+            props.load(in);
+        } catch (IOException e) {
+            return new java.util.ArrayList<>();
+        }
+        int count = 0;
+        try {
+            count = Integer.parseInt(props.getProperty("recent.queries.count", "0"));
+        } catch (NumberFormatException e) {
+            return new java.util.ArrayList<>();
+        }
+        java.util.List<String> queries = new java.util.ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            String q = props.getProperty("recent.query." + i, "");
+            if (!q.isEmpty()) {
+                queries.add(q);
+            }
+        }
+        return queries;
+    }
 }

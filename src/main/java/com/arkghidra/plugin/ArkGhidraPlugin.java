@@ -175,6 +175,8 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         tool.addComponentProvider(statsProvider, false);
         settingsProvider = new SettingsProvider(tool, PLUGIN_NAME);
         tool.addComponentProvider(settingsProvider, false);
+        // Load persisted recent queries
+        recentQuickOpenQueries.addAll(settingsProvider.loadRecentQueries());
         settingsProvider.addFontChangeListener(e -> {
             outputProvider.setFontFamily(settingsProvider.getFontFamily());
             outputProvider.setTheme(settingsProvider.getTheme());
@@ -554,6 +556,11 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                     recentQuickOpenQueries.addFirst(q);
                     while (recentQuickOpenQueries.size() > 10) {
                         recentQuickOpenQueries.removeLast();
+                    }
+                    // Persist to disk
+                    if (settingsProvider != null) {
+                        settingsProvider.saveRecentQueries(
+                                new java.util.ArrayList<>(recentQuickOpenQueries));
                     }
                 }
                 navigateToQuickOpenSelection(

@@ -1233,9 +1233,11 @@ public class AbcStructureProvider extends ComponentProvider {
                                 AbcClass c = (AbcClass) getUserObject();
                                 boolean showBadges = settingsProvider == null
                                         || settingsProvider.isShowClassTypeBadges();
-                                return showBadges
+                                String name = showBadges
                                         ? getClassTypeBadge(c) + formatClassName(c.getName())
                                         : formatClassName(c.getName());
+                                int methodCount = c.getMethods().size();
+                                return methodCount > 0 ? name + " (" + methodCount + ")" : name;
                             }
                         };
                 classesNode.add(classNode);
