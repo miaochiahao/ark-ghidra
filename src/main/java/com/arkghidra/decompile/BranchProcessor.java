@@ -622,13 +622,16 @@ class BranchProcessor {
         BasicBlock thenBody = findShortCircuitThenBody(
                 secondCondBlock, pattern.mergeBlock, cfg);
         if (thenBody != null && !visited.contains(thenBody)) {
-            visited.add(thenBody);
             visited.add(pattern.falseBlock);
             if (pattern.mergeBlock != null) {
                 visited.add(pattern.mergeBlock);
             }
+            List<BasicBlock> thenBlocks = collectIfBranchBlocks(
+                    thenBody, pattern.mergeBlock, cfg, visited);
+            thenBlocks.forEach(visited::remove);
             List<ArkTSStatement> thenStmts =
-                    reconstructor.processBlockInstructions(thenBody, ctx);
+                    reconstructor.reconstructSubGraph(
+                            cfg, thenBlocks, ctx, visited);
             ArkTSStatement body =
                     new ArkTSStatement.BlockStatement(thenStmts);
             stmts.add(new ArkTSControlFlow.IfStatement(combined, body, null));
@@ -687,13 +690,16 @@ class BranchProcessor {
         BasicBlock thenBody = findShortCircuitThenBody(
                 secondCondBlock, pattern.mergeBlock, cfg);
         if (thenBody != null && !visited.contains(thenBody)) {
-            visited.add(thenBody);
             visited.add(pattern.falseBlock);
             if (pattern.mergeBlock != null) {
                 visited.add(pattern.mergeBlock);
             }
+            List<BasicBlock> thenBlocks = collectIfBranchBlocks(
+                    thenBody, pattern.mergeBlock, cfg, visited);
+            thenBlocks.forEach(visited::remove);
             List<ArkTSStatement> thenStmts =
-                    reconstructor.processBlockInstructions(thenBody, ctx);
+                    reconstructor.reconstructSubGraph(
+                            cfg, thenBlocks, ctx, visited);
             ArkTSStatement body =
                     new ArkTSStatement.BlockStatement(thenStmts);
             stmts.add(new ArkTSControlFlow.IfStatement(combined, body, null));
