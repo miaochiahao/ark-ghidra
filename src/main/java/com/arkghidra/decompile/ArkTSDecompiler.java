@@ -1368,6 +1368,10 @@ public class ArkTSDecompiler {
                 }
                 return null;
             }
+            if (isAlwaysTruthy(ifStmt.getCondition())) {
+                return simplifyFalseConditionInBlock(
+                        ifStmt.getThenBlock());
+            }
             return new ArkTSControlFlow.IfStatement(
                     ifStmt.getCondition(),
                     simplifyFalseConditionInBlock(
@@ -1474,6 +1478,20 @@ public class ArkTSDecompiler {
                 return "0".equals(lit.getValue());
             case STRING:
                 return lit.getValue().isEmpty();
+            default:
+                return false;
+        }
+    }
+
+    private static boolean isAlwaysTruthy(ArkTSExpression expr) {
+        if (!(expr instanceof ArkTSExpression.LiteralExpression)) {
+            return false;
+        }
+        ArkTSExpression.LiteralExpression lit =
+                (ArkTSExpression.LiteralExpression) expr;
+        switch (lit.getKind()) {
+            case BOOLEAN:
+                return "true".equals(lit.getValue());
             default:
                 return false;
         }
