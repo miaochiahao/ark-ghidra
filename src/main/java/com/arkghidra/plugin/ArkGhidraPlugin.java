@@ -528,11 +528,19 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             ArkTSDecompiler decompiler = createDecompiler();
             String result = decompiler.decompileMethod(method, code, abcFile);
             String clsName = findClassForMethod(abcFile, method);
+            // Build complexity header
+            StringBuilder header = new StringBuilder();
+            if (code != null) {
+                long size = code.getCodeSize();
+                String complexity = size > 200 ? "complex" : size > 50 ? "medium" : "simple";
+                header.append("// ").append(method.getName())
+                        .append("  [").append(size).append("b, ").append(complexity).append("]\n\n");
+            }
             String notes = notesProvider.getNotes(method.getName());
             boolean showNotes = settingsProvider != null && settingsProvider.isShowInlineNotes();
-            String displayResult = (notes.isEmpty() || !showNotes) ? result
+            String displayResult = header.toString() + ((notes.isEmpty() || !showNotes) ? result
                     : "/*\n * Notes:\n * " + notes.replace("\n", "\n * ")
-                            + "\n */\n\n" + result;
+                            + "\n */\n\n" + result);
             outputProvider.showDecompiledCode(method.getName(), displayResult, clsName);
             historyProvider.recordNavigation(method.getName(), result);
             notesProvider.setCurrentKey(method.getName());
@@ -579,6 +587,21 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                     && settingsProvider.isSkipTrivialMethods();
             StringBuilder sb = new StringBuilder();
             sb.append("// class ").append(className).append("\n");
+            // Show inheritance chain
+            long superOff = abcClass.getSuperClassOff();
+            int depth = 0;
+            while (superOff != 0 && depth < 5) {
+                AbcClass parent = findClassByOffset(abcFile, superOff);
+                if (parent == null) {
+                    sb.append("//   extends <unknown @0x")
+                            .append(Long.toHexString(superOff)).append(">\n");
+                    break;
+                }
+                String parentName = AbcStructureProvider.formatClassName(parent.getName());
+                sb.append("//   extends ").append(parentName).append("\n");
+                superOff = parent.getSuperClassOff();
+                depth++;
+            }
             if (!abcClass.getFields().isEmpty()) {
                 sb.append("//   fields:\n");
                 for (AbcField field : abcClass.getFields()) {
@@ -1062,6 +1085,18 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             }
         }
         return "";
+    }
+
+    private AbcClass findClassByOffset(AbcFile abcFile, long offset) {
+        if (abcFile == null || offset == 0) {
+            return null;
+        }
+        for (AbcClass cls : abcFile.getClasses()) {
+            if (cls.getOffset() == offset) {
+                return cls;
+            }
+        }
+        return null;
     }
 
     private AbcFile getCurrentAbcFile() {
