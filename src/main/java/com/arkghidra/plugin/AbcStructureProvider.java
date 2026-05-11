@@ -294,6 +294,14 @@ public class AbcStructureProvider extends ComponentProvider {
                     ev -> copyToClipboard("0x" + Long.toHexString(method.getCodeOff())));
             menu.add(copyOffsetItem);
 
+            JMenuItem copySignatureItem = new JMenuItem("Copy Signature");
+            copySignatureItem.addActionListener(ev -> {
+                String sig = formatMethodPrefix(method) + method.getName()
+                        + formatMethodSuffixWithArgs(method, currentAbcFile);
+                copyToClipboard(sig);
+            });
+            menu.add(copySignatureItem);
+
             menu.show(structureTree, e.getX(), e.getY());
         } else if (userObj instanceof AbcClass) {
             AbcClass cls = (AbcClass) userObj;
@@ -328,6 +336,10 @@ public class AbcStructureProvider extends ComponentProvider {
                 copyArkTSItem.addActionListener(ev -> copyAsArkTSCallback.accept(cls));
             }
             menu.add(copyArkTSItem);
+
+            JMenuItem hierarchyItem = new JMenuItem("Show Hierarchy");
+            hierarchyItem.addActionListener(ev -> showClassHierarchy(cls));
+            menu.add(hierarchyItem);
 
             menu.show(structureTree, e.getX(), e.getY());
         } else if (userObj instanceof String) {
@@ -366,6 +378,47 @@ public class AbcStructureProvider extends ComponentProvider {
     private void copyToClipboard(String text) {
         java.awt.Toolkit.getDefaultToolkit().getSystemClipboard()
                 .setContents(new java.awt.datatransfer.StringSelection(text), null);
+    }
+
+    private void showClassHierarchy(AbcClass cls) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Class Hierarchy\n");
+        sb.append("---------------\n");
+        String className = formatClassName(cls.getName());
+        sb.append(className).append(" (current)\n");
+
+        if (currentAbcFile != null) {
+            long superOff = cls.getSuperClassOff();
+            int depth = 0;
+            while (superOff != 0 && depth < 10) {
+                AbcClass parent = findClassByOffset(superOff);
+                if (parent == null) {
+                    sb.append("  extends <unknown @0x")
+                            .append(Long.toHexString(superOff)).append(">\n");
+                    break;
+                }
+                String parentName = formatClassName(parent.getName());
+                sb.append("  extends ").append(parentName).append("\n");
+                superOff = parent.getSuperClassOff();
+                depth++;
+            }
+        }
+
+        javax.swing.JOptionPane.showMessageDialog(
+                mainPanel, sb.toString(), "Class Hierarchy",
+                javax.swing.JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private AbcClass findClassByOffset(long offset) {
+        if (currentAbcFile == null || offset == 0) {
+            return null;
+        }
+        for (AbcClass c : currentAbcFile.getClasses()) {
+            if (c.getOffset() == offset) {
+                return c;
+            }
+        }
+        return null;
     }
 
     private void updateBreadcrumb() {
