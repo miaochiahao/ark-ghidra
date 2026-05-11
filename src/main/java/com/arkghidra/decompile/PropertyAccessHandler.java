@@ -36,6 +36,17 @@ class PropertyAccessHandler {
         ArkTSExpression callee = accValue != null
                 ? accValue
                 : new ArkTSExpression.VariableExpression(ACC);
+
+        // CALLTHIS: when acc holds a literal (last stored argument),
+        // the method reference was stored in a register. Try to recover.
+        if (isCallThisOpcode(opcode) && isLikelyLiteral(callee)) {
+            ArkTSExpression recovered =
+                    recoverCalleeFromRegisters(ctx);
+            if (recovered != null) {
+                callee = recovered;
+            }
+        }
+
         List<ArkTSExpression> args = new ArrayList<>();
 
         switch (opcode) {
@@ -639,5 +650,45 @@ class PropertyAccessHandler {
                         .GeneratorFunctionExpression
                 || expr instanceof ArkTSAccessExpressions.IifeExpression
                 || InstructionHandler.isDefineFuncExpression(expr);
+    }
+
+    private static boolean isCallThisOpcode(int opcode) {
+        return opcode == ArkOpcodesCompat.CALLTHIS0
+                || opcode == ArkOpcodesCompat.CALLTHIS1
+                || opcode == ArkOpcodesCompat.CALLTHIS2
+                || opcode == ArkOpcodesCompat.CALLTHIS3
+                || opcode == ArkOpcodesCompat.CALLTHISRANGE;
+    }
+
+    private static boolean isLikelyLiteral(ArkTSExpression expr) {
+        if (expr instanceof ArkTSExpression.LiteralExpression) {
+            return true;
+        }
+        if (expr instanceof ArkTSExpression.VariableExpression) {
+            String name =
+                    ((ArkTSExpression.VariableExpression) expr).getName();
+            return "undefined".equals(name)
+                    || "null".equals(name)
+                    || "true".equals(name)
+                    || "false".equals(name);
+        }
+        return false;
+    }
+
+    /**
+     * Scans tracked register expressions for a callee-like expression
+     * (MemberExpression or function ref) when the accumulator holds a
+     * literal (last stored argument).
+     */
+    private static ArkTSExpression recoverCalleeFromRegisters(
+            DecompilationContext ctx) {
+        int maxReg = ctx.getMaxTrackedRegister();
+        for (int r = maxReg; r >= 0; r--) {
+            ArkTSExpression stored = ctx.getRegisterExpression(r);
+            if (stored instanceof ArkTSExpression.MemberExpression) {
+                return stored;
+            }
+        }
+        return null;
     }
 }
