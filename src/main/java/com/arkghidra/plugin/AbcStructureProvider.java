@@ -1,17 +1,22 @@
 package com.arkghidra.plugin;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Font;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 
+import javax.swing.BorderFactory;
 import javax.swing.JComponent;
+import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 import javax.swing.JTree;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import javax.swing.event.TreeSelectionEvent;
+import javax.swing.event.TreeSelectionListener;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreePath;
@@ -46,6 +51,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private final DefaultTreeModel treeModel;
     private final DefaultMutableTreeNode rootNode;
     private final JTextField filterField;
+    private final JLabel breadcrumbLabel;
     private AbcFile currentAbcFile;
     private MethodNavigationListener navigationListener;
 
@@ -84,14 +90,47 @@ public class AbcStructureProvider extends ComponentProvider {
             }
         });
 
+        breadcrumbLabel = new JLabel("");
+        breadcrumbLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 11));
+        breadcrumbLabel.setForeground(Color.GRAY);
+        breadcrumbLabel.setBorder(BorderFactory.createEmptyBorder(1, 4, 1, 4));
+
+        structureTree.addTreeSelectionListener(new TreeSelectionListener() {
+            @Override
+            public void valueChanged(TreeSelectionEvent e) {
+                updateBreadcrumb();
+            }
+        });
+
         JScrollPane scrollPane = new JScrollPane(structureTree);
 
+        JPanel topPanel = new JPanel(new BorderLayout());
+        topPanel.add(filterField, BorderLayout.NORTH);
+        topPanel.add(breadcrumbLabel, BorderLayout.SOUTH);
+
         mainPanel = new JPanel(new BorderLayout());
-        mainPanel.add(filterField, BorderLayout.NORTH);
+        mainPanel.add(topPanel, BorderLayout.NORTH);
         mainPanel.add(scrollPane, BorderLayout.CENTER);
 
         setDefaultWindowPosition(docking.WindowPosition.LEFT);
         setTitle("ABC Structure");
+    }
+
+    private void updateBreadcrumb() {
+        TreePath path = structureTree.getSelectionPath();
+        if (path == null) {
+            breadcrumbLabel.setText("");
+            return;
+        }
+        StringBuilder sb = new StringBuilder();
+        Object[] components = path.getPath();
+        for (int i = 0; i < components.length; i++) {
+            if (i > 0) {
+                sb.append(" > ");
+            }
+            sb.append(components[i].toString());
+        }
+        breadcrumbLabel.setText(sb.toString());
     }
 
     /**

@@ -2,7 +2,10 @@ package com.arkghidra.plugin;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.Graphics;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
@@ -28,6 +31,8 @@ import javax.swing.JTextField;
 import javax.swing.JTextPane;
 import javax.swing.JToolBar;
 import javax.swing.KeyStroke;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.text.BadLocationException;
 import javax.swing.text.DefaultHighlighter;
 import javax.swing.text.Highlighter;
@@ -107,6 +112,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
         installCtrlFBinding();
 
         JScrollPane scrollPane = new JScrollPane(codePane);
+        scrollPane.setRowHeaderView(new LineNumberComponent(codePane));
 
         headerLabel = new JLabel("No decompiled code");
 
@@ -178,6 +184,64 @@ public class ArkTSOutputProvider extends ComponentProvider {
      */
     public String getCurrentHighlightedWord() {
         return currentHighlightedWord;
+    }
+
+    // --- Line number gutter ---
+
+    private static class LineNumberComponent extends JComponent
+            implements DocumentListener {
+
+        private final JTextPane textPane;
+        private static final int WIDTH = 40;
+
+        LineNumberComponent(JTextPane textPane) {
+            this.textPane = textPane;
+            setPreferredSize(new Dimension(WIDTH, 0));
+            setBackground(new Color(0xF5F5F5));
+            setOpaque(true);
+            textPane.getDocument().addDocumentListener(this);
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            g.setColor(getBackground());
+            g.fillRect(0, 0, getWidth(), getHeight());
+            g.setFont(textPane.getFont().deriveFont(12f));
+            g.setColor(Color.GRAY);
+
+            String text = textPane.getText();
+            if (text == null || text.isEmpty()) {
+                return;
+            }
+
+            String[] lines = text.split("\n", -1);
+            FontMetrics fm = g.getFontMetrics();
+            int lineHeight = fm.getHeight();
+            int y = fm.getAscent() + 2;
+
+            for (int i = 1; i <= lines.length; i++) {
+                String num = String.valueOf(i);
+                int x = WIDTH - fm.stringWidth(num) - 4;
+                g.drawString(num, x, y);
+                y += lineHeight;
+            }
+        }
+
+        @Override
+        public void insertUpdate(DocumentEvent e) {
+            repaint();
+        }
+
+        @Override
+        public void removeUpdate(DocumentEvent e) {
+            repaint();
+        }
+
+        @Override
+        public void changedUpdate(DocumentEvent e) {
+            repaint();
+        }
     }
 
     // --- Click-to-highlight ---
@@ -336,22 +400,19 @@ public class ArkTSOutputProvider extends ComponentProvider {
 
         searchField.addActionListener(e -> navigateSearch(1));
         searchField.getDocument().addDocumentListener(
-                new javax.swing.event.DocumentListener() {
+                new DocumentListener() {
                     @Override
-                    public void insertUpdate(
-                            javax.swing.event.DocumentEvent e) {
+                    public void insertUpdate(DocumentEvent e) {
                         runSearch();
                     }
 
                     @Override
-                    public void removeUpdate(
-                            javax.swing.event.DocumentEvent e) {
+                    public void removeUpdate(DocumentEvent e) {
                         runSearch();
                     }
 
                     @Override
-                    public void changedUpdate(
-                            javax.swing.event.DocumentEvent e) {
+                    public void changedUpdate(DocumentEvent e) {
                         runSearch();
                     }
                 });
