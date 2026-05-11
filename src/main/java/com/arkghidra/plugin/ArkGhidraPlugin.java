@@ -100,6 +100,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             outputProvider.showMessage("No program is open.");
             return;
         }
+        outputProvider.showLoading("Decompiling...");
         try {
             byte[] abcData = DecompileToArkTSAction.readAbcData(program);
             if (abcData == null) {
@@ -127,6 +128,8 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             Msg.error(OWNER, "Decompilation failed for " + method.getName(), e);
             outputProvider.showMessage(
                     "// Decompilation failed: " + e.getMessage());
+        } finally {
+            outputProvider.hideLoading();
         }
     }
 
@@ -137,6 +140,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             return;
         }
         String className = AbcStructureProvider.formatClassName(abcClass.getName());
+        outputProvider.showLoading("Decompiling...");
         try {
             byte[] abcData = DecompileToArkTSAction.readAbcData(program);
             if (abcData == null) {
@@ -159,6 +163,8 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             Msg.error(OWNER, "Decompilation failed for class " + className, e);
             outputProvider.showMessage(
                     "// Decompilation failed: " + e.getMessage());
+        } finally {
+            outputProvider.hideLoading();
         }
     }
 
@@ -201,6 +207,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             outputProvider.showMessage("No program is open.");
             return;
         }
+        outputProvider.showLoading("Decompiling file...");
         try {
             byte[] abcData = DecompileToArkTSAction.readAbcData(program);
             if (abcData == null) {
@@ -218,6 +225,8 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             Msg.error(OWNER, "Whole-file decompilation failed", e);
             outputProvider.showMessage(
                     "// Decompilation failed: " + e.getMessage());
+        } finally {
+            outputProvider.hideLoading();
         }
     }
 
@@ -239,6 +248,10 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         if (!outputProvider.isVisible()) {
             return;
         }
+        if (!outputProvider.isAutoDecompileEnabled()) {
+            return;
+        }
+        outputProvider.showLoading("Decompiling...");
         try {
             FunctionManager funcMgr = currentProgram.getFunctionManager();
             Function function = funcMgr.getFunctionContaining(loc.getAddress());
@@ -269,6 +282,8 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             Msg.info(OWNER, "Auto-decompiled on location change: " + abcMethod.getName());
         } catch (Exception e) {
             Msg.warn(OWNER, "Auto-decompile on location change failed: " + e.getMessage());
+        } finally {
+            outputProvider.hideLoading();
         }
     }
 

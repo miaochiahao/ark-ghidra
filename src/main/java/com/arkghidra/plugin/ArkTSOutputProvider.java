@@ -25,6 +25,7 @@ import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JComponent;
+import javax.swing.JToggleButton;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JMenuItem;
@@ -164,6 +165,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private String currentHighlightedWord = "";
     private List<Integer> searchMatchPositions = java.util.Collections.emptyList();
     private int searchMatchIndex = -1;
+    private Object currentLineHighlight = null;
 
     private Runnable decompileFileCallback;
     private Consumer<String> symbolHighlightCallback;
@@ -171,12 +173,18 @@ public class ArkTSOutputProvider extends ComponentProvider {
 
     private JButton backButton;
     private JButton forwardButton;
+    private JToggleButton autoDecompileButton;
+    private final JLabel loadingLabel;
 
     public ArkTSOutputProvider(Tool tool, String owner) {
         super(tool, "ArkTS Output", owner);
 
         colorizer = new ArkTSColorizer();
         symbolHighlighter = new SymbolHighlighter();
+
+        loadingLabel = new JLabel("  ");
+        loadingLabel.setForeground(Color.GRAY);
+        loadingLabel.setFont(loadingLabel.getFont().deriveFont(11f));
 
         codePane = new JTextPane() {
             @Override
@@ -228,7 +236,10 @@ public class ArkTSOutputProvider extends ComponentProvider {
         bottomPanel.add(toolBar, BorderLayout.CENTER);
 
         mainPanel = new JPanel(new BorderLayout());
-        mainPanel.add(headerLabel, BorderLayout.NORTH);
+        JPanel headerPanel = new JPanel(new BorderLayout());
+        headerPanel.add(headerLabel, BorderLayout.CENTER);
+        headerPanel.add(loadingLabel, BorderLayout.EAST);
+        mainPanel.add(headerPanel, BorderLayout.NORTH);
         mainPanel.add(centerPanel, BorderLayout.CENTER);
         mainPanel.add(bottomPanel, BorderLayout.SOUTH);
 
@@ -325,6 +336,38 @@ public class ArkTSOutputProvider extends ComponentProvider {
                     .append(count).append(" occurrences");
         }
         statusBar.setText(sb.toString());
+        highlightCurrentLine();
+    }
+
+    private void highlightCurrentLine() {
+        Highlighter highlighter = codePane.getHighlighter();
+        if (currentLineHighlight != null) {
+            highlighter.removeHighlight(currentLineHighlight);
+            currentLineHighlight = null;
+        }
+        try {
+            int pos = codePane.getCaretPosition();
+            String text = codePane.getText();
+            if (text == null || text.isEmpty()) {
+                return;
+            }
+            int lineStart = pos;
+            while (lineStart > 0 && text.charAt(lineStart - 1) != '\n') {
+                lineStart--;
+            }
+            int lineEnd = pos;
+            while (lineEnd < text.length() && text.charAt(lineEnd) != '\n') {
+                lineEnd++;
+            }
+            Color lineHighlightColor = isDarkBackground()
+                    ? new Color(0x37474F)
+                    : new Color(0xE8F5E9);
+            currentLineHighlight = highlighter.addHighlight(
+                    lineStart, lineEnd,
+                    new DefaultHighlighter.DefaultHighlightPainter(lineHighlightColor));
+        } catch (BadLocationException e) {
+            // ignore
+        }
     }
 
     // --- Line number gutter ---
@@ -579,6 +622,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private void applySymbolHighlights(String text, String word) {
         Highlighter highlighter = codePane.getHighlighter();
         highlighter.removeAllHighlights();
+        highlightCurrentLine();
         List<Integer> positions =
                 symbolHighlighter.findAllOccurrences(text, word);
         Highlighter.HighlightPainter painter =
@@ -599,6 +643,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
 
     private void clearSymbolHighlights() {
         codePane.getHighlighter().removeAllHighlights();
+        highlightCurrentLine();
         updateStatusBar();
         if (symbolHighlightCallback != null) {
             symbolHighlightCallback.accept("");
@@ -800,6 +845,13 @@ public class ArkTSOutputProvider extends ComponentProvider {
     // --- Toolbar ---
 
     private void addToolbarButtons(JToolBar toolBar) {
+        autoDecompileButton = new JToggleButton("Auto");
+        autoDecompileButton.setSelected(true);
+        autoDecompileButton.setToolTipText(
+                "Auto-decompile when cursor moves to a function in the Listing");
+        toolBar.add(autoDecompileButton);
+        toolBar.addSeparator();
+
         backButton = new JButton("\u25C4");
         backButton.setToolTipText("Navigate back (Alt+Left)");
         backButton.setEnabled(false);
@@ -843,6 +895,31 @@ public class ArkTSOutputProvider extends ComponentProvider {
         zoomOutButton.setToolTipText("Decrease font size (Ctrl+-)");
         zoomOutButton.addActionListener(e -> setFontSize(currentFontSize - 1));
         toolBar.add(zoomOutButton);
+        toolBar.addSeparator();
+        JButton helpButton = new JButton("?");
+        helpButton.setToolTipText("Keyboard shortcuts");
+        helpButton.addActionListener(e -> showKeyboardShortcuts());
+        toolBar.add(helpButton);
+    }
+
+    private void showKeyboardShortcuts() {
+        String shortcuts =
+                "Keyboard Shortcuts\n"
+                + "------------------------------\n"
+                + "Ctrl+F          Find / Search\n"
+                + "Escape          Close search bar\n"
+                + "Alt+Left        Navigate back\n"
+                + "Alt+Right       Navigate forward\n"
+                + "Ctrl+=          Increase font size\n"
+                + "Ctrl+-          Decrease font size\n"
+                + "Ctrl+0          Reset font size\n"
+                + "Click           Highlight all occurrences\n"
+                + "Double-click    Jump to definition\n"
+                + "Right-click     Context menu\n"
+                + "Hover           Show occurrence count\n";
+        javax.swing.JOptionPane.showMessageDialog(
+                mainPanel, shortcuts, "ArkTS Output \u2014 Shortcuts",
+                javax.swing.JOptionPane.INFORMATION_MESSAGE);
     }
 
     private void createCopyAction() {
@@ -1193,6 +1270,31 @@ public class ArkTSOutputProvider extends ComponentProvider {
      */
     public String getLastFunctionName() {
         return lastFunctionName;
+    }
+
+    /**
+     * Returns whether the auto-decompile toggle is currently enabled.
+     *
+     * @return true if auto-decompile is on
+     */
+    public boolean isAutoDecompileEnabled() {
+        return autoDecompileButton != null && autoDecompileButton.isSelected();
+    }
+
+    /**
+     * Shows a loading message in the header area.
+     *
+     * @param message the message to display
+     */
+    public void showLoading(String message) {
+        loadingLabel.setText(message + "  ");
+    }
+
+    /**
+     * Clears the loading message from the header area.
+     */
+    public void hideLoading() {
+        loadingLabel.setText("  ");
     }
 
     /**
