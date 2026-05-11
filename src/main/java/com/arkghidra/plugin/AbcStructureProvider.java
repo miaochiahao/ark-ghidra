@@ -56,6 +56,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private final JLabel breadcrumbLabel;
     private AbcFile currentAbcFile;
     private MethodNavigationListener navigationListener;
+    private ClassNavigationListener classNavigationListener;
 
     public AbcStructureProvider(Tool tool, String owner) {
         super(tool, "ABC Structure", owner);
@@ -115,6 +116,7 @@ public class AbcStructureProvider extends ComponentProvider {
             @Override
             public void valueChanged(TreeSelectionEvent e) {
                 updateBreadcrumb();
+                fireClassSelectionIfApplicable();
             }
         });
 
@@ -162,6 +164,16 @@ public class AbcStructureProvider extends ComponentProvider {
             copyOffsetItem.addActionListener(
                     ev -> copyToClipboard("0x" + Long.toHexString(method.getCodeOff())));
             menu.add(copyOffsetItem);
+
+            menu.show(structureTree, e.getX(), e.getY());
+        } else if (userObj instanceof AbcClass) {
+            AbcClass cls = (AbcClass) userObj;
+            String label = formatClassName(cls.getName());
+            JPopupMenu menu = new JPopupMenu();
+
+            JMenuItem copyNameItem = new JMenuItem("Copy Name");
+            copyNameItem.addActionListener(ev -> copyToClipboard(label));
+            menu.add(copyNameItem);
 
             menu.show(structureTree, e.getX(), e.getY());
         } else if (userObj instanceof String) {
@@ -226,6 +238,31 @@ public class AbcStructureProvider extends ComponentProvider {
      */
     public void setNavigationListener(MethodNavigationListener listener) {
         this.navigationListener = listener;
+    }
+
+    /**
+     * Sets the listener to be notified when the user single-clicks a class node.
+     *
+     * @param listener the class navigation listener, or null to remove
+     */
+    public void setClassNavigationListener(ClassNavigationListener listener) {
+        this.classNavigationListener = listener;
+    }
+
+    private void fireClassSelectionIfApplicable() {
+        if (classNavigationListener == null) {
+            return;
+        }
+        TreePath path = structureTree.getSelectionPath();
+        if (path == null) {
+            return;
+        }
+        DefaultMutableTreeNode node =
+                (DefaultMutableTreeNode) path.getLastPathComponent();
+        Object userObj = node.getUserObject();
+        if (userObj instanceof AbcClass) {
+            classNavigationListener.onClassSelected((AbcClass) userObj);
+        }
     }
 
     private void handleDoubleClick() {
@@ -335,7 +372,13 @@ public class AbcStructureProvider extends ComponentProvider {
             }
 
             DefaultMutableTreeNode classNode =
-                    new DefaultMutableTreeNode(className);
+                    new DefaultMutableTreeNode(cls) {
+                        @Override
+                        public String toString() {
+                            AbcClass c = (AbcClass) getUserObject();
+                            return formatClassName(c.getName());
+                        }
+                    };
             classesNode.add(classNode);
 
             DefaultMutableTreeNode methodsNode =

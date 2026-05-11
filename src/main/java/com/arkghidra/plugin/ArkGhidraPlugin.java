@@ -10,6 +10,7 @@ import ghidra.program.model.listing.Program;
 import ghidra.util.Msg;
 
 import com.arkghidra.decompile.ArkTSDecompiler;
+import com.arkghidra.format.AbcClass;
 import com.arkghidra.format.AbcCode;
 import com.arkghidra.format.AbcFile;
 import com.arkghidra.format.AbcMethod;
@@ -48,6 +49,8 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         abcStructureProvider = new AbcStructureProvider(tool, PLUGIN_NAME);
         outputProvider = new ArkTSOutputProvider(tool, PLUGIN_NAME);
         abcStructureProvider.setNavigationListener(this::onMethodDoubleClicked);
+        abcStructureProvider.setClassNavigationListener(this::onClassClicked);
+        outputProvider.setDecompileFileCallback(this::decompileWholeFile);
         tool.addComponentProvider(abcStructureProvider, false);
         tool.addComponentProvider(outputProvider, false);
     }
@@ -74,6 +77,64 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             Msg.info(OWNER, "Decompiled method via tree: " + method.getName());
         } catch (Exception e) {
             Msg.error(OWNER, "Decompilation failed for " + method.getName(), e);
+            outputProvider.showMessage(
+                    "// Decompilation failed: " + e.getMessage());
+        }
+    }
+
+    private void onClassClicked(AbcClass abcClass) {
+        Program program = getCurrentProgram();
+        if (program == null) {
+            outputProvider.showMessage("No program is open.");
+            return;
+        }
+        String className = AbcStructureProvider.formatClassName(abcClass.getName());
+        try {
+            byte[] abcData = DecompileToArkTSAction.readAbcData(program);
+            if (abcData == null) {
+                outputProvider.showMessage(
+                        "// Could not read ABC data from program memory");
+                return;
+            }
+            AbcFile abcFile = AbcFile.parse(abcData);
+            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+            StringBuilder sb = new StringBuilder();
+            for (AbcMethod method : abcClass.getMethods()) {
+                AbcCode code = abcFile.getCodeForMethod(method);
+                sb.append(decompiler.decompileMethod(method, code, abcFile));
+                sb.append("\n\n");
+            }
+            outputProvider.showDecompiledCode("Class: " + className, sb.toString());
+            tool.showComponentProvider(outputProvider, true);
+            Msg.info(OWNER, "Decompiled class via tree: " + className);
+        } catch (Exception e) {
+            Msg.error(OWNER, "Decompilation failed for class " + className, e);
+            outputProvider.showMessage(
+                    "// Decompilation failed: " + e.getMessage());
+        }
+    }
+
+    private void decompileWholeFile() {
+        Program program = getCurrentProgram();
+        if (program == null) {
+            outputProvider.showMessage("No program is open.");
+            return;
+        }
+        try {
+            byte[] abcData = DecompileToArkTSAction.readAbcData(program);
+            if (abcData == null) {
+                outputProvider.showMessage(
+                        "// Could not read ABC data from program memory");
+                return;
+            }
+            AbcFile abcFile = AbcFile.parse(abcData);
+            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+            String result = decompiler.decompileFile(abcFile);
+            outputProvider.showDecompiledCode("File: " + program.getName(), result);
+            tool.showComponentProvider(outputProvider, true);
+            Msg.info(OWNER, "Decompiled whole file: " + program.getName());
+        } catch (Exception e) {
+            Msg.error(OWNER, "Whole-file decompilation failed", e);
             outputProvider.showMessage(
                     "// Decompilation failed: " + e.getMessage());
         }

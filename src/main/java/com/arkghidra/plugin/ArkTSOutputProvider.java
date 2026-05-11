@@ -99,10 +99,17 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private JTextField searchField;
     private JLabel searchStatusLabel;
 
+    // Font size state
+    private int currentFontSize = 13;
+    private String lastFunctionName = "";
+    private String lastCode = "";
+
     // Highlight state
     private String currentHighlightedWord = "";
     private List<Integer> searchMatchPositions = java.util.Collections.emptyList();
     private int searchMatchIndex = -1;
+
+    private Runnable decompileFileCallback;
 
     public ArkTSOutputProvider(Tool tool, String owner) {
         super(tool, "ArkTS Output", owner);
@@ -115,6 +122,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
         codePane.setFont(new Font("Monospaced", Font.PLAIN, 13));
         installClickToHighlight();
         installCtrlFBinding();
+        installZoomBindings();
 
         statusBar = new JLabel("Ready");
         statusBar.setFont(statusBar.getFont().deriveFont(11f));
@@ -175,6 +183,8 @@ public class ArkTSOutputProvider extends ComponentProvider {
      */
     public void showDecompiledCode(String functionName, String code) {
         headerLabel.setText("Decompiled: " + functionName);
+        lastFunctionName = functionName;
+        lastCode = code;
         currentHighlightedWord = "";
         searchMatchPositions = java.util.Collections.emptyList();
         searchMatchIndex = -1;
@@ -261,7 +271,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
             super.paintComponent(g);
             g.setColor(getBackground());
             g.fillRect(0, 0, getWidth(), getHeight());
-            g.setFont(textPane.getFont().deriveFont(12f));
+            g.setFont(textPane.getFont());
             g.setColor(Color.GRAY);
 
             String text = textPane.getText();
@@ -683,6 +693,15 @@ public class ArkTSOutputProvider extends ComponentProvider {
     // --- Toolbar ---
 
     private void addToolbarButtons(JToolBar toolBar) {
+        JButton decompileFileButton = new JButton("Decompile File");
+        decompileFileButton.setToolTipText("Decompile the entire ABC file");
+        decompileFileButton.addActionListener(e -> {
+            if (decompileFileCallback != null) {
+                decompileFileCallback.run();
+            }
+        });
+        toolBar.add(decompileFileButton);
+
         JButton copyButton = new JButton("Copy");
         copyButton.addActionListener(e -> copyToClipboard());
         toolBar.add(copyButton);
@@ -694,6 +713,16 @@ public class ArkTSOutputProvider extends ComponentProvider {
         JButton clearButton = new JButton("Clear");
         clearButton.addActionListener(e -> clearOutput());
         toolBar.add(clearButton);
+
+        toolBar.addSeparator();
+        JButton zoomInButton = new JButton("A+");
+        zoomInButton.setToolTipText("Increase font size (Ctrl+=)");
+        zoomInButton.addActionListener(e -> setFontSize(currentFontSize + 1));
+        toolBar.add(zoomInButton);
+        JButton zoomOutButton = new JButton("A-");
+        zoomOutButton.setToolTipText("Decrease font size (Ctrl+-)");
+        zoomOutButton.addActionListener(e -> setFontSize(currentFontSize - 1));
+        toolBar.add(zoomOutButton);
     }
 
     private void createCopyAction() {
@@ -815,13 +844,55 @@ public class ArkTSOutputProvider extends ComponentProvider {
         }
     }
 
-    private static SimpleAttributeSet createStyle(Color color, boolean bold) {
+    private SimpleAttributeSet createStyle(Color color, boolean bold) {
         SimpleAttributeSet style = new SimpleAttributeSet();
         StyleConstants.setForeground(style, color);
         StyleConstants.setBold(style, bold);
         StyleConstants.setFontFamily(style, "Monospaced");
-        StyleConstants.setFontSize(style, 13);
+        StyleConstants.setFontSize(style, currentFontSize);
         return style;
+    }
+
+    // --- Font size zoom ---
+
+    private void setFontSize(int size) {
+        currentFontSize = Math.max(8, Math.min(24, size));
+        codePane.setFont(new Font("Monospaced", Font.PLAIN, currentFontSize));
+        if (!lastCode.isEmpty()) {
+            renderHighlightedCode(lastCode);
+        }
+    }
+
+    private void installZoomBindings() {
+        int mask = Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
+        KeyStroke zoomIn = KeyStroke.getKeyStroke(KeyEvent.VK_EQUALS, mask);
+        KeyStroke zoomInPlus = KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, mask);
+        KeyStroke zoomOut = KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, mask);
+        KeyStroke zoomReset = KeyStroke.getKeyStroke(KeyEvent.VK_0, mask);
+
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(zoomIn, "zoomIn");
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(zoomInPlus, "zoomIn");
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(zoomOut, "zoomOut");
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(zoomReset, "zoomReset");
+
+        codePane.getActionMap().put("zoomIn", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                setFontSize(currentFontSize + 1);
+            }
+        });
+        codePane.getActionMap().put("zoomOut", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                setFontSize(currentFontSize - 1);
+            }
+        });
+        codePane.getActionMap().put("zoomReset", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                setFontSize(13);
+            }
+        });
     }
 
     // --- Clipboard / File ---
@@ -865,5 +936,14 @@ public class ArkTSOutputProvider extends ComponentProvider {
         headerLabel.setText("No decompiled code");
         currentHighlightedWord = "";
         closeSearchBar();
+    }
+
+    /**
+     * Sets the callback invoked when the user clicks the "Decompile File" toolbar button.
+     *
+     * @param callback the runnable to invoke, or null to disable the button action
+     */
+    public void setDecompileFileCallback(Runnable callback) {
+        this.decompileFileCallback = callback;
     }
 }
