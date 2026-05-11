@@ -44,7 +44,15 @@ tasks.register('lint') {
     dependsOn checkstyleMain, checkstyleTest
 }
 
-def extensionVersion = project.findProperty('extension.version') ?: '0.1.0'
+// Read Ghidra's own version from application.properties so Extension.properties
+// matches the installed Ghidra version (required for the extension to load).
+def ghidraAppProps = new Properties()
+def ghidraAppPropsFile = file("${ghidraDir}/Ghidra/application.properties")
+if (ghidraAppPropsFile.exists()) {
+    ghidraAppPropsFile.withInputStream { ghidraAppProps.load(it) }
+}
+def ghidraVersion = ghidraAppProps.getProperty('application.version', '12.0.4')
+def extensionVersion = project.findProperty('extension.version') ?: ghidraVersion
 
 // Process Extension.properties to substitute version tokens
 tasks.register('processExtensionProperties', Copy) {
