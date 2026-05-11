@@ -91,6 +91,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         abcStructureProvider.setExportReportCallback(this::exportHapReport);
         abcStructureProvider.setCopyAsArkTSCallback(this::copyClassAsArkTS);
         abcStructureProvider.setDecompileAllAbilitiesCallback(this::decompileAllAbilities);
+        abcStructureProvider.setRefreshCallback(this::refreshHapExplorer);
         outputProvider.setDecompileFileCallback(this::decompileWholeFile);
         outputProvider.setExportAllCallback(this::exportAllClasses);
         outputProvider.setJumpToDefinitionCallback(this::jumpToDefinition);
@@ -175,6 +176,25 @@ public class ArkGhidraPlugin extends ProgramPlugin {
     private void showAllCallers(String methodName) {
         tool.showComponentProvider(globalSearchProvider, true);
         globalSearchProvider.triggerSearch(methodName + "(");
+    }
+
+    private void refreshHapExplorer() {
+        Program program = getCurrentProgram();
+        if (program == null) {
+            return;
+        }
+        try {
+            byte[] abcData = DecompileToArkTSAction.readAbcData(program);
+            if (abcData == null) {
+                return;
+            }
+            AbcFile abcFile = AbcFile.parse(abcData);
+            abcStructureProvider.setAbcFile(abcFile);
+            showAbcStats(abcFile);
+            Msg.info(OWNER, "Refreshed HAP Explorer for: " + program.getName());
+        } catch (Exception e) {
+            Msg.warn(OWNER, "Refresh failed: " + e.getMessage());
+        }
     }
 
     private void navigateClass(int direction) {
@@ -503,7 +523,11 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             ArkTSDecompiler decompiler = createDecompiler();
             String result = decompiler.decompileMethod(method, code, abcFile);
             String clsName = findClassForMethod(abcFile, method);
-            outputProvider.showDecompiledCode(method.getName(), result, clsName);
+            String notes = notesProvider.getNotes(method.getName());
+            String displayResult = notes.isEmpty() ? result
+                    : "/*\n * Notes:\n * " + notes.replace("\n", "\n * ")
+                            + "\n */\n\n" + result;
+            outputProvider.showDecompiledCode(method.getName(), displayResult, clsName);
             historyProvider.recordNavigation(method.getName(), result);
             notesProvider.setCurrentKey(method.getName());
             tool.showComponentProvider(outputProvider, true);

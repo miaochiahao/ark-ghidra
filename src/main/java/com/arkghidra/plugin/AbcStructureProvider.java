@@ -85,6 +85,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private Consumer<String> showCallersCallback;
     private Runnable exportReportCallback;
     private Runnable decompileAllAbilitiesCallback;
+    private Runnable refreshCallback;
     private NotesProvider notesProvider;
     private JToggleButton filterPublicButton;
     private JToggleButton filterPrivateButton;
@@ -242,6 +243,15 @@ public class AbcStructureProvider extends ComponentProvider {
         modifierFilterPanel.add(collapseAllButton);
         modifierFilterPanel.add(decompileAbilitiesButton);
 
+        JButton refreshButton = new JButton("↻");
+        refreshButton.setToolTipText("Refresh — re-parse the ABC file");
+        refreshButton.addActionListener(e -> {
+            if (refreshCallback != null) {
+                refreshCallback.run();
+            }
+        });
+        modifierFilterPanel.add(refreshButton);
+
         structureTree.addTreeSelectionListener(new TreeSelectionListener() {
             @Override
             public void valueChanged(TreeSelectionEvent e) {
@@ -308,6 +318,15 @@ public class AbcStructureProvider extends ComponentProvider {
      */
     public void setDecompileAllAbilitiesCallback(Runnable cb) {
         this.decompileAllAbilitiesCallback = cb;
+    }
+
+    /**
+     * Sets the callback invoked when the user clicks the Refresh button.
+     *
+     * @param cb the runnable to invoke
+     */
+    public void setRefreshCallback(Runnable cb) {
+        this.refreshCallback = cb;
     }
 
     /**
