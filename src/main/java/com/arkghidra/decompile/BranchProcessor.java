@@ -244,11 +244,19 @@ class BranchProcessor {
             visited.add(pattern.mergeBlock);
         }
 
+        // Save accumulator state after condition block so both
+        // branches start from the same state
+        ArkTSExpression savedAccValue = ctx.currentAccValue;
+
         List<ArkTSStatement> thenStmts =
                 reconstructor.processBlockInstructions(
                         thenBlock, ctx);
         ArkTSStatement thenStmt =
                 new ArkTSStatement.BlockStatement(thenStmts);
+
+        // Restore accumulator for else branch so it also starts
+        // from the condition block's state
+        ctx.currentAccValue = savedAccValue;
 
         List<ArkTSStatement> elseStmts =
                 reconstructor.processBlockInstructions(

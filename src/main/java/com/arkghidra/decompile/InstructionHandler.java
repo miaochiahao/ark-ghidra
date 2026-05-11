@@ -1475,13 +1475,22 @@ class InstructionHandler {
         // The first register in the range often holds the class reference.
         // If accValue is a literal but firstReg has a class-like expression,
         // use the register expression as callee and shift args.
-        if (isLikelyLiteral(callee) && numArgs > 0) {
-            ArkTSExpression firstArgExpr =
-                    ctx.getRegisterExpression(firstReg);
-            if (firstArgExpr != null
-                    && !isLikelyLiteral(firstArgExpr)) {
-                callee = firstArgExpr;
-                args.remove(0);
+        if (isLikelyLiteral(callee)) {
+            if (numArgs > 0) {
+                ArkTSExpression firstArgExpr =
+                        ctx.getRegisterExpression(firstReg);
+                if (firstArgExpr != null
+                        && !isLikelyLiteral(firstArgExpr)) {
+                    callee = firstArgExpr;
+                    args.remove(0);
+                }
+            } else {
+                // Zero-arg case: the register may hold the class reference
+                ArkTSExpression regExpr =
+                        ctx.getRegisterExpression(firstReg);
+                if (regExpr != null && !isLikelyLiteral(regExpr)) {
+                    callee = regExpr;
+                }
             }
         }
 

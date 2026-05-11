@@ -42,7 +42,7 @@ class BlockInstructionProcessor {
             declaredVars.add(ctx.resolveRegisterName(i));
         }
 
-        ArkTSExpression accValue = null;
+        ArkTSExpression accValue = ctx.currentAccValue;
         typeInf.reset();
         List<ArkInstruction> instructions = block.getInstructions();
 
@@ -166,7 +166,7 @@ class BlockInstructionProcessor {
         for (int i = 0; i < ctx.numArgs; i++) {
             declaredVars.add(ctx.resolveRegisterName(i));
         }
-        ArkTSExpression accValue = null;
+        ArkTSExpression accValue = ctx.currentAccValue;
         typeInf.reset();
         List<ArkInstruction> instructions = block.getInstructions();
         for (int idx = 0; idx < instructions.size(); idx++) {
@@ -288,7 +288,7 @@ class BlockInstructionProcessor {
 
     ArkTSExpression extractBlockValue(BasicBlock block,
             DecompilationContext ctx) {
-        ArkTSExpression accValue = null;
+        ArkTSExpression accValue = ctx.currentAccValue;
         typeInf.reset();
         Set<String> declaredVars = new HashSet<>();
         for (int i = 0; i < ctx.numArgs; i++) {
