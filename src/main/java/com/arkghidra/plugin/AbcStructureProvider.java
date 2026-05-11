@@ -1586,20 +1586,30 @@ public class AbcStructureProvider extends ComponentProvider {
                         setFont(f.deriveFont(attrs));
                     }
                 } else if (userObj instanceof AbcClass) {
-                    // Tooltip showing full class name for class nodes
+                    // Tooltip showing full class name + parent + counts
                     AbcClass cls = (AbcClass) userObj;
                     String fullName = cls.getName();
                     if (fullName != null && !fullName.isEmpty()) {
-                        // Strip L...;  wrapper for display
-                        String display = fullName;
-                        if (display.startsWith("L")) {
-                            display = display.substring(1);
+                        String display = formatClassName(fullName);
+                        StringBuilder tip = new StringBuilder("<html>");
+                        tip.append("<b>").append(display).append("</b>");
+                        // Show parent class if available
+                        if (currentAbcFile != null && cls.getSuperClassOff() != 0) {
+                            AbcClass parent = null;
+                            for (AbcClass c : currentAbcFile.getClasses()) {
+                                if (c.getOffset() == cls.getSuperClassOff()) {
+                                    parent = c;
+                                    break;
+                                }
+                            }
+                            if (parent != null) {
+                                tip.append("<br>extends ").append(formatClassName(parent.getName()));
+                            }
                         }
-                        if (display.endsWith(";")) {
-                            display = display.substring(0, display.length() - 1);
-                        }
-                        display = display.replace("/", ".");
-                        setToolTipText(display);
+                        tip.append("<br>").append(cls.getMethods().size()).append(" methods, ")
+                                .append(cls.getFields().size()).append(" fields");
+                        tip.append("</html>");
+                        setToolTipText(tip.toString());
                     }
                 }
             }
@@ -1614,6 +1624,10 @@ public class AbcStructureProvider extends ComponentProvider {
      * @return the badge string including trailing space
      */
     static String getClassTypeBadge(AbcClass cls) {
+        // Check for interface flag
+        if ((cls.getAccessFlags() & AbcAccessFlags.ACC_INTERFACE) != 0) {
+            return "[I] ";
+        }
         if (cls.getMethods().isEmpty()) {
             return "[C] ";
         }
