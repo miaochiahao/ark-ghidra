@@ -395,19 +395,18 @@ class InstructionHandler {
         }
 
         // --- Binary operations: acc = acc OP v[operand] ---
-        // The compiler puts left operand in register, right in acc.
-        // So acc OP reg = right OP left. We need left OP right,
-        // therefore the register operand is LEFT and acc is RIGHT.
+        // isa.yaml pseudo: acc = ecma_op(acc, operand_0)
+        // So acc is the LEFT operand, register is the RIGHT operand.
         if (OperatorHandler.isBinaryOp(opcode)) {
             String op = OperatorHandler.getBinaryOperator(opcode);
             int reg = (int) operands.get(
                     operands.size() - 1).getValue();
-            ArkTSExpression left =
-                    new ArkTSExpression.VariableExpression(
-                            ctx.resolveRegisterName(reg));
-            ArkTSExpression right = accValue != null
+            ArkTSExpression left = accValue != null
                     ? accValue
                     : new ArkTSExpression.VariableExpression(ACC);
+            ArkTSExpression right =
+                    new ArkTSExpression.VariableExpression(
+                            ctx.resolveRegisterName(reg));
             ArkTSExpression result =
                     OperatorHandler.tryFoldConstants(left, op, right);
             // Try merging string literals for "+" (only if folding didn't
