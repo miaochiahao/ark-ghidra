@@ -54,10 +54,14 @@ if (ghidraAppPropsFile.exists()) {
 def ghidraVersion = ghidraAppProps.getProperty('application.version', '12.0.4')
 def extensionVersion = project.findProperty('extension.version') ?: ghidraVersion
 
-// Process Extension.properties to substitute version tokens
+// Process Extension.properties to substitute version tokens.
+// Output as lowercase 'extension.properties' — Ghidra on Linux is case-sensitive
+// and expects the lowercase filename (matching official Ghidra extensions).
+// macOS is case-insensitive so both names work there.
 tasks.register('processExtensionProperties', Copy) {
     from 'src/main/resources/Extension.properties'
     into layout.buildDirectory.dir('extension-meta')
+    rename { 'extension.properties' }
     filter { line ->
         line.replace('@extension.name@', project.name)
             .replace('@extension.version@', extensionVersion)
@@ -84,7 +88,7 @@ tasks.register('buildExtension', Zip) {
             into 'lib'
         }
         from(layout.buildDirectory.dir('extension-meta')) {
-            include 'Extension.properties'
+            include 'extension.properties'
         }
         from('src/main/resources') {
             include 'Module.manifest'
