@@ -3,6 +3,7 @@ package com.arkghidra.plugin;
 import java.util.ArrayList;
 import java.util.List;
 
+import ghidra.app.ExamplesPluginPackage;
 import ghidra.app.plugin.PluginCategoryNames;
 import ghidra.app.plugin.ProgramPlugin;
 import ghidra.app.services.ProgramManager;
@@ -29,7 +30,7 @@ import com.arkghidra.loader.HapMetadata;
  */
 @PluginInfo(
     status = PluginStatus.STABLE,
-    packageName = "ArkTS",
+    packageName = ExamplesPluginPackage.NAME,
     category = PluginCategoryNames.ANALYSIS,
     shortDescription = "ArkTS Decompiler",
     description = "Decompiles HarmonyOS ArkTS .abc bytecode to readable ArkTS source code."
