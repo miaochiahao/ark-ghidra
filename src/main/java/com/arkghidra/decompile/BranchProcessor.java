@@ -130,24 +130,15 @@ class BranchProcessor {
         }
         int opcode = lastInsn.getOpcode();
 
-        if (opcode == ArkOpcodesCompat.JEQZ_IMM8
-                || opcode == ArkOpcodesCompat.JEQZ_IMM16
-                || opcode == ArkOpcodesCompat.JSTRICTEQZ_IMM8
-                || opcode == ArkOpcodesCompat.JSTRICTEQZ_IMM16) {
+        if (isAndConditionOpcode(opcode)) {
             int target1 = ControlFlowGraph
                     .getJumpTargetPublic(lastInsn);
 
             BasicBlock nextCondBlock = falseBranch;
             ArkInstruction nextLast = nextCondBlock.getLastInstruction();
             if (nextLast != null
-                    && (nextLast.getOpcode()
-                            == ArkOpcodesCompat.JEQZ_IMM8
-                    || nextLast.getOpcode()
-                            == ArkOpcodesCompat.JEQZ_IMM16
-                    || nextLast.getOpcode()
-                            == ArkOpcodesCompat.JSTRICTEQZ_IMM8
-                    || nextLast.getOpcode()
-                            == ArkOpcodesCompat.JSTRICTEQZ_IMM16)) {
+                    && isAndConditionOpcode(
+                            nextLast.getOpcode())) {
                 int target2 = ControlFlowGraph
                         .getJumpTargetPublic(nextLast);
                 if (target1 == target2) {
@@ -164,24 +155,15 @@ class BranchProcessor {
             }
         }
 
-        if (opcode == ArkOpcodesCompat.JNEZ_IMM8
-                || opcode == ArkOpcodesCompat.JNEZ_IMM16
-                || opcode == ArkOpcodesCompat.JNSTRICTEQZ_IMM8
-                || opcode == ArkOpcodesCompat.JNSTRICTEQZ_IMM16) {
+        if (isOrConditionOpcode(opcode)) {
             int target1 = ControlFlowGraph
                     .getJumpTargetPublic(lastInsn);
 
             BasicBlock nextCondBlock = falseBranch;
             ArkInstruction nextLast = nextCondBlock.getLastInstruction();
             if (nextLast != null
-                    && (nextLast.getOpcode()
-                            == ArkOpcodesCompat.JNEZ_IMM8
-                    || nextLast.getOpcode()
-                            == ArkOpcodesCompat.JNEZ_IMM16
-                    || nextLast.getOpcode()
-                            == ArkOpcodesCompat.JNSTRICTEQZ_IMM8
-                    || nextLast.getOpcode()
-                            == ArkOpcodesCompat.JNSTRICTEQZ_IMM16)) {
+                    && isOrConditionOpcode(
+                            nextLast.getOpcode())) {
                 int target2 = ControlFlowGraph
                         .getJumpTargetPublic(nextLast);
                 if (target1 == target2) {
@@ -598,6 +580,10 @@ class BranchProcessor {
             leftCond = new ArkTSExpression.VariableExpression(
                     ControlFlowReconstructor.ACC);
         }
+        if (isAndNeedsNegation(
+                condBlock.getLastInstruction().getOpcode())) {
+            leftCond = negateConditionExpression(leftCond);
+        }
 
         BasicBlock secondCondBlock = pattern.trueBlock;
         visited.add(secondCondBlock);
@@ -613,6 +599,10 @@ class BranchProcessor {
         if (rightCond == null) {
             rightCond = new ArkTSExpression.VariableExpression(
                     ControlFlowReconstructor.ACC);
+        }
+        if (isAndNeedsNegation(
+                secondCondBlock.getLastInstruction().getOpcode())) {
+            rightCond = negateConditionExpression(rightCond);
         }
 
         ArkTSExpression combined =
@@ -1370,6 +1360,64 @@ class BranchProcessor {
             return false;
         }
         return ArkOpcodesCompat.isConditionalBranch(last.getOpcode());
+    }
+
+    // --- Opcode classification helpers for short-circuit detection ---
+
+    private static boolean isAndConditionOpcode(int opcode) {
+        return opcode == ArkOpcodesCompat.JEQZ_IMM8
+                || opcode == ArkOpcodesCompat.JEQZ_IMM16
+                || opcode == ArkOpcodesCompat.JSTRICTEQZ_IMM8
+                || opcode == ArkOpcodesCompat.JSTRICTEQZ_IMM16
+                || opcode == ArkOpcodesCompat.JEQNULL_IMM8
+                || opcode == ArkOpcodesCompat.JEQNULL_IMM16
+                || opcode == ArkOpcodesCompat.JEQUNDEFINED_IMM8
+                || opcode == ArkOpcodesCompat.JEQUNDEFINED_IMM16
+                || opcode == ArkOpcodesCompat.JSTRICTEQNULL_IMM8
+                || opcode == ArkOpcodesCompat.JSTRICTEQNULL_IMM16
+                || opcode == ArkOpcodesCompat.JSTRICTEQUNDEFINED_IMM16;
+    }
+
+    private static boolean isOrConditionOpcode(int opcode) {
+        return opcode == ArkOpcodesCompat.JNEZ_IMM8
+                || opcode == ArkOpcodesCompat.JNEZ_IMM16
+                || opcode == ArkOpcodesCompat.JNSTRICTEQZ_IMM8
+                || opcode == ArkOpcodesCompat.JNSTRICTEQZ_IMM16
+                || opcode == ArkOpcodesCompat.JNENULL_IMM8
+                || opcode == ArkOpcodesCompat.JNENULL_IMM16
+                || opcode == ArkOpcodesCompat.JNEUNDEFINED_IMM8
+                || opcode == ArkOpcodesCompat.JNEUNDEFINED_IMM16
+                || opcode == ArkOpcodesCompat.JNSTRICTEQNULL_IMM8
+                || opcode == ArkOpcodesCompat.JNSTRICTEQNULL_IMM16
+                || opcode == ArkOpcodesCompat.JNSTRICTEQUNDEFINED_IMM16;
+    }
+
+    static boolean isAndNeedsNegation(int opcode) {
+        return opcode == ArkOpcodesCompat.JEQNULL_IMM8
+                || opcode == ArkOpcodesCompat.JEQNULL_IMM16
+                || opcode == ArkOpcodesCompat.JEQUNDEFINED_IMM8
+                || opcode == ArkOpcodesCompat.JEQUNDEFINED_IMM16
+                || opcode == ArkOpcodesCompat.JSTRICTEQNULL_IMM8
+                || opcode == ArkOpcodesCompat.JSTRICTEQNULL_IMM16
+                || opcode == ArkOpcodesCompat.JSTRICTEQUNDEFINED_IMM16;
+    }
+
+    static ArkTSExpression negateConditionExpression(
+            ArkTSExpression cond) {
+        if (cond instanceof ArkTSExpression.BinaryExpression) {
+            ArkTSExpression.BinaryExpression be =
+                    (ArkTSExpression.BinaryExpression) cond;
+            String negOp = switch (be.getOperator()) {
+                case "==" -> "!=";
+                case "!=" -> "==";
+                case "===" -> "!==";
+                case "!==" -> "===";
+                default -> be.getOperator();
+            };
+            return new ArkTSExpression.BinaryExpression(
+                    be.getLeft(), negOp, be.getRight());
+        }
+        return new ArkTSExpression.UnaryExpression("!", cond, true);
     }
 
     /**
