@@ -180,6 +180,7 @@ public class ArkTSDecompiler {
             bodyStmts = convertIfElseChainToSwitch(bodyStmts);
             bodyStmts = removeUnreachableCode(bodyStmts);
             bodyStmts = removeAlwaysFalseConditions(bodyStmts);
+            bodyStmts = simplifyNegatedComparisons(bodyStmts);
             bodyStmts = removeUnusedVariables(bodyStmts);
             bodyStmts = eliminateDeadPropertyLoads(bodyStmts);
             bodyStmts = simplifyIncrementDecrement(bodyStmts);
@@ -241,6 +242,7 @@ public class ArkTSDecompiler {
             stmts = convertIfElseChainToSwitch(stmts);
             stmts = removeUnreachableCode(stmts);
             stmts = removeAlwaysFalseConditions(stmts);
+            stmts = simplifyNegatedComparisons(stmts);
             stmts = removeUnusedVariables(stmts);
             stmts = eliminateDeadPropertyLoads(stmts);
             stmts = simplifyIncrementDecrement(stmts);
@@ -484,18 +486,19 @@ public class ArkTSDecompiler {
                 return buildTimeoutBody(startTimeNs);
             }
 
-            return ExpressionVisitor.eliminateRedundantCopies(
-                    simplifyIncrementDecrement(
-                            eliminateDeadPropertyLoads(
-                                    removeUnusedVariables(
-                                    removeAlwaysFalseConditions(
-                                    removeUnreachableCode(
-                                    convertIfElseChainToSwitch(
-                                            simplifyReturnIfTernary(
-                                                    detectSwitchExpressions(
-                                                            mergeNestedIfConditions(
-                                                                    ExpressionVisitor.inlineSingleUseVariables(
-                                                                            applyConstOptimization(stmts))))))))))));
+            stmts = applyConstOptimization(stmts);
+            stmts = ExpressionVisitor.inlineSingleUseVariables(stmts);
+            stmts = mergeNestedIfConditions(stmts);
+            stmts = detectSwitchExpressions(stmts);
+            stmts = simplifyReturnIfTernary(stmts);
+            stmts = convertIfElseChainToSwitch(stmts);
+            stmts = removeUnreachableCode(stmts);
+            stmts = removeAlwaysFalseConditions(stmts);
+            stmts = simplifyNegatedComparisons(stmts);
+            stmts = removeUnusedVariables(stmts);
+            stmts = eliminateDeadPropertyLoads(stmts);
+            stmts = simplifyIncrementDecrement(stmts);
+            return ExpressionVisitor.eliminateRedundantCopies(stmts);
         } catch (Exception e) {
             ctx.warnings.add("Statement generation failed: "
                     + e.getMessage());
@@ -1550,6 +1553,125 @@ public class ArkTSDecompiler {
                     .getName().equals(varName);
         }
         return false;
+    }
+
+    /**
+     * Simplifies negated comparisons: {@code !(a === b)} becomes
+     * {@code a !== b}, {@code !(a < b)} becomes {@code a >= b}, etc.
+     */
+    static List<ArkTSStatement> simplifyNegatedComparisons(
+            List<ArkTSStatement> stmts) {
+        if (stmts == null || stmts.isEmpty()) {
+            return stmts;
+        }
+        List<ArkTSStatement> result = new ArrayList<>(stmts.size());
+        for (ArkTSStatement stmt : stmts) {
+            result.add(simplifyNegatedInStmt(stmt));
+        }
+        return result;
+    }
+
+    private static final Map<String, String> NEGATED_COMPARISON_OPS =
+            Map.ofEntries(
+                    Map.entry("===", "!=="),
+                    Map.entry("!==", "==="),
+                    Map.entry("==", "!="),
+                    Map.entry("!=", "=="),
+                    Map.entry("<", ">="),
+                    Map.entry("<=", ">"),
+                    Map.entry(">", "<="),
+                    Map.entry(">=", "<"));
+
+    private static ArkTSExpression simplifyNegatedExpr(
+            ArkTSExpression expr) {
+        if (expr instanceof ArkTSExpression.UnaryExpression) {
+            ArkTSExpression.UnaryExpression unary =
+                    (ArkTSExpression.UnaryExpression) expr;
+            if ("!".equals(unary.getOperator())
+                    && unary.getOperand()
+                            instanceof ArkTSExpression.BinaryExpression) {
+                ArkTSExpression.BinaryExpression bin =
+                        (ArkTSExpression.BinaryExpression) unary.getOperand();
+                String negatedOp =
+                        NEGATED_COMPARISON_OPS.get(bin.getOperator());
+                if (negatedOp != null) {
+                    return new ArkTSExpression.BinaryExpression(
+                            bin.getLeft(), negatedOp, bin.getRight());
+                }
+            }
+        }
+        return expr;
+    }
+
+    private static ArkTSStatement simplifyNegatedInStmt(
+            ArkTSStatement stmt) {
+        if (stmt instanceof ArkTSControlFlow.IfStatement) {
+            ArkTSControlFlow.IfStatement ifStmt =
+                    (ArkTSControlFlow.IfStatement) stmt;
+            return new ArkTSControlFlow.IfStatement(
+                    simplifyNegatedExpr(ifStmt.getCondition()),
+                    simplifyNegatedInStmt(ifStmt.getThenBlock()),
+                    ifStmt.getElseBlock() != null
+                            ? simplifyNegatedInStmt(
+                                    ifStmt.getElseBlock())
+                            : null);
+        }
+        if (stmt instanceof ArkTSControlFlow.WhileStatement) {
+            ArkTSControlFlow.WhileStatement whileStmt =
+                    (ArkTSControlFlow.WhileStatement) stmt;
+            return new ArkTSControlFlow.WhileStatement(
+                    simplifyNegatedExpr(whileStmt.getCondition()),
+                    simplifyNegatedInStmt(whileStmt.getBody()));
+        }
+        if (stmt instanceof ArkTSControlFlow.DoWhileStatement) {
+            ArkTSControlFlow.DoWhileStatement doWhileStmt =
+                    (ArkTSControlFlow.DoWhileStatement) stmt;
+            return new ArkTSControlFlow.DoWhileStatement(
+                    simplifyNegatedInStmt(doWhileStmt.getBody()),
+                    simplifyNegatedExpr(doWhileStmt.getCondition()));
+        }
+        if (stmt instanceof ArkTSStatement.BlockStatement) {
+            ArkTSStatement.BlockStatement block =
+                    (ArkTSStatement.BlockStatement) stmt;
+            return new ArkTSStatement.BlockStatement(
+                    simplifyNegatedInStmts(block.getBody()));
+        }
+        if (stmt instanceof ArkTSControlFlow.ForOfStatement) {
+            ArkTSControlFlow.ForOfStatement forOf =
+                    (ArkTSControlFlow.ForOfStatement) stmt;
+            return new ArkTSControlFlow.ForOfStatement(
+                    forOf.getVariableKind(), forOf.getVariableName(),
+                    forOf.getIterable(),
+                    simplifyNegatedInStmt(forOf.getBody()));
+        }
+        if (stmt instanceof ArkTSControlFlow.SwitchStatement) {
+            ArkTSControlFlow.SwitchStatement switchStmt =
+                    (ArkTSControlFlow.SwitchStatement) stmt;
+            List<ArkTSControlFlow.SwitchStatement.SwitchCase> cases =
+                    new ArrayList<>();
+            for (ArkTSControlFlow.SwitchStatement.SwitchCase sc :
+                    switchStmt.getCases()) {
+                cases.add(new ArkTSControlFlow.SwitchStatement.SwitchCase(
+                        sc.getTest(),
+                        simplifyNegatedInStmts(sc.getBody())));
+            }
+            return new ArkTSControlFlow.SwitchStatement(
+                    switchStmt.getDiscriminant(), cases,
+                    switchStmt.getDefaultBlock());
+        }
+        return stmt;
+    }
+
+    private static List<ArkTSStatement> simplifyNegatedInStmts(
+            List<ArkTSStatement> stmts) {
+        if (stmts == null || stmts.isEmpty()) {
+            return stmts;
+        }
+        List<ArkTSStatement> result = new ArrayList<>(stmts.size());
+        for (ArkTSStatement s : stmts) {
+            result.add(simplifyNegatedInStmt(s));
+        }
+        return result;
     }
 
     /**
