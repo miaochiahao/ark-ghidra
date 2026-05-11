@@ -1,6 +1,7 @@
 package com.arkghidra.decompile;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -258,9 +259,26 @@ class BranchProcessor {
         // from the condition block's state
         ctx.currentAccValue = savedAccValue;
 
-        List<ArkTSStatement> elseStmts =
-                reconstructor.processBlockInstructions(
-                        elseBlock, ctx);
+        // Process else-block recursively if it contains conditional
+        // branches (e.g., else-if chains). Otherwise process inline.
+        List<ArkTSStatement> elseStmts;
+        if (hasConditionalSuccessor(elseBlock, cfg)) {
+            // Remove elseBlock from visited so reconstructControlFlow
+            // can process it and its successors
+            visited.remove(elseBlock);
+            if (pattern.mergeBlock != null) {
+                visited.remove(pattern.mergeBlock);
+            }
+            List<BasicBlock> elseSubGraph =
+                    collectBlocksBetween(elseBlock,
+                            pattern.mergeBlock, cfg, visited);
+            elseStmts = reconstructor.reconstructControlFlow(
+                    cfg, elseSubGraph, ctx, visited);
+        } else {
+            elseStmts =
+                    reconstructor.processBlockInstructions(
+                            elseBlock, ctx);
+        }
         ArkTSStatement elseStmt =
                 new ArkTSStatement.BlockStatement(elseStmts);
 
@@ -1332,5 +1350,49 @@ class BranchProcessor {
             }
         }
         return null;
+    }
+
+    /**
+     * Checks if a block has a conditional branch as successor.
+     */
+    private static boolean hasConditionalSuccessor(BasicBlock block,
+            ControlFlowGraph cfg) {
+        ArkInstruction last = block.getLastInstruction();
+        if (last == null) {
+            return false;
+        }
+        return ArkOpcodesCompat.isConditionalBranch(last.getOpcode());
+    }
+
+    /**
+     * Collects all blocks reachable from startBlock up to (excluding)
+     * the stopBlock. Used to build a sub-CFG for recursive processing
+     * of else-if chains.
+     */
+    private static List<BasicBlock> collectBlocksBetween(
+            BasicBlock startBlock, BasicBlock stopBlock,
+            ControlFlowGraph cfg, Set<BasicBlock> visited) {
+        List<BasicBlock> result = new ArrayList<>();
+        Set<BasicBlock> seen = new HashSet<>();
+        List<BasicBlock> worklist = new ArrayList<>();
+        worklist.add(startBlock);
+        while (!worklist.isEmpty()) {
+            BasicBlock current = worklist.remove(worklist.size() - 1);
+            if (seen.contains(current)) {
+                continue;
+            }
+            seen.add(current);
+            if (current == stopBlock) {
+                continue;
+            }
+            result.add(current);
+            for (CFGEdge succ : current.getSuccessors()) {
+                BasicBlock succBlock = cfg.getBlockAt(succ.getToOffset());
+                if (succBlock != null && !seen.contains(succBlock)) {
+                    worklist.add(succBlock);
+                }
+            }
+        }
+        return result;
     }
 }
