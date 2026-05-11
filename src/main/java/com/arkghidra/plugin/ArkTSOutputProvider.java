@@ -1170,6 +1170,9 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 + "------------------------------\n"
                 + "Ctrl+F          Find / Search\n"
                 + "Ctrl+H          Find & Replace\n"
+                + "Ctrl+G          Go to line\n"
+                + "Ctrl+Shift+C    Copy current line\n"
+                + "Ctrl+Shift+F    Global search\n"
                 + "Escape          Close search bar\n"
                 + "Alt+Left        Navigate back\n"
                 + "Alt+Right       Navigate forward\n"
@@ -1483,6 +1486,83 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 }
             }
         });
+
+        KeyStroke ctrlG = KeyStroke.getKeyStroke(KeyEvent.VK_G, cmdMask);
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(ctrlG, "goToLine");
+        codePane.getActionMap().put("goToLine", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                goToLine();
+            }
+        });
+
+        KeyStroke ctrlShiftC = KeyStroke.getKeyStroke(KeyEvent.VK_C,
+                cmdMask | java.awt.event.InputEvent.SHIFT_DOWN_MASK);
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(ctrlShiftC, "copyLine");
+        codePane.getActionMap().put("copyLine", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                copyCurrentLine();
+            }
+        });
+    }
+
+    // --- Go to line / Copy line ---
+
+    private void goToLine() {
+        String input = JOptionPane.showInputDialog(
+                mainPanel, "Go to line:", "Go to Line",
+                JOptionPane.PLAIN_MESSAGE);
+        if (input == null || input.trim().isEmpty()) {
+            return;
+        }
+        try {
+            int targetLine = Integer.parseInt(input.trim());
+            if (targetLine < 1) {
+                return;
+            }
+            String text = codePane.getText();
+            if (text == null || text.isEmpty()) {
+                return;
+            }
+            int line = 1;
+            int offset = 0;
+            while (offset < text.length() && line < targetLine) {
+                if (text.charAt(offset) == '\n') {
+                    line++;
+                }
+                offset++;
+            }
+            codePane.setCaretPosition(Math.min(offset, text.length()));
+            try {
+                codePane.scrollRectToVisible(
+                        codePane.modelToView2D(offset).getBounds());
+            } catch (BadLocationException ex) {
+                Msg.warn(OWNER, "Go to line scroll error: " + ex.getMessage());
+            }
+            codePane.requestFocusInWindow();
+        } catch (NumberFormatException ex) {
+            // ignore invalid input
+        }
+    }
+
+    private void copyCurrentLine() {
+        String text = codePane.getText();
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        int pos = codePane.getCaretPosition();
+        int lineStart = pos;
+        while (lineStart > 0 && text.charAt(lineStart - 1) != '\n') {
+            lineStart--;
+        }
+        int lineEnd = pos;
+        while (lineEnd < text.length() && text.charAt(lineEnd) != '\n') {
+            lineEnd++;
+        }
+        String line = text.substring(lineStart, lineEnd);
+        Toolkit.getDefaultToolkit().getSystemClipboard()
+                .setContents(new StringSelection(line), null);
     }
 
     // --- Tooltip ---
