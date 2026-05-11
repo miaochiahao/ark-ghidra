@@ -146,6 +146,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private static final Color COLOR_BRACKET_MATCH = new Color(0xB2EBF2);
 
     private final JPanel mainPanel;
+    private boolean wordWrapEnabled = false;
     private final JTextPane codePane;
     private final JLabel headerLabel;
     private final JLabel statusBar;
@@ -200,6 +201,11 @@ public class ArkTSOutputProvider extends ComponentProvider {
             @Override
             public String getToolTipText(MouseEvent event) {
                 return computeTooltip(event);
+            }
+
+            @Override
+            public boolean getScrollableTracksViewportWidth() {
+                return wordWrapEnabled;
             }
         };
         codePane.setEditable(false);
@@ -1157,6 +1163,11 @@ public class ArkTSOutputProvider extends ComponentProvider {
         zoomOutButton.setToolTipText("Decrease font size (Ctrl+-)");
         zoomOutButton.addActionListener(e -> setFontSize(currentFontSize - 1));
         toolBar.add(zoomOutButton);
+        JToggleButton wrapButton = new JToggleButton("Wrap");
+        wrapButton.setToolTipText("Toggle word wrap");
+        wrapButton.setSelected(false);
+        wrapButton.addActionListener(e -> setWordWrap(wrapButton.isSelected()));
+        toolBar.add(wrapButton);
         toolBar.addSeparator();
         JButton helpButton = new JButton("?");
         helpButton.setToolTipText("Keyboard shortcuts");
@@ -1315,6 +1326,14 @@ public class ArkTSOutputProvider extends ComponentProvider {
         StyleConstants.setFontFamily(style, "Monospaced");
         StyleConstants.setFontSize(style, currentFontSize);
         return style;
+    }
+
+    // --- Word wrap ---
+
+    private void setWordWrap(boolean enabled) {
+        wordWrapEnabled = enabled;
+        codePane.revalidate();
+        codePane.repaint();
     }
 
     // --- Font size zoom ---

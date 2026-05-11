@@ -34,6 +34,7 @@ import docking.ComponentProvider;
 import docking.Tool;
 import ghidra.util.Msg;
 
+import com.arkghidra.format.AbcAccessFlags;
 import com.arkghidra.format.AbcClass;
 import com.arkghidra.format.AbcCode;
 import com.arkghidra.format.AbcField;
@@ -512,7 +513,8 @@ public class AbcStructureProvider extends ComponentProvider {
                             @Override
                             public String toString() {
                                 AbcMethod m = (AbcMethod) getUserObject();
-                                return m.getName() + formatMethodSuffixWithArgs(m, currentAbcFile);
+                                return formatMethodPrefix(m) + m.getName()
+                                        + formatMethodSuffixWithArgs(m, currentAbcFile);
                             }
                         };
                 methodsNode.add(methodNode);
@@ -564,22 +566,40 @@ public class AbcStructureProvider extends ComponentProvider {
         return " @0x" + Long.toHexString(method.getCodeOff());
     }
 
+    private static String formatMethodPrefix(AbcMethod method) {
+        long flags = method.getAccessFlags();
+        String prefix;
+        if ((flags & AbcAccessFlags.ACC_PUBLIC) != 0) {
+            prefix = "+ ";
+        } else if ((flags & AbcAccessFlags.ACC_PRIVATE) != 0) {
+            prefix = "- ";
+        } else if ((flags & AbcAccessFlags.ACC_PROTECTED) != 0) {
+            prefix = "# ";
+        } else {
+            prefix = "~ ";
+        }
+        return prefix;
+    }
+
     private static String formatMethodSuffixWithArgs(AbcMethod method, AbcFile abcFile) {
+        String staticTag = ((method.getAccessFlags() & AbcAccessFlags.ACC_STATIC) != 0)
+                ? " [S]" : "";
         if (method.getCodeOff() == 0) {
-            return " (abstract/native)";
+            return staticTag + " (abstract/native)";
         }
         if (abcFile != null) {
             try {
                 AbcCode code = abcFile.getCodeForMethod(method);
                 if (code != null) {
                     long numArgs = code.getNumArgs();
-                    return " (" + numArgs + " arg" + (numArgs == 1 ? "" : "s")
+                    return staticTag + " (" + numArgs + " arg"
+                            + (numArgs == 1 ? "" : "s")
                             + ") @0x" + Long.toHexString(method.getCodeOff());
                 }
             } catch (Exception e) {
                 // fall through to default
             }
         }
-        return " @0x" + Long.toHexString(method.getCodeOff());
+        return staticTag + " @0x" + Long.toHexString(method.getCodeOff());
     }
 }
