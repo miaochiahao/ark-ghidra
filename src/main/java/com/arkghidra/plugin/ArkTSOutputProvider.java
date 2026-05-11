@@ -805,6 +805,56 @@ public class ArkTSOutputProvider extends ComponentProvider {
         }
     }
 
+    /**
+     * Navigates to the next or previous occurrence of the currently highlighted symbol.
+     * F3 = next (direction=1), Shift+F3 = previous (direction=-1).
+     *
+     * @param direction 1 for next, -1 for previous
+     */
+    private void navigateOccurrence(int direction) {
+        if (currentHighlightedWord == null || currentHighlightedWord.isEmpty()) {
+            return;
+        }
+        String text = codePane.getText();
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        List<Integer> positions =
+                symbolHighlighter.findAllOccurrences(text, currentHighlightedWord);
+        if (positions.isEmpty()) {
+            return;
+        }
+        int caretPos = codePane.getCaretPosition();
+        int targetIdx = 0;
+        if (direction > 0) {
+            targetIdx = 0;
+            for (int i = 0; i < positions.size(); i++) {
+                if (positions.get(i) > caretPos) {
+                    targetIdx = i;
+                    break;
+                }
+                targetIdx = (i + 1) % positions.size();
+            }
+        } else {
+            targetIdx = positions.size() - 1;
+            for (int i = positions.size() - 1; i >= 0; i--) {
+                if (positions.get(i) < caretPos) {
+                    targetIdx = i;
+                    break;
+                }
+                targetIdx = i == 0 ? positions.size() - 1 : i - 1;
+            }
+        }
+        int targetPos = positions.get(targetIdx);
+        codePane.setCaretPosition(targetPos);
+        try {
+            codePane.scrollRectToVisible(
+                    codePane.modelToView2D(targetPos).getBounds());
+        } catch (BadLocationException ex) {
+            Msg.warn(OWNER, "Navigate occurrence scroll error: " + ex.getMessage());
+        }
+    }
+
     // --- Ctrl+F search bar ---
 
     private void installCtrlFBinding() {
@@ -1189,6 +1239,8 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 + "Ctrl+G          Go to line\n"
                 + "Ctrl+Shift+C    Copy current line\n"
                 + "Ctrl+Shift+F    Global search\n"
+                + "F3              Next occurrence\n"
+                + "Shift+F3        Previous occurrence\n"
                 + "Escape          Close search bar\n"
                 + "Alt+Left        Navigate back\n"
                 + "Alt+Right       Navigate forward\n"
@@ -1546,6 +1598,25 @@ public class ArkTSOutputProvider extends ComponentProvider {
             @Override
             public void actionPerformed(ActionEvent e) {
                 codePane.selectAll();
+            }
+        });
+
+        // F3 / Shift+F3 — navigate through highlighted symbol occurrences
+        KeyStroke f3 = KeyStroke.getKeyStroke(KeyEvent.VK_F3, 0);
+        KeyStroke shiftF3 = KeyStroke.getKeyStroke(
+                KeyEvent.VK_F3, java.awt.event.InputEvent.SHIFT_DOWN_MASK);
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(f3, "nextOccurrence");
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(shiftF3, "prevOccurrence");
+        codePane.getActionMap().put("nextOccurrence", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                navigateOccurrence(1);
+            }
+        });
+        codePane.getActionMap().put("prevOccurrence", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                navigateOccurrence(-1);
             }
         });
     }

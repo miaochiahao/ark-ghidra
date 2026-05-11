@@ -651,8 +651,10 @@ public class AbcStructureProvider extends ComponentProvider {
                 AbcCode code = abcFile.getCodeForMethod(method);
                 if (code != null) {
                     long numArgs = code.getNumArgs();
+                    long codeSize = code.getCodeSize();
                     return staticTag + " (" + numArgs + " arg"
                             + (numArgs == 1 ? "" : "s")
+                            + ", " + codeSize + "b"
                             + ") @0x" + Long.toHexString(method.getCodeOff());
                 }
             } catch (Exception e) {
