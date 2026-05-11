@@ -137,6 +137,12 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         tool.addComponentProvider(historyProvider, false);
         statsProvider = new StatsProvider(tool, PLUGIN_NAME);
         tool.addComponentProvider(statsProvider, false);
+        abcStructureProvider.setShowCallersCallback(this::showAllCallers);
+    }
+
+    private void showAllCallers(String methodName) {
+        tool.showComponentProvider(globalSearchProvider, true);
+        globalSearchProvider.triggerSearch(methodName + "(");
     }
 
     private void onMethodDoubleClicked(AbcMethod method) {

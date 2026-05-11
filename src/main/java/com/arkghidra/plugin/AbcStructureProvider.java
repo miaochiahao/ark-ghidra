@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
@@ -75,6 +76,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private ClassNavigationListener classNavigationListener;
     private BiConsumer<AbcClass, File> exportClassCallback;
     private java.util.function.Consumer<AbcClass> copyAsArkTSCallback;
+    private Consumer<String> showCallersCallback;
     private JToggleButton filterPublicButton;
     private JToggleButton filterPrivateButton;
     private JToggleButton filterStaticButton;
@@ -263,6 +265,15 @@ public class AbcStructureProvider extends ComponentProvider {
         this.copyAsArkTSCallback = cb;
     }
 
+    /**
+     * Sets the callback invoked when the user chooses "Show All Callers" for a method node.
+     *
+     * @param cb consumer that receives the selected method name
+     */
+    public void setShowCallersCallback(Consumer<String> cb) {
+        this.showCallersCallback = cb;
+    }
+
     private void showTreeContextMenu(MouseEvent e) {
         TreePath path = structureTree.getPathForLocation(e.getX(), e.getY());
         if (path == null) {
@@ -293,6 +304,14 @@ public class AbcStructureProvider extends ComponentProvider {
             copyOffsetItem.addActionListener(
                     ev -> copyToClipboard("0x" + Long.toHexString(method.getCodeOff())));
             menu.add(copyOffsetItem);
+
+            JMenuItem callersItem = new JMenuItem("Show All Callers");
+            callersItem.addActionListener(ev -> {
+                if (showCallersCallback != null) {
+                    showCallersCallback.accept(method.getName());
+                }
+            });
+            menu.add(callersItem);
 
             JMenuItem copySignatureItem = new JMenuItem("Copy Signature");
             copySignatureItem.addActionListener(ev -> {

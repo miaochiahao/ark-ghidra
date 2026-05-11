@@ -147,6 +147,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
 
     private final JPanel mainPanel;
     private boolean wordWrapEnabled = false;
+    private boolean showIndentGuides = true;
     private final JTextPane codePane;
     private final JLabel headerLabel;
     private final JLabel statusBar;
@@ -222,6 +223,14 @@ public class ArkTSOutputProvider extends ComponentProvider {
             @Override
             public boolean getScrollableTracksViewportWidth() {
                 return wordWrapEnabled;
+            }
+
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                if (showIndentGuides) {
+                    paintIndentGuides(g);
+                }
             }
         };
         codePane.setEditable(false);
@@ -1259,6 +1268,14 @@ public class ArkTSOutputProvider extends ComponentProvider {
         wrapButton.setSelected(false);
         wrapButton.addActionListener(e -> setWordWrap(wrapButton.isSelected()));
         toolBar.add(wrapButton);
+        JToggleButton indentGuideButton = new JToggleButton("\u22ee");
+        indentGuideButton.setToolTipText("Toggle indent guides");
+        indentGuideButton.setSelected(true);
+        indentGuideButton.addActionListener(e -> {
+            showIndentGuides = indentGuideButton.isSelected();
+            codePane.repaint();
+        });
+        toolBar.add(indentGuideButton);
         toolBar.addSeparator();
         JButton helpButton = new JButton("?");
         helpButton.setToolTipText("Keyboard shortcuts");
@@ -1429,6 +1446,41 @@ public class ArkTSOutputProvider extends ComponentProvider {
         wordWrapEnabled = enabled;
         codePane.revalidate();
         codePane.repaint();
+    }
+
+    // --- Indent guides ---
+
+    private void paintIndentGuides(Graphics g) {
+        String text = codePane.getText();
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        FontMetrics fm = g.getFontMetrics(codePane.getFont());
+        int charWidth = fm.charWidth(' ');
+        int lineHeight = fm.getHeight();
+        int indentWidth = 4 * charWidth;
+        Color guideColor = isDarkBackground()
+                ? new Color(0x37474F)
+                : new Color(0xE0E0E0);
+        g.setColor(guideColor);
+        String[] lines = text.split("\n", -1);
+        int y = fm.getAscent();
+        for (String line : lines) {
+            int spaces = 0;
+            for (int i = 0; i < line.length(); i++) {
+                if (line.charAt(i) == ' ') {
+                    spaces++;
+                } else {
+                    break;
+                }
+            }
+            int levels = spaces / 4;
+            for (int level = 1; level <= levels; level++) {
+                int x = level * indentWidth;
+                g.drawLine(x, y - fm.getAscent(), x, y - fm.getAscent() + lineHeight - 1);
+            }
+            y += lineHeight;
+        }
     }
 
     // --- Font size zoom ---

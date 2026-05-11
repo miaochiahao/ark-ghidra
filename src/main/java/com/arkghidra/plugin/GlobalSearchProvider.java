@@ -177,6 +177,23 @@ public class GlobalSearchProvider extends ComponentProvider {
         }
     }
 
+    /**
+     * Pre-fills the search field with the given query and triggers a search immediately.
+     * Used by external callers (e.g., "Show All Callers" context menu action).
+     *
+     * @param query the search string to pre-fill and execute
+     */
+    public void triggerSearch(String query) {
+        searchField.setText(query);
+        if (query.isEmpty()) {
+            return;
+        }
+        if (searchCallback != null) {
+            clearResults();
+            searchCallback.accept(query);
+        }
+    }
+
     private void handleResultDoubleClick() {
         int idx = resultsList.getSelectedIndex();
         if (idx < 0 || navigationCallback == null) {
