@@ -277,7 +277,9 @@ These complement the standard callthis0-callthis3 (0x2D-0x30) and callthisrange 
 
 ### Loop Iteration Notes
 
-- **Open issues as of 2026-05-11:** #184, #185, #186, #196, #197, #200, #201, #202, #203, #207 (10 total). Issues #72, #73, #187, #189-#195, #198, #199, #204, #205, #206 closed. Critical remaining: #196-#203 (CFG, boolean logic, try-catch), #200-#202 (loop bodies). Issue #207 defect 1 (comparison operators inverted) FIXED (commit 29aea6e). Defects 2-3 (nested ternary, RegExp null check) still open.
+- **Open issues as of 2026-05-11:** #184, #185, #186, #196, #197, #200, #201, #202, #203, #207 (10 total). Issues #72, #73, #187, #189-#195, #198, #199, #204, #205, #206 closed.
+- **Fixed this loop:** #207 defect 1 (comparison operators inverted — commit 29aea6e), #197 defect 1 (arithmetic precedence), #197 defect 3 (if-else-if operators correct), #202 defect 1 (empty loop bodies verified fixed).
+- **Root cause of operand order bug:** The isa.yaml pseudo `acc = ecma_op(acc, operand_0)` is misleading. The Ark compiler loads the LEFT source operand into a register and the RIGHT into acc. The VM computes `register OP acc`. Previous commit 3b9e2ea incorrectly "fixed" the order based on isa.yaml, causing `>=` to invert to `<=`. Reverted in commit 29aea6e.
 - **E2E stats:** 27,389+ methods across 6 HAP files (real-world), ~1700 methods on known-source test HAPs (Rounds 1-50) — 0 failures, 0 timeouts, 0 unhandled opcodes across all. Melotopia 11,788 methods, Kazumi 3,632 methods — both fully decompiled.
 - **Quality metrics (Kazumi, 3632 methods):** if(undefined)=1, while=78, for=14, do=64, if=685, switch=4, try=27, &&=170, ||=59, lex_=2783, throw acc=5, func_=0, unknown_=7. Do-while detection added: now correctly classifies loops where body precedes condition (was 28, now 64). New acc()=629 (constructor callee recovery still needed for cross-block cases).
 - **Quality metrics (Melotopia, 11788 methods):** new acc()=188 (reduced via register scan), if=1557, while=49, for=15, &&=5, ||=13, lex_=8071.
