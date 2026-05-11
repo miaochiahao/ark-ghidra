@@ -1,8 +1,11 @@
 package com.arkghidra.plugin;
 
+import ghidra.app.plugin.PluginCategoryNames;
+import ghidra.app.plugin.ProgramPlugin;
 import ghidra.app.services.ProgramManager;
-import ghidra.framework.plugintool.Plugin;
+import ghidra.framework.plugintool.PluginInfo;
 import ghidra.framework.plugintool.PluginTool;
+import ghidra.framework.plugintool.util.PluginStatus;
 import ghidra.program.model.listing.Program;
 import ghidra.util.Msg;
 
@@ -19,7 +22,14 @@ import com.arkghidra.format.AbcMethod;
  * Double-clicking a method node in the ABC Structure tree automatically
  * decompiles and displays the method without requiring a menu action.</p>
  */
-public class ArkGhidraPlugin extends Plugin {
+@PluginInfo(
+    status = PluginStatus.STABLE,
+    packageName = "ArkTS",
+    category = PluginCategoryNames.ANALYSIS,
+    shortDescription = "ArkTS Decompiler",
+    description = "Decompiles HarmonyOS ArkTS .abc bytecode to readable ArkTS source code."
+)
+public class ArkGhidraPlugin extends ProgramPlugin {
 
     public static final String PLUGIN_NAME = "ArkTS Decompiler";
     private static final String OWNER = ArkGhidraPlugin.class.getSimpleName();
@@ -79,7 +89,8 @@ public class ArkGhidraPlugin extends Plugin {
      *
      * @return the current program, or null if no program is open
      */
-    Program getCurrentProgram() {
+    @Override
+    public Program getCurrentProgram() {
         ProgramManager pm = getTool().getService(ProgramManager.class);
         if (pm != null) {
             return pm.getCurrentProgram();
@@ -118,4 +129,3 @@ public class ArkGhidraPlugin extends Plugin {
         }
     }
 }
-
