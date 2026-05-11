@@ -460,9 +460,12 @@ public class ArkTSAccessExpressions {
 
         @Override
         public String toArkTS() {
+            String consStr = consequent != null
+                    ? consequent.toArkTS() : "undefined";
+            String altStr = alternate != null
+                    ? alternate.toArkTS() : "undefined";
             return String.format(java.util.Locale.ROOT, "%s ? %s : %s",
-                    test.toArkTS(), consequent.toArkTS(),
-                    alternate.toArkTS());
+                    test.toArkTS(), consStr, altStr);
         }
     }
 
