@@ -1,5 +1,8 @@
 package com.arkghidra.plugin;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import ghidra.app.plugin.PluginCategoryNames;
 import ghidra.app.plugin.ProgramPlugin;
 import ghidra.app.services.ProgramManager;
@@ -40,6 +43,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
     private ArkTSOutputProvider outputProvider;
     private XrefProvider xrefProvider;
     private HapInfoProvider hapInfoProvider;
+    private CallGraphProvider callGraphProvider;
 
     public ArkGhidraPlugin(PluginTool tool) {
         super(tool);
@@ -72,6 +76,9 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         hapInfoProvider = new HapInfoProvider(tool, PLUGIN_NAME);
         hapInfoProvider.setAbilityClickCallback(this::jumpToAbility);
         tool.addComponentProvider(hapInfoProvider, false);
+        callGraphProvider = new CallGraphProvider(tool, PLUGIN_NAME);
+        callGraphProvider.setNavigationCallback(this::jumpToDefinition);
+        tool.addComponentProvider(callGraphProvider, false);
     }
 
     private void onMethodDoubleClicked(AbcMethod method) {
@@ -93,6 +100,9 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             String result = decompiler.decompileMethod(method, code, abcFile);
             outputProvider.showDecompiledCode(method.getName(), result);
             tool.showComponentProvider(outputProvider, true);
+            List<String> allMethodNames = getAllMethodNames(abcFile);
+            callGraphProvider.showCallGraph(method.getName(), result, allMethodNames);
+            tool.showComponentProvider(callGraphProvider, true);
             Msg.info(OWNER, "Decompiled method via tree: " + method.getName());
         } catch (Exception e) {
             Msg.error(OWNER, "Decompilation failed for " + method.getName(), e);
@@ -203,6 +213,16 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         outputProvider.showMessage("// Class not found for ability: " + abilityName);
     }
 
+    private List<String> getAllMethodNames(AbcFile abcFile) {
+        List<String> names = new ArrayList<>();
+        for (AbcClass cls : abcFile.getClasses()) {
+            for (AbcMethod m : cls.getMethods()) {
+                names.add(m.getName());
+            }
+        }
+        return names;
+    }
+
     private AbcFile getCurrentAbcFile() {
         Program program = getCurrentProgram();
         if (program == null) {
@@ -285,6 +305,9 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             }
             if (hapInfoProvider != null) {
                 pluginTool.removeComponentProvider(hapInfoProvider);
+            }
+            if (callGraphProvider != null) {
+                pluginTool.removeComponentProvider(callGraphProvider);
             }
         }
     }

@@ -1,6 +1,7 @@
 package com.arkghidra.plugin;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Font;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -16,8 +17,12 @@ import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
-import javax.swing.JTextArea;
+import javax.swing.JTextPane;
 import javax.swing.ListSelectionModel;
+import javax.swing.text.BadLocationException;
+import javax.swing.text.SimpleAttributeSet;
+import javax.swing.text.StyleConstants;
+import javax.swing.text.StyledDocument;
 
 import docking.ComponentProvider;
 import docking.Tool;
@@ -36,7 +41,7 @@ public class HapInfoProvider extends ComponentProvider {
 
     private final JPanel mainPanel;
     private final JLabel headerLabel;
-    private final JTextArea infoArea;
+    private final JTextPane infoArea;
     private final JList<String> abilitiesList;
     private final DefaultListModel<String> abilitiesModel;
 
@@ -54,10 +59,9 @@ public class HapInfoProvider extends ComponentProvider {
 
         headerLabel = new JLabel("No HAP loaded");
 
-        infoArea = new JTextArea();
+        infoArea = new JTextPane();
         infoArea.setEditable(false);
         infoArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
-        infoArea.setRows(4);
 
         abilitiesModel = new DefaultListModel<>();
         abilitiesList = new JList<>(abilitiesModel);
@@ -109,25 +113,18 @@ public class HapInfoProvider extends ComponentProvider {
     public void showMetadata(HapMetadata metadata) {
         if (metadata == null) {
             headerLabel.setText("No HAP loaded");
-            infoArea.setText("");
+            try {
+                infoArea.getStyledDocument().remove(0, infoArea.getStyledDocument().getLength());
+            } catch (BadLocationException e) {
+                infoArea.setText("");
+            }
             abilitiesModel.clear();
             abilityNames = Collections.emptyList();
             return;
         }
 
         headerLabel.setText("Module: " + metadata.getModuleName());
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("Module:   ").append(metadata.getModuleName()).append('\n');
-        sb.append("Type:     ").append(metadata.getModuleType()).append('\n');
-        sb.append("Package:  ").append(metadata.getPackageName()).append('\n');
-        sb.append("Version:  ").append(metadata.getVersionName())
-                .append(" (").append(metadata.getVersionCode()).append(")\n");
-        if (!metadata.getVendorName().isEmpty()) {
-            sb.append("Vendor:   ").append(metadata.getVendorName()).append('\n');
-        }
-        infoArea.setText(sb.toString());
-        infoArea.setCaretPosition(0);
+        renderMetadataHighlighted(metadata);
 
         abilitiesModel.clear();
         List<String> names = new ArrayList<>();
@@ -137,6 +134,54 @@ public class HapInfoProvider extends ComponentProvider {
             names.add(ability.getName());
         }
         abilityNames = Collections.unmodifiableList(names);
+    }
+
+    private void renderMetadataHighlighted(HapMetadata metadata) {
+        StyledDocument doc = infoArea.getStyledDocument();
+        try {
+            doc.remove(0, doc.getLength());
+        } catch (BadLocationException e) {
+            return;
+        }
+
+        SimpleAttributeSet keyStyle = new SimpleAttributeSet();
+        StyleConstants.setForeground(keyStyle, new Color(0x0000CC));
+        StyleConstants.setBold(keyStyle, true);
+        StyleConstants.setFontFamily(keyStyle, "Monospaced");
+        StyleConstants.setFontSize(keyStyle, 12);
+
+        SimpleAttributeSet valueStyle = new SimpleAttributeSet();
+        StyleConstants.setForeground(valueStyle, new Color(0x008000));
+        StyleConstants.setBold(valueStyle, false);
+        StyleConstants.setFontFamily(valueStyle, "Monospaced");
+        StyleConstants.setFontSize(valueStyle, 12);
+
+        SimpleAttributeSet numStyle = new SimpleAttributeSet();
+        StyleConstants.setForeground(numStyle, new Color(0xFF8C00));
+        StyleConstants.setBold(numStyle, false);
+        StyleConstants.setFontFamily(numStyle, "Monospaced");
+        StyleConstants.setFontSize(numStyle, 12);
+
+        appendKeyValue(doc, "Module:   ", metadata.getModuleName(), keyStyle, valueStyle);
+        appendKeyValue(doc, "Type:     ", metadata.getModuleType(), keyStyle, valueStyle);
+        appendKeyValue(doc, "Package:  ", metadata.getPackageName(), keyStyle, valueStyle);
+        appendKeyValue(doc, "Version:  ", metadata.getVersionName(), keyStyle, valueStyle);
+        appendKeyValue(doc, "Build:    ", String.valueOf(metadata.getVersionCode()), keyStyle, numStyle);
+        if (!metadata.getVendorName().isEmpty()) {
+            appendKeyValue(doc, "Vendor:   ", metadata.getVendorName(), keyStyle, valueStyle);
+        }
+
+        infoArea.setCaretPosition(0);
+    }
+
+    private static void appendKeyValue(StyledDocument doc, String key, String value,
+            SimpleAttributeSet keyStyle, SimpleAttributeSet valueStyle) {
+        try {
+            doc.insertString(doc.getLength(), key, keyStyle);
+            doc.insertString(doc.getLength(), value + "\n", valueStyle);
+        } catch (BadLocationException e) {
+            // ignore
+        }
     }
 
     private static String buildAbilityEntry(HapMetadata.AbilityInfo ability) {
