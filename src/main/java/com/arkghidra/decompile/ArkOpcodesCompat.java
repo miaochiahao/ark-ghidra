@@ -155,6 +155,8 @@ final class ArkOpcodesCompat {
 
     static final int DEFINEFUNC = ArkOpcodes.DEFINEFUNC;
     static final int DEFINECLASSWITHBUFFER = ArkOpcodes.DEFINECLASSWITHBUFFER;
+    static final int DEFINECLASSWITHBUFFER_16 =
+            ArkOpcodes.DEFINECLASSWITHBUFFER_16;
     static final int NEWLEXENV = ArkOpcodes.NEWLEXENV;
 
     static final int NOP = ArkOpcodes.NOP;
@@ -308,8 +310,6 @@ final class ArkOpcodesCompat {
     static final int WIDE_STOWNBYINDEX = ArkOpcodes.WIDE_STOWNBYINDEX;
     static final int WIDE_STOWNBYNAME = ArkOpcodes.WIDE_STOWNBYNAME;
     static final int WIDE_DEFINEMETHOD = ArkOpcodes.WIDE_DEFINEMETHOD;
-    static final int WIDE_SUPERCALLTHISRANGE =
-            ArkOpcodes.WIDE_SUPERCALLTHISRANGE;
     static final int WIDE_MOV = ArkOpcodes.WIDE_MOV;
 
     // --- 16-bit variant primary opcodes ---
@@ -370,7 +370,6 @@ final class ArkOpcodesCompat {
             case WIDE_DEFINEFUNC: return DEFINEFUNC;
             case WIDE_DEFINEMETHOD: return DEFINEMETHOD;
             case WIDE_NEWOBJRANGE: return NEWOBJRANGE;
-            case WIDE_SUPERCALLTHISRANGE: return SUPERCALLTHISRANGE;
             case WIDE_CREATEEMPTYARRAY: return CREATEEMPTYARRAY;
             case WIDE_CREATEARRAYWITHBUFFER: return CREATEARRAYWITHBUFFER;
             case WIDE_CREATEOBJECTWITHBUFFER: return CREATEOBJECTWITHBUFFER;
@@ -413,7 +412,6 @@ final class ArkOpcodesCompat {
             case WIDE_DEFINEFUNC:
             case WIDE_DEFINEMETHOD:
             case WIDE_NEWOBJRANGE:
-            case WIDE_SUPERCALLTHISRANGE:
             case WIDE_CREATEEMPTYARRAY:
             case WIDE_CREATEARRAYWITHBUFFER:
             case WIDE_CREATEOBJECTWITHBUFFER:
@@ -525,6 +523,8 @@ final class ArkOpcodesCompat {
                 return DEFINEMETHOD;
             case DEFINEFUNC_16:
                 return DEFINEFUNC;
+            case DEFINECLASSWITHBUFFER_16:
+                return DEFINECLASSWITHBUFFER;
             case GETTEMPLATEOBJECT_16:
                 return GETTEMPLATEOBJECT;
             case SETOBJECTWITHPROTO_16:

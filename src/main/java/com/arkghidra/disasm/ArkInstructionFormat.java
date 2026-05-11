@@ -85,6 +85,10 @@ public enum ArkInstructionFormat {
     IMM8_IMM16_IMM16_V8(7),
     /** Opcode + 8-bit immediate + two 16-bit immediates + 8-bit immediate + register. */
     IMM8_IMM16_IMM16_IMM8_V8(8),
+    /** Opcode + 8-bit immediate + three 16-bit immediates + register (defineclasswithbuffer). */
+    IMM8_IMM16_IMM16_IMM16_V8(9),
+    /** Opcode + 16-bit immediate + three 16-bit immediates + register (defineclasswithbuffer 16-bit). */
+    IMM16_IMM16_IMM16_IMM16_V8(10),
     /** Opcode + two 8-bit immediates + 8-bit register. */
     IMM8_IMM8_V8(4),
     /** Opcode + 8-bit register + 8-bit signed immediate (jump with reg). */

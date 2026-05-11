@@ -2493,13 +2493,14 @@ class ArkTSDecompilerTest {
 
     @Test
     void testDecompile_defineClassWithBuffer() {
-        // defineclasswithbuffer has format IMM8_IMM16_IMM16_V8
-        // opcode=0x35, operand0=imm8, operand1=imm16, operand2=imm16, operand3=v8
-        // Build: 0x35, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03
+        // defineclasswithbuffer has format IMM8_IMM16_IMM16_IMM16_V8 (9 bytes)
+        // opcode=0x35, imm8=ic, imm16=method_id, imm16=literalarray_id,
+        // imm16=imm2_16, v8=dest register
         byte[] code = concat(
                 bytes(0x35, 0x00),            // defineclasswithbuffer imm8=0
-                le16(1),                      // imm16=1 (literal idx)
-                le16(2),                      // imm16=2 (method idx)
+                le16(1),                      // imm16=1 (method idx)
+                le16(2),                      // imm16=2 (literal idx)
+                le16(0),                      // imm16=0 (additional field)
                 bytes(0x03),                  // v8=3 (dest register)
                 bytes(0x64)                   // return
         );

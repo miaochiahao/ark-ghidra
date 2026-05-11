@@ -181,6 +181,9 @@ i16_1: uimm16_1 is uimm16_1 { export *[const]:2 uimm16_1; }
 i16_2: uimm16_2 is uimm16_2 { export *[const]:2 uimm16_2; }
 i16_3: uimm16_3 is uimm16_3 { export *[const]:2 uimm16_3; }
 
+# 16-bit immediate operand (reusable at any 16-bit aligned position)
+i16_4: uimm16_3 is uimm16_3 { export *[const]:2 uimm16_3; }
+
 # 32-bit signed immediate
 i32s: simm32_1 is simm32_1 { export *[const]:4 simm32_1; }
 
@@ -579,7 +582,11 @@ attach variables reg4 [ v0 v1 v2 v3 v4 v5 v6 v7
 
 # --- Class definition ---
 
-:defineclasswithbuffer i8_1, i16_2, i16_3, i8_3, vr1 is opcode=0x35; i8_1; i16_2; i16_3; i8_3; vr1 { acc = arkDefineFunc(); }
+:defineclasswithbuffer i8_1, i16_2, i16_3, i16_4, vr1 is opcode=0x35; i8_1; i16_2; i16_3; i16_4; vr1 { acc = arkDefineFunc(); }
+
+# --- defineclasswithbuffer 16-bit variant (0x75) ---
+# Format: op_imm1_16_id1_16_id2_16_imm2_16_v_8 = 10 bytes
+:defineclasswithbuffer i16_1, i16_2, i16_3, i16_4, vr1 is opcode=0x75; i16_1; i16_2; i16_3; i16_4; vr1 { acc = arkDefineFunc(); }
 
 # --- Define getter/setter ---
 

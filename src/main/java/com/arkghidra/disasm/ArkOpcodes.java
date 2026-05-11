@@ -327,7 +327,7 @@ public final class ArkOpcodes {
     public static final int WIDE_STOWNBYINDEX = 0xCB;
     public static final int WIDE_STOWNBYNAME = 0xCC;
     public static final int WIDE_DEFINEMETHOD = 0xBE;
-    public static final int WIDE_SUPERCALLTHISRANGE = 0x75;
+    public static final int DEFINECLASSWITHBUFFER_16 = 0x75;
     public static final int WIDE_MOV = 0x8F;
 
     // --- 16-bit variant primary opcodes (second/third opcode_idx from isa.yaml) ---
@@ -448,6 +448,7 @@ public final class ArkOpcodes {
             case DEFINEFUNC: return "definefunc";
             case DEFINEMETHOD: return "definemethod";
             case DEFINECLASSWITHBUFFER: return "defineclasswithbuffer";
+            case DEFINECLASSWITHBUFFER_16: return "defineclasswithbuffer";
             case GETNEXTPROPNAME: return "getnextpropname";
             case LDOBJBYVALUE: return "ldobjbyvalue";
             case STOBJBYVALUE: return "stobjbyvalue";
@@ -843,9 +844,12 @@ public final class ArkOpcodes {
             case STOWNBYINDEX:
                 return ArkInstructionFormat.IMM8_V8_IMM16;
 
-            // IMM8_IMM16_IMM16_IMM8_V8
+            // IMM8_IMM16_IMM16_IMM16_V8 (9 bytes)
             case DEFINECLASSWITHBUFFER:
-                return ArkInstructionFormat.IMM8_IMM16_IMM16_V8;
+                return ArkInstructionFormat.IMM8_IMM16_IMM16_IMM16_V8;
+            // IMM16_IMM16_IMM16_IMM16_V8 (10 bytes)
+            case DEFINECLASSWITHBUFFER_16:
+                return ArkInstructionFormat.IMM16_IMM16_IMM16_IMM16_V8;
 
             // --- Jump instructions (signed offset) ---
             case JMP_IMM8:
@@ -1117,7 +1121,6 @@ public final class ArkOpcodes {
             case WIDE_STOWNBYINDEX: return "stownbyindex";
             case WIDE_STOWNBYNAME: return "stownbyname";
             case WIDE_DEFINEMETHOD: return "definemethod";
-            case WIDE_SUPERCALLTHISRANGE: return "supercallthisrange";
             case WIDE_MOV: return "mov";
             default: return String.format("wide_unknown_%02X", subOpcode & 0xFF);
         }
@@ -1163,7 +1166,6 @@ public final class ArkOpcodes {
                 return ArkInstructionFormat.WIDE_V8_V8;
 
             case WIDE_NEWOBJRANGE:
-            case WIDE_SUPERCALLTHISRANGE:
                 return ArkInstructionFormat.WIDE_IMM16_IMM8_V8;
 
             case WIDE_STOBJBYINDEX:
