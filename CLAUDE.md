@@ -277,7 +277,7 @@ These complement the standard callthis0-callthis3 (0x2D-0x30) and callthisrange 
 
 ### Loop Iteration Notes
 
-- **Open issues as of 2026-05-11:** #184, #185, #186, #196, #197, #198, #200, #201, #202, #203 (10 total). Issues #72, #73, #187, #189-#195, #199, #204, #205, #206 closed. Critical remaining: #196-#203 (CFG reconstruction, boolean logic, try-catch).
+- **Open issues as of 2026-05-11:** #184, #185, #186, #196, #197, #200, #201, #202, #203 (9 total). Issues #72, #73, #187, #189-#195, #198, #199, #204, #205, #206 closed. Critical remaining: #196-#203 (CFG reconstruction, boolean logic, try-catch).
 - **E2E stats:** 27,389 methods across 6 HAP files (real-world), ~1195 methods on known-source test HAPs (Rounds 1-36) — 0 failures, 0 timeouts, 0 unhandled opcodes across all.
 - **Quality metrics (entry-default-unsigned.hap, 5874 methods):** if(undefined)=0, while=179, for=115, do=122, if=726, &&=29 (was 13→29 via null/undefined short-circuit fix), ||=33, else-if=3 (was 0→3 via merge block dedup), lex_0=4603, throw acc=13, func_=370, unknown_=19. Sub-graph processing (`collectLoopBodyBlocks`, `collectIfBranchBlocks`, `reconstructSubGraph`) ensures multi-block bodies for all control flow constructs.
 - **Known-source test HAPs (36 rounds):** Built from `/Users/anakin/DevEcoStudioProjects/MyApplication`. Each round tests specific language patterns. Baselines in `data/test_hap/arkts-decompile-test{1-36}_*.{ets,ts}`.
