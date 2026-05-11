@@ -1365,7 +1365,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                 && notesProvider != null && !notesProvider.getAllNotes().isEmpty()) {
             try {
                 java.io.File notesFile = new java.io.File(
-                        System.getProperty("user.home"), "ark_ghidra_notes.txt");
+                        settingsProvider.getNotesPath());
                 try (java.io.BufferedWriter writer = new java.io.BufferedWriter(
                         new java.io.OutputStreamWriter(
                                 new java.io.FileOutputStream(notesFile),

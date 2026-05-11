@@ -20,6 +20,7 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JSlider;
 import javax.swing.JSpinner;
+import javax.swing.JTextField;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.event.ChangeListener;
 
@@ -48,6 +49,7 @@ public class SettingsProvider extends ComponentProvider {
     private final JCheckBox showInlineNotesCheckBox;
     private final JCheckBox showComplexityHeaderCheckBox;
     private final JCheckBox autoSaveNotesCheckBox;
+    private final JTextField notesPathField;
     private final JComboBox<String> fontFamilyCombo;
     private final JSlider lineSpacingSlider;
     private final JComboBox<String> themeCombo;
@@ -90,6 +92,10 @@ public class SettingsProvider extends ComponentProvider {
         autoSaveNotesCheckBox = new JCheckBox("Auto-save notes on program close", false);
         autoSaveNotesCheckBox.setToolTipText(
                 "Automatically export notes to a file when Ghidra closes");
+
+        notesPathField = new JTextField(
+                System.getProperty("user.home") + "/ark_ghidra_notes.txt", 20);
+        notesPathField.setToolTipText("Path where notes are auto-saved");
 
         lineSpacingSlider = new JSlider(0, 8, 2);
         lineSpacingSlider.setMajorTickSpacing(2);
@@ -145,28 +151,33 @@ public class SettingsProvider extends ComponentProvider {
         formPanel.add(autoSaveNotesCheckBox, gbc);
 
         gbc.gridx = 0; gbc.gridy = 7; gbc.gridwidth = 1;
+        formPanel.add(new JLabel("Notes path:"), gbc);
+        gbc.gridx = 1; gbc.gridwidth = 2;
+        formPanel.add(notesPathField, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 8; gbc.gridwidth = 1;
         formPanel.add(new JLabel("Spacing:"), gbc);
         gbc.gridx = 1; gbc.gridwidth = 2;
         formPanel.add(lineSpacingSlider, gbc);
 
-        gbc.gridx = 0; gbc.gridy = 7; gbc.gridwidth = 1;
+        gbc.gridx = 0; gbc.gridy = 9; gbc.gridwidth = 1;
         formPanel.add(new JLabel("Theme:"), gbc);
         gbc.gridx = 1; gbc.gridwidth = 2;
         formPanel.add(themeCombo, gbc);
 
-        gbc.gridx = 0; gbc.gridy = 8; gbc.gridwidth = 1;
+        gbc.gridx = 0; gbc.gridy = 10; gbc.gridwidth = 1;
         formPanel.add(new JLabel("Tab size:"), gbc);
         gbc.gridx = 1; gbc.gridwidth = 1;
         formPanel.add(tabSizeSpinner, gbc);
         gbc.gridx = 2;
         formPanel.add(new JLabel("spaces"), gbc);
 
-        gbc.gridx = 0; gbc.gridy = 9; gbc.gridwidth = 3;
+        gbc.gridx = 0; gbc.gridy = 11; gbc.gridwidth = 3;
         JLabel hintLabel = new JLabel(
                 "<html><small>Increase timeout for complex methods that time out.</small></html>");
         formPanel.add(hintLabel, gbc);
 
-        gbc.gridy = 10;
+        gbc.gridy = 12;
         JButton resetButton = new JButton("Reset to Defaults");
         resetButton.setToolTipText("Restore all settings to their default values");
         resetButton.addActionListener(e -> resetToDefaults());
@@ -191,6 +202,7 @@ public class SettingsProvider extends ComponentProvider {
         tabSizeSpinner.addChangeListener(autoSave);
         fontFamilyCombo.addActionListener(e -> saveSettings());
         themeCombo.addActionListener(e -> saveSettings());
+        notesPathField.addActionListener(e -> saveSettings());
     }
 
     @Override
@@ -250,6 +262,18 @@ public class SettingsProvider extends ComponentProvider {
      */
     public boolean isAutoSaveNotes() {
         return autoSaveNotesCheckBox.isSelected();
+    }
+
+    /**
+     * Returns the configured notes auto-save path.
+     *
+     * @return the file path for auto-saving notes
+     */
+    public String getNotesPath() {
+        String path = notesPathField.getText().trim();
+        return path.isEmpty()
+                ? System.getProperty("user.home") + "/ark_ghidra_notes.txt"
+                : path;
     }
 
     /**
@@ -328,6 +352,7 @@ public class SettingsProvider extends ComponentProvider {
         props.setProperty("show.inline.notes", String.valueOf(showInlineNotesCheckBox.isSelected()));
         props.setProperty("show.complexity.header", String.valueOf(showComplexityHeaderCheckBox.isSelected()));
         props.setProperty("auto.save.notes", String.valueOf(autoSaveNotesCheckBox.isSelected()));
+        props.setProperty("notes.path", notesPathField.getText().trim());
         props.setProperty("font.family", getFontFamily());
         props.setProperty("line.spacing", String.valueOf(lineSpacingSlider.getValue()));
         props.setProperty("theme", getTheme());
@@ -371,6 +396,10 @@ public class SettingsProvider extends ComponentProvider {
                 Boolean.parseBoolean(props.getProperty("show.complexity.header", "true")));
         autoSaveNotesCheckBox.setSelected(
                 Boolean.parseBoolean(props.getProperty("auto.save.notes", "false")));
+        String notesPath = props.getProperty("notes.path", "");
+        if (!notesPath.isEmpty()) {
+            notesPathField.setText(notesPath);
+        }
         String fontFamily = props.getProperty("font.family", "Monospaced");
         fontFamilyCombo.setSelectedItem(fontFamily);
         try {
@@ -397,6 +426,7 @@ public class SettingsProvider extends ComponentProvider {
         showInlineNotesCheckBox.setSelected(true);
         showComplexityHeaderCheckBox.setSelected(true);
         autoSaveNotesCheckBox.setSelected(false);
+        notesPathField.setText(System.getProperty("user.home") + "/ark_ghidra_notes.txt");
         fontFamilyCombo.setSelectedItem("Monospaced");
         lineSpacingSlider.setValue(2);
         themeCombo.setSelectedItem("Auto (follow Ghidra)");
