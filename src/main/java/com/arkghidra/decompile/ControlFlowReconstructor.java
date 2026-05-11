@@ -199,6 +199,22 @@ class ControlFlowReconstructor {
         if (checkDeadCode) {
             mergeBlockCache.clear();
             liveContinuations.clear();
+            // Identify blocks that are the sole successor of a visited
+            // block via a JUMP edge. These are forward jumps within the
+            // linear flow (e.g., compiler-inserted jumps between sequential
+            // blocks for try-catch or alignment). Without this, isDeadCode
+            // would skip them because the edge is JUMP (not FALL_THROUGH).
+            for (BasicBlock block : blocks) {
+                List<CFGEdge> succs = block.getSuccessors();
+                if (succs.size() == 1
+                        && succs.get(0).getType() == EdgeType.JUMP) {
+                    BasicBlock target =
+                            cfg.getBlockAt(succs.get(0).getToOffset());
+                    if (target != null && blocks.contains(target)) {
+                        liveContinuations.add(target);
+                    }
+                }
+            }
         }
 
         List<ArkTSStatement> stmts = new ArrayList<>();
