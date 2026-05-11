@@ -726,9 +726,21 @@ class PropertyAccessHandler {
     private static ArkTSExpression recoverCalleeFromRegisters(
             DecompilationContext ctx) {
         int maxReg = ctx.getMaxTrackedRegister();
+        // First pass: look for MemberExpression (method reference)
         for (int r = maxReg; r >= 0; r--) {
             ArkTSExpression stored = ctx.getRegisterExpression(r);
             if (stored instanceof ArkTSExpression.MemberExpression) {
+                return stored;
+            }
+        }
+        // Second pass: look for any non-literal expression that could
+        // be a function reference (VariableExpression from definefunc)
+        for (int r = maxReg; r >= 0; r--) {
+            ArkTSExpression stored = ctx.getRegisterExpression(r);
+            if (stored != null && !isLikelyLiteral(stored)
+                    && !isUnresolvedAcc(stored)
+                    && !(stored
+                            instanceof ArkTSExpression.NewExpression)) {
                 return stored;
             }
         }

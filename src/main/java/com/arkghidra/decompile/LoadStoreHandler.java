@@ -81,8 +81,14 @@ class LoadStoreHandler {
                     ? (int) operands.get(1).getValue()
                     : (int) operands.get(0).getValue();
             String globalName = ctx.resolveString(stringIdx);
-            return new InstructionHandler.StatementResult(null,
-                    new ArkTSExpression.VariableExpression(globalName));
+            ArkTSExpression expr =
+                    new ArkTSExpression.VariableExpression(globalName);
+            // Track class-like global names for NEWOBJRANGE recovery
+            if (globalName != null && Character.isUpperCase(globalName.charAt(0))
+                    && !globalName.startsWith("str_")) {
+                ctx.setLastClassCandidate(expr);
+            }
+            return new InstructionHandler.StatementResult(null, expr);
         }
 
         // --- Global name store (trystglobalbyname / stglobalvar) ---
