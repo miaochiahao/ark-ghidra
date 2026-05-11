@@ -14,8 +14,11 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
@@ -1309,6 +1312,11 @@ public class ArkTSOutputProvider extends ComponentProvider {
         saveButton.addActionListener(e -> saveToFile());
         toolBar.add(saveButton);
 
+        JButton saveHtmlButton = new JButton("HTML...");
+        saveHtmlButton.setToolTipText("Export decompiled code as syntax-highlighted HTML");
+        saveHtmlButton.addActionListener(e -> saveAsHtml());
+        toolBar.add(saveHtmlButton);
+
         JButton clearButton = new JButton("Clear");
         clearButton.addActionListener(e -> clearOutput());
         toolBar.add(clearButton);
@@ -1735,6 +1743,77 @@ public class ArkTSOutputProvider extends ComponentProvider {
                         "Failed to save file: " + e.getMessage(), e);
             }
         }
+    }
+
+    private void saveAsHtml() {
+        String text = codePane.getText();
+        if (text == null || text.isEmpty()) {
+            Msg.warn(OWNER, "No code to export");
+            return;
+        }
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Export as HTML");
+        chooser.setSelectedFile(new File("decompiled.html"));
+        if (chooser.showSaveDialog(mainPanel) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        File file = chooser.getSelectedFile();
+        try (BufferedWriter writer = new BufferedWriter(
+                new OutputStreamWriter(new FileOutputStream(file), StandardCharsets.UTF_8))) {
+            writer.write(buildHtml(text));
+            Msg.info(OWNER, "Exported HTML to " + file.getPath());
+        } catch (IOException e) {
+            Msg.error(OWNER, "Failed to export HTML: " + e.getMessage(), e);
+        }
+    }
+
+    private String buildHtml(String code) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<!DOCTYPE html>\n<html>\n<head>\n");
+        sb.append("<meta charset=\"UTF-8\">\n");
+        sb.append("<title>Decompiled ArkTS</title>\n");
+        sb.append("<style>\n");
+        sb.append("body { background: #1e1e1e; color: #d4d4d4; font-family: monospace; "
+                + "font-size: 13px; padding: 16px; }\n");
+        sb.append(".kw { color: #82aaff; font-weight: bold; }\n");
+        sb.append(".ty { color: #89ddff; font-weight: bold; }\n");
+        sb.append(".st { color: #c3e88d; }\n");
+        sb.append(".cm { color: #546e7a; }\n");
+        sb.append(".dc { color: #c792ea; font-weight: bold; }\n");
+        sb.append(".nm { color: #f78c6c; }\n");
+        sb.append(".md { color: #82aaff; font-weight: bold; }\n");
+        sb.append("</style>\n</head>\n<body>\n<pre>\n");
+        String escaped = code.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+        escaped = escaped.replaceAll("(?m)(//[^\n]*)", "<span class=\"cm\">$1</span>");
+        escaped = escaped.replaceAll("(\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\")",
+                "<span class=\"st\">$1</span>");
+        escaped = escaped.replaceAll("(@\\w+)", "<span class=\"dc\">$1</span>");
+        String[] keywords = {
+            "let", "const", "function", "class", "return", "if", "else",
+            "for", "while", "new", "import", "export", "extends", "implements",
+            "async", "await", "try", "catch", "finally", "throw", "static",
+            "interface", "enum", "namespace", "typeof", "instanceof", "in", "of"
+        };
+        for (String kw : keywords) {
+            escaped = escaped.replaceAll("\\b(" + kw + ")\\b", "<span class=\"kw\">$1</span>");
+        }
+        String[] types = {
+            "number", "string", "boolean", "void", "null", "undefined",
+            "true", "false", "any", "never", "object"
+        };
+        for (String ty : types) {
+            escaped = escaped.replaceAll("\\b(" + ty + ")\\b", "<span class=\"ty\">$1</span>");
+        }
+        String[] modifiers = {
+            "public", "private", "protected", "readonly", "abstract",
+            "override", "super", "this"
+        };
+        for (String md : modifiers) {
+            escaped = escaped.replaceAll("\\b(" + md + ")\\b", "<span class=\"md\">$1</span>");
+        }
+        sb.append(escaped);
+        sb.append("</pre>\n</body>\n</html>\n");
+        return sb.toString();
     }
 
     private void clearOutput() {

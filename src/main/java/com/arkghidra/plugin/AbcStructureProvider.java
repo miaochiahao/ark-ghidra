@@ -71,7 +71,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private static final String OWNER =
             AbcStructureProvider.class.getSimpleName();
 
-    private static final String FILTER_PLACEHOLDER = "Filter... (args:N, size:>N)";
+    private static final String FILTER_PLACEHOLDER = "Filter... (args:N, size:>N, name:X, class:X)";
 
     private final JPanel mainPanel;
     private final JTree structureTree;
@@ -947,8 +947,16 @@ public class AbcStructureProvider extends ComponentProvider {
             filter = "";
         }
         // Check for special filter syntax
-        boolean isSpecialFilter = filter.startsWith("args:") || filter.startsWith("size:");
+        boolean isSpecialFilter = filter.startsWith("args:") || filter.startsWith("size:")
+                || filter.startsWith("name:") || filter.startsWith("class:");
         String textFilter = isSpecialFilter ? "" : filter;
+        String namePattern = "";
+        String classPattern = "";
+        if (filter.startsWith("name:")) {
+            namePattern = filter.substring(5).trim().toLowerCase();
+        } else if (filter.startsWith("class:")) {
+            classPattern = filter.substring(6).trim().toLowerCase();
+        }
 
         // Root node: show HAP name if available
         String rootLabel = currentHapName.isEmpty()
@@ -1098,6 +1106,11 @@ public class AbcStructureProvider extends ComponentProvider {
         if (showClasses) {
             for (AbcClass cls : currentAbcFile.getClasses()) {
                 String className = formatClassName(cls.getName());
+                if (filter.startsWith("class:") && !classPattern.isEmpty()) {
+                    if (!className.toLowerCase().contains(classPattern)) {
+                        continue;
+                    }
+                }
                 boolean classNameMatches = matchesFilter(className, textFilter);
 
                 boolean anyMethodMatches = false;
@@ -1173,6 +1186,11 @@ public class AbcStructureProvider extends ComponentProvider {
                     if (!passesMinSizeFilter(method)) {
                         continue;
                     }
+                    if (filter.startsWith("name:") && !namePattern.isEmpty()) {
+                        if (!method.getName().toLowerCase().contains(namePattern)) {
+                            continue;
+                        }
+                    }
                     if (isSpecialFilter && !passesArgFilter(method, filter)) {
                         continue;
                     }
@@ -1221,18 +1239,37 @@ public class AbcStructureProvider extends ComponentProvider {
             }
             return;
         }
-        boolean isSpecialFilter = filter.startsWith("args:") || filter.startsWith("size:");
+        boolean isSpecialFilter = filter.startsWith("args:") || filter.startsWith("size:")
+                || filter.startsWith("name:") || filter.startsWith("class:");
         String textFilter = isSpecialFilter ? "" : filter;
+        String namePattern = "";
+        String classPattern = "";
+        if (filter.startsWith("name:")) {
+            namePattern = filter.substring(5).trim().toLowerCase();
+        } else if (filter.startsWith("class:")) {
+            classPattern = filter.substring(6).trim().toLowerCase();
+        }
         int classCount = 0;
         int methodCount = 0;
         if (currentAbcFile != null) {
             for (AbcClass cls : currentAbcFile.getClasses()) {
                 String className = formatClassName(cls.getName());
+                if (filter.startsWith("class:") && !classPattern.isEmpty()
+                        && !className.toLowerCase().contains(classPattern)) {
+                    continue;
+                }
                 boolean classMatches = matchesFilter(className, textFilter);
                 if (classMatches && !isSpecialFilter) {
                     classCount++;
                 }
                 for (AbcMethod method : cls.getMethods()) {
+                    if (filter.startsWith("name:") && !namePattern.isEmpty()) {
+                        if (!method.getName().toLowerCase().contains(namePattern)) {
+                            continue;
+                        }
+                        methodCount++;
+                        continue;
+                    }
                     if (matchesFilter(method.getName(), textFilter)
                             && (!isSpecialFilter || passesArgFilter(method, filter))) {
                         methodCount++;
