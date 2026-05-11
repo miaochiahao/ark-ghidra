@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.TreeSet;
 
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
@@ -28,11 +29,13 @@ import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JSplitPane;
 import javax.swing.JTextArea;
 import javax.swing.JToolBar;
 import javax.swing.ListSelectionModel;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import javax.swing.event.ListSelectionListener;
 
 import docking.ComponentProvider;
 import docking.Tool;
@@ -44,12 +47,17 @@ import docking.WindowPosition;
  * <p>Notes are stored in memory keyed by method/class name and persist
  * for the duration of the session. When the current view changes, the
  * notes for the new method are loaded automatically.</p>
+ *
+ * <p>The panel uses a split layout: the left side shows all annotated
+ * keys (sorted), and the right side shows the notes for the selected key.</p>
  */
 public class NotesProvider extends ComponentProvider {
 
     private final JPanel mainPanel;
     private final JTextArea notesArea;
     private final JLabel headerLabel;
+    private final JList<String> annotatedList;
+    private final DefaultListModel<String> annotatedModel;
 
     private final Map<String, String> notesMap = new HashMap<>();
     private String currentKey = "";
@@ -82,9 +90,24 @@ public class NotesProvider extends ComponentProvider {
             }
         });
 
-        mainPanel = new JPanel(new BorderLayout());
-        mainPanel.add(headerLabel, BorderLayout.NORTH);
-        mainPanel.add(new JScrollPane(notesArea), BorderLayout.CENTER);
+        annotatedModel = new DefaultListModel<>();
+        annotatedList = new JList<>(annotatedModel);
+        annotatedList.setFont(new Font("Monospaced", Font.PLAIN, 11));
+        annotatedList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        annotatedList.addListSelectionListener((ListSelectionListener) e -> {
+            if (!e.getValueIsAdjusting()) {
+                String selected = annotatedList.getSelectedValue();
+                if (selected != null) {
+                    setCurrentKey(selected);
+                }
+            }
+        });
+
+        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT,
+                new JScrollPane(annotatedList),
+                new JScrollPane(notesArea));
+        splitPane.setDividerLocation(150);
+        splitPane.setResizeWeight(0.3);
 
         JToolBar toolBar = new JToolBar();
         toolBar.setFloatable(false);
@@ -96,6 +119,10 @@ public class NotesProvider extends ComponentProvider {
         showAllButton.setToolTipText("Show all notes across all methods");
         showAllButton.addActionListener(e -> showAllNotes());
         toolBar.add(showAllButton);
+
+        mainPanel = new JPanel(new BorderLayout());
+        mainPanel.add(headerLabel, BorderLayout.NORTH);
+        mainPanel.add(splitPane, BorderLayout.CENTER);
         mainPanel.add(toolBar, BorderLayout.SOUTH);
 
         setDefaultWindowPosition(WindowPosition.BOTTOM);
@@ -125,6 +152,7 @@ public class NotesProvider extends ComponentProvider {
         notesArea.setEnabled(true);
         notesArea.setCaretPosition(0);
         updating = false;
+        updateAnnotatedList();
     }
 
     /**
@@ -166,6 +194,17 @@ public class NotesProvider extends ComponentProvider {
             notesMap.remove(currentKey);
         } else {
             notesMap.put(currentKey, text);
+        }
+        updateAnnotatedList();
+    }
+
+    private void updateAnnotatedList() {
+        annotatedModel.clear();
+        for (String key : new TreeSet<>(notesMap.keySet())) {
+            String notes = notesMap.get(key);
+            if (notes != null && !notes.trim().isEmpty()) {
+                annotatedModel.addElement(key);
+            }
         }
     }
 

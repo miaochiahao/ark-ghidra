@@ -5,6 +5,11 @@ import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.util.Properties;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
@@ -33,6 +38,8 @@ public class SettingsProvider extends ComponentProvider {
     private static final long DEFAULT_TIMEOUT_MS = 5000L;
     private static final int TIMEOUT_MIN_S = 1;
     private static final int TIMEOUT_MAX_S = 60;
+    private static final String SETTINGS_FILE = System.getProperty("user.home")
+            + "/.ghidra/ark_ghidra_settings.properties";
 
     private final JPanel mainPanel;
     private final JSpinner timeoutSpinner;
@@ -170,6 +177,20 @@ public class SettingsProvider extends ComponentProvider {
 
         setDefaultWindowPosition(WindowPosition.BOTTOM);
         setTitle("Decompile Settings");
+
+        loadSettings();
+
+        ChangeListener autoSave = e -> saveSettings();
+        timeoutSpinner.addChangeListener(autoSave);
+        autoDecompileCheckBox.addChangeListener(autoSave);
+        skipTrivialCheckBox.addChangeListener(autoSave);
+        showInlineNotesCheckBox.addChangeListener(autoSave);
+        showComplexityHeaderCheckBox.addChangeListener(autoSave);
+        autoSaveNotesCheckBox.addChangeListener(autoSave);
+        lineSpacingSlider.addChangeListener(autoSave);
+        tabSizeSpinner.addChangeListener(autoSave);
+        fontFamilyCombo.addActionListener(e -> saveSettings());
+        themeCombo.addActionListener(e -> saveSettings());
     }
 
     @Override
@@ -293,6 +314,79 @@ public class SettingsProvider extends ComponentProvider {
     public void addFontChangeListener(java.awt.event.ActionListener listener) {
         fontFamilyCombo.addActionListener(listener);
         themeCombo.addActionListener(listener);
+    }
+
+    /**
+     * Saves all current settings to the properties file at {@code ~/.ghidra/ark_ghidra_settings.properties}.
+     * Errors are silently ignored — settings persistence is best-effort.
+     */
+    public void saveSettings() {
+        Properties props = new Properties();
+        props.setProperty("timeout.seconds", String.valueOf((Integer) timeoutSpinner.getValue()));
+        props.setProperty("auto.decompile", String.valueOf(autoDecompileCheckBox.isSelected()));
+        props.setProperty("skip.trivial", String.valueOf(skipTrivialCheckBox.isSelected()));
+        props.setProperty("show.inline.notes", String.valueOf(showInlineNotesCheckBox.isSelected()));
+        props.setProperty("show.complexity.header", String.valueOf(showComplexityHeaderCheckBox.isSelected()));
+        props.setProperty("auto.save.notes", String.valueOf(autoSaveNotesCheckBox.isSelected()));
+        props.setProperty("font.family", getFontFamily());
+        props.setProperty("line.spacing", String.valueOf(lineSpacingSlider.getValue()));
+        props.setProperty("theme", getTheme());
+        props.setProperty("tab.size", String.valueOf((Integer) tabSizeSpinner.getValue()));
+        try {
+            File file = new File(SETTINGS_FILE);
+            file.getParentFile().mkdirs();
+            try (FileOutputStream out = new FileOutputStream(file)) {
+                props.store(out, "ArkTS Decompiler Settings");
+            }
+        } catch (IOException e) {
+            // ignore — settings are optional
+        }
+    }
+
+    private void loadSettings() {
+        File file = new File(SETTINGS_FILE);
+        if (!file.exists()) {
+            return;
+        }
+        Properties props = new Properties();
+        try (FileInputStream in = new FileInputStream(file)) {
+            props.load(in);
+        } catch (IOException e) {
+            return;
+        }
+        try {
+            int timeout = Integer.parseInt(props.getProperty("timeout.seconds", "5"));
+            timeoutSpinner.setValue(Math.max(TIMEOUT_MIN_S, Math.min(TIMEOUT_MAX_S, timeout)));
+            timeoutMs = timeout * 1000L;
+        } catch (NumberFormatException e) {
+            // ignore
+        }
+        autoDecompileCheckBox.setSelected(
+                Boolean.parseBoolean(props.getProperty("auto.decompile", "true")));
+        skipTrivialCheckBox.setSelected(
+                Boolean.parseBoolean(props.getProperty("skip.trivial", "false")));
+        showInlineNotesCheckBox.setSelected(
+                Boolean.parseBoolean(props.getProperty("show.inline.notes", "true")));
+        showComplexityHeaderCheckBox.setSelected(
+                Boolean.parseBoolean(props.getProperty("show.complexity.header", "true")));
+        autoSaveNotesCheckBox.setSelected(
+                Boolean.parseBoolean(props.getProperty("auto.save.notes", "false")));
+        String fontFamily = props.getProperty("font.family", "Monospaced");
+        fontFamilyCombo.setSelectedItem(fontFamily);
+        try {
+            int spacing = Integer.parseInt(props.getProperty("line.spacing", "2"));
+            lineSpacingSlider.setValue(Math.max(0, Math.min(8, spacing)));
+        } catch (NumberFormatException e) {
+            // ignore
+        }
+        String theme = props.getProperty("theme", "Auto (follow Ghidra)");
+        themeCombo.setSelectedItem(theme);
+        try {
+            int tabSize = Integer.parseInt(props.getProperty("tab.size", "4"));
+            tabSizeSpinner.setValue(tabSize);
+        } catch (NumberFormatException e) {
+            // ignore
+        }
     }
 
     private void resetToDefaults() {
