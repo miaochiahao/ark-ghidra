@@ -37,6 +37,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
 
     private AbcStructureProvider abcStructureProvider;
     private ArkTSOutputProvider outputProvider;
+    private XrefProvider xrefProvider;
 
     public ArkGhidraPlugin(PluginTool tool) {
         super(tool);
@@ -48,11 +49,23 @@ public class ArkGhidraPlugin extends ProgramPlugin {
     private void createProviders(PluginTool tool) {
         abcStructureProvider = new AbcStructureProvider(tool, PLUGIN_NAME);
         outputProvider = new ArkTSOutputProvider(tool, PLUGIN_NAME);
+        xrefProvider = new XrefProvider(tool, PLUGIN_NAME);
         abcStructureProvider.setNavigationListener(this::onMethodDoubleClicked);
         abcStructureProvider.setClassNavigationListener(this::onClassClicked);
         outputProvider.setDecompileFileCallback(this::decompileWholeFile);
+        xrefProvider.setNavigationListener(offset -> outputProvider.scrollToOffset(offset));
+        outputProvider.setSymbolHighlightCallback(word -> {
+            if (word.isEmpty()) {
+                xrefProvider.showXrefs("", "", outputProvider.getSymbolHighlighter());
+            } else {
+                xrefProvider.showXrefs(
+                        word, outputProvider.getLastCode(), outputProvider.getSymbolHighlighter());
+            }
+            tool.showComponentProvider(xrefProvider, true);
+        });
         tool.addComponentProvider(abcStructureProvider, false);
         tool.addComponentProvider(outputProvider, false);
+        tool.addComponentProvider(xrefProvider, false);
     }
 
     private void onMethodDoubleClicked(AbcMethod method) {
@@ -186,6 +199,9 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             }
             if (outputProvider != null) {
                 pluginTool.removeComponentProvider(outputProvider);
+            }
+            if (xrefProvider != null) {
+                pluginTool.removeComponentProvider(xrefProvider);
             }
         }
     }

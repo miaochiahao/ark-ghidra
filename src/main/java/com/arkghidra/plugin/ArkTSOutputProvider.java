@@ -17,6 +17,7 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.List;
+import java.util.function.Consumer;
 
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
@@ -33,6 +34,7 @@ import javax.swing.JTextField;
 import javax.swing.JTextPane;
 import javax.swing.JToolBar;
 import javax.swing.KeyStroke;
+import javax.swing.ToolTipManager;
 import javax.swing.event.CaretEvent;
 import javax.swing.event.CaretListener;
 import javax.swing.event.DocumentEvent;
@@ -110,6 +112,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private int searchMatchIndex = -1;
 
     private Runnable decompileFileCallback;
+    private Consumer<String> symbolHighlightCallback;
 
     public ArkTSOutputProvider(Tool tool, String owner) {
         super(tool, "ArkTS Output", owner);
@@ -117,9 +120,16 @@ public class ArkTSOutputProvider extends ComponentProvider {
         colorizer = new ArkTSColorizer();
         symbolHighlighter = new SymbolHighlighter();
 
-        codePane = new JTextPane();
+        codePane = new JTextPane() {
+            @Override
+            public String getToolTipText(MouseEvent event) {
+                return computeTooltip(event);
+            }
+        };
         codePane.setEditable(false);
         codePane.setFont(new Font("Monospaced", Font.PLAIN, 13));
+        ToolTipManager.sharedInstance().registerComponent(codePane);
+        ToolTipManager.sharedInstance().setDismissDelay(3000);
         installClickToHighlight();
         installCtrlFBinding();
         installZoomBindings();
@@ -491,11 +501,17 @@ public class ArkTSOutputProvider extends ComponentProvider {
             }
         }
         updateStatusBar();
+        if (symbolHighlightCallback != null) {
+            symbolHighlightCallback.accept(word);
+        }
     }
 
     private void clearSymbolHighlights() {
         codePane.getHighlighter().removeAllHighlights();
         updateStatusBar();
+        if (symbolHighlightCallback != null) {
+            symbolHighlightCallback.accept("");
+        }
     }
 
     // --- Ctrl+F search bar ---
@@ -938,6 +954,22 @@ public class ArkTSOutputProvider extends ComponentProvider {
         closeSearchBar();
     }
 
+    // --- Tooltip ---
+
+    private String computeTooltip(MouseEvent event) {
+        int offset = codePane.viewToModel2D(event.getPoint());
+        String text = codePane.getText();
+        String word = symbolHighlighter.extractWordAt(text, offset);
+        if (word.isEmpty() || ArkTSColorizer.isKeyword(word)) {
+            return null;
+        }
+        int count = symbolHighlighter.findAllOccurrences(text, word).size();
+        if (count < 2) {
+            return null;
+        }
+        return "\"" + word + "\" \u2014 " + count + " occurrences";
+    }
+
     /**
      * Sets the callback invoked when the user clicks the "Decompile File" toolbar button.
      *
@@ -945,5 +977,52 @@ public class ArkTSOutputProvider extends ComponentProvider {
      */
     public void setDecompileFileCallback(Runnable callback) {
         this.decompileFileCallback = callback;
+    }
+
+    /**
+     * Sets a callback that is invoked whenever the highlighted symbol changes.
+     * The callback receives the new symbol name, or an empty string when highlights are cleared.
+     *
+     * @param callback the consumer to invoke, or null to disable
+     */
+    public void setSymbolHighlightCallback(Consumer<String> callback) {
+        this.symbolHighlightCallback = callback;
+    }
+
+    /**
+     * Returns the last decompiled code text shown in this panel.
+     *
+     * @return the last code, or empty string if none
+     */
+    public String getLastCode() {
+        return lastCode;
+    }
+
+    /**
+     * Returns the symbol highlighter used by this panel.
+     *
+     * @return the symbol highlighter
+     */
+    public SymbolHighlighter getSymbolHighlighter() {
+        return symbolHighlighter;
+    }
+
+    /**
+     * Scrolls the code pane to the given character offset and requests focus.
+     *
+     * @param offset the character offset to navigate to
+     */
+    public void scrollToOffset(int offset) {
+        if (offset < 0) {
+            return;
+        }
+        try {
+            codePane.setCaretPosition(offset);
+            codePane.scrollRectToVisible(
+                    codePane.modelToView2D(offset).getBounds());
+            codePane.requestFocusInWindow();
+        } catch (BadLocationException ex) {
+            Msg.warn(OWNER, "scrollToOffset error: " + ex.getMessage());
+        }
     }
 }
