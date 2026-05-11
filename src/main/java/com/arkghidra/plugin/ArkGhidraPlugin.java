@@ -181,12 +181,17 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         settingsProvider.addSettingsChangeListener(e -> {
             outputProvider.setLineSpacing(settingsProvider.getLineSpacing());
             outputProvider.setTabSize(settingsProvider.getTabSize());
+            // Rebuild tree when badge setting changes
+            if (abcStructureProvider.getAbcFile() != null) {
+                abcStructureProvider.setAbcFile(abcStructureProvider.getAbcFile());
+            }
         });
 
 
         notesProvider = new NotesProvider(tool, PLUGIN_NAME);
         tool.addComponentProvider(notesProvider, false);
         abcStructureProvider.setNotesProvider(notesProvider);
+        abcStructureProvider.setSettingsProvider(settingsProvider);
         abcStructureProvider.setShowCallersCallback(this::showAllCallers);
         abcStructureProvider.setShowImplementationsCallback(this::showImplementations);
         shortcutsProvider = new ShortcutsProvider(tool, PLUGIN_NAME);

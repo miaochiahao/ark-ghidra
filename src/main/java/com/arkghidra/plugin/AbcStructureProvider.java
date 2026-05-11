@@ -95,6 +95,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private Runnable decompileAllAbilitiesCallback;
     private Runnable refreshCallback;
     private NotesProvider notesProvider;
+    private SettingsProvider settingsProvider;
     private JToggleButton filterPublicButton;
     private JToggleButton filterPrivateButton;
     private JToggleButton filterStaticButton;
@@ -392,6 +393,15 @@ public class AbcStructureProvider extends ComponentProvider {
      */
     public void setNotesProvider(NotesProvider provider) {
         this.notesProvider = provider;
+    }
+
+    /**
+     * Sets the settings provider so the tree can respect display settings.
+     *
+     * @param provider the settings provider
+     */
+    public void setSettingsProvider(SettingsProvider provider) {
+        this.settingsProvider = provider;
     }
 
     private void showTreeContextMenu(MouseEvent e) {
@@ -727,11 +737,24 @@ public class AbcStructureProvider extends ComponentProvider {
             statsLabel.setText("  ");
             return;
         }
-        int totalClasses = currentAbcFile.getClasses().size();
         int totalMethods = 0;
         long totalBytes = 0;
+        int abilityCount = 0;
+        int pageCount = 0;
+        int nativeCount = 0;
+        int classCount = 0;
         for (AbcClass cls : currentAbcFile.getClasses()) {
             totalMethods += cls.getMethods().size();
+            String badge = getClassTypeBadge(cls);
+            if ("[A] ".equals(badge)) {
+                abilityCount++;
+            } else if ("[P] ".equals(badge)) {
+                pageCount++;
+            } else if ("[N] ".equals(badge)) {
+                nativeCount++;
+            } else {
+                classCount++;
+            }
             for (AbcMethod method : cls.getMethods()) {
                 if (method.getCodeOff() != 0) {
                     try {
@@ -745,8 +768,9 @@ public class AbcStructureProvider extends ComponentProvider {
                 }
             }
         }
-        statsLabel.setText(totalClasses + " classes · " + totalMethods + " methods · "
-                + (totalBytes / 1024) + " KB");
+        statsLabel.setText("[A]:" + abilityCount + " [P]:" + pageCount
+                + " [N]:" + nativeCount + " [C]:" + classCount
+                + " · " + totalMethods + " methods · " + (totalBytes / 1024) + " KB");
     }
 
     /**
@@ -1207,7 +1231,11 @@ public class AbcStructureProvider extends ComponentProvider {
                             @Override
                             public String toString() {
                                 AbcClass c = (AbcClass) getUserObject();
-                                return getClassTypeBadge(c) + formatClassName(c.getName());
+                                boolean showBadges = settingsProvider == null
+                                        || settingsProvider.isShowClassTypeBadges();
+                                return showBadges
+                                        ? getClassTypeBadge(c) + formatClassName(c.getName())
+                                        : formatClassName(c.getName());
                             }
                         };
                 classesNode.add(classNode);
