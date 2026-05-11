@@ -534,17 +534,23 @@ class InstructionHandler {
         // --- Define function ---
         if (opcode == ArkOpcodesCompat.DEFINEFUNC) {
             int methodIdx = (int) operands.get(0).getValue();
+            String funcName = resolveMethodName(ctx, methodIdx);
+            if (funcName == null || funcName.isEmpty()) {
+                funcName = "func_" + methodIdx;
+            }
             return new StatementResult(null,
-                    new ArkTSExpression.VariableExpression(
-                            "func_" + methodIdx));
+                    new ArkTSExpression.VariableExpression(funcName));
         }
 
         // --- Define method ---
         if (opcode == ArkOpcodesCompat.DEFINEMETHOD) {
             int methodIdx = (int) operands.get(0).getValue();
+            String methodName = resolveMethodName(ctx, methodIdx);
+            if (methodName == null || methodName.isEmpty()) {
+                methodName = "method_" + methodIdx;
+            }
             return new StatementResult(null,
-                    new ArkTSExpression.VariableExpression(
-                            "method_" + methodIdx));
+                    new ArkTSExpression.VariableExpression(methodName));
         }
 
         // --- Define class with buffer ---
