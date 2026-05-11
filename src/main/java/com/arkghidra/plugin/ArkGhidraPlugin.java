@@ -77,6 +77,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
     private StatsProvider statsProvider;
     private SettingsProvider settingsProvider;
     private NotesProvider notesProvider;
+    private final java.util.LinkedList<String> recentQuickOpenQueries = new java.util.LinkedList<>();
     private ShortcutsProvider shortcutsProvider;
 
     public ArkGhidraPlugin(PluginTool tool) {
@@ -388,6 +389,10 @@ public class ArkGhidraPlugin extends ProgramPlugin {
     }
 
     private void showQuickOpen() {
+        showQuickOpenWithQuery("");
+    }
+
+    private void showQuickOpenWithQuery(String initialQuery) {
         AbcFile abcFile = getCurrentAbcFile();
         if (abcFile == null) {
             return;
@@ -395,6 +400,16 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         // Build flat list: "ClassName" and "ClassName.methodName (N args)"
         List<String> allItems = new ArrayList<>();
         List<Object[]> itemData = new ArrayList<>(); // [type, AbcClass/AbcMethod, AbcClass]
+
+        // Add recent queries at the top
+        if (!recentQuickOpenQueries.isEmpty()) {
+            allItems.add("--- Recent Searches ---");
+            itemData.add(new Object[]{"separator", null, null});
+            for (String q : recentQuickOpenQueries) {
+                allItems.add("🔍 " + q);
+                itemData.add(new Object[]{"query", q, null});
+            }
+        }
 
         // Add recent items at the top (from history)
         java.util.List<String> recentNames = historyProvider.getRecentNames(5);
@@ -428,7 +443,10 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             listModel.addElement(item);
         }
 
-        JTextField filterField = new JTextField(30);
+        JTextField filterField = new JTextField(initialQuery, 30);
+        if (!initialQuery.isEmpty()) {
+            filterField.selectAll();
+        }
         JList<String> resultList = new JList<>(listModel);
         resultList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         resultList.setFont(new java.awt.Font("Monospaced", java.awt.Font.PLAIN, 12));
@@ -529,6 +547,15 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         filterField.getActionMap().put("navigate", new javax.swing.AbstractAction() {
             @Override
             public void actionPerformed(java.awt.event.ActionEvent e) {
+                // Save non-empty query to recent list
+                String q = filterField.getText().trim();
+                if (!q.isEmpty()) {
+                    recentQuickOpenQueries.remove(q);
+                    recentQuickOpenQueries.addFirst(q);
+                    while (recentQuickOpenQueries.size() > 10) {
+                        recentQuickOpenQueries.removeLast();
+                    }
+                }
                 navigateToQuickOpenSelection(
                         resultList, listModel, allItems, itemData, dialog);
             }
@@ -623,6 +650,12 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                 Object[] data = itemData.get(i);
                 if ("separator".equals(data[0])) {
                     return; // ignore separator clicks
+                }
+                if ("query".equals(data[0])) {
+                    // Re-open Quick Open with this query pre-filled
+                    dialog.dispose();
+                    javax.swing.SwingUtilities.invokeLater(() -> showQuickOpenWithQuery((String) data[1]));
+                    return;
                 }
                 dialog.dispose();
                 if ("class".equals(data[0])) {

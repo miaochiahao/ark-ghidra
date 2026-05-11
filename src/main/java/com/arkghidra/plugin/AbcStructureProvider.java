@@ -1317,7 +1317,21 @@ public class AbcStructureProvider extends ComponentProvider {
         String filter = filterField.getText();
         if (FILTER_PLACEHOLDER.equals(filter) || filter.isEmpty()) {
             if (currentAbcFile != null) {
-                filterCountLabel.setText(currentAbcFile.getClasses().size() + " classes");
+                // Show class type breakdown when no filter is active
+                int a = 0, p = 0, n = 0, c = 0;
+                for (AbcClass cls : currentAbcFile.getClasses()) {
+                    String badge = getClassTypeBadge(cls);
+                    if ("[A] ".equals(badge)) {
+                        a++;
+                    } else if ("[P] ".equals(badge)) {
+                        p++;
+                    } else if ("[N] ".equals(badge)) {
+                        n++;
+                    } else {
+                        c++;
+                    }
+                }
+                filterCountLabel.setText("[A]:" + a + " [P]:" + p + " [N]:" + n + " [C]:" + c);
             } else {
                 filterCountLabel.setText("");
             }
