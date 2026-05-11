@@ -56,6 +56,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
     private XrefProvider xrefProvider;
     private HapInfoProvider hapInfoProvider;
     private CallGraphProvider callGraphProvider;
+    private GlobalSearchProvider globalSearchProvider;
 
     public ArkGhidraPlugin(PluginTool tool) {
         super(tool);
@@ -92,6 +93,12 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         callGraphProvider = new CallGraphProvider(tool, PLUGIN_NAME);
         callGraphProvider.setNavigationCallback(this::jumpToDefinition);
         tool.addComponentProvider(callGraphProvider, false);
+        globalSearchProvider = new GlobalSearchProvider(tool, PLUGIN_NAME);
+        globalSearchProvider.setNavigationCallback(this::navigateToSearchResult);
+        globalSearchProvider.setSearchCallback(this::performGlobalSearch);
+        tool.addComponentProvider(globalSearchProvider, false);
+        outputProvider.setGlobalSearchCallback(() ->
+                tool.showComponentProvider(globalSearchProvider, true));
     }
 
     private void onMethodDoubleClicked(AbcMethod method) {
@@ -227,6 +234,75 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                     "// Decompilation failed: " + e.getMessage());
         } finally {
             outputProvider.hideLoading();
+        }
+    }
+
+    private void performGlobalSearch(String query) {
+        AbcFile abcFile = getCurrentAbcFile();
+        if (abcFile == null) {
+            globalSearchProvider.finishSearch(query);
+            return;
+        }
+        try {
+            byte[] abcData = DecompileToArkTSAction.readAbcData(getCurrentProgram());
+            if (abcData == null) {
+                globalSearchProvider.finishSearch(query);
+                return;
+            }
+            AbcFile freshFile = AbcFile.parse(abcData);
+            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+            String lowerQuery = query.toLowerCase();
+            for (AbcClass cls : freshFile.getClasses()) {
+                String className = AbcStructureProvider.formatClassName(cls.getName());
+                String simpleName = className.contains(".")
+                        ? className.substring(className.lastIndexOf('.') + 1)
+                        : className;
+                for (AbcMethod method : cls.getMethods()) {
+                    try {
+                        AbcCode code = freshFile.getCodeForMethod(method);
+                        String decompiled = decompiler.decompileMethod(method, code, freshFile);
+                        String[] lines = decompiled.split("\n", -1);
+                        for (int i = 0; i < lines.length; i++) {
+                            if (lines[i].toLowerCase().contains(lowerQuery)) {
+                                globalSearchProvider.addResult(
+                                        simpleName, method.getName(), lines[i], i + 1);
+                            }
+                        }
+                    } catch (Exception e) {
+                        // skip methods that fail to decompile
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Msg.warn(OWNER, "Global search failed: " + e.getMessage());
+        }
+        globalSearchProvider.finishSearch(query);
+        tool.showComponentProvider(globalSearchProvider, true);
+    }
+
+    private void navigateToSearchResult(String[] classAndMethod) {
+        if (classAndMethod == null || classAndMethod.length < 2) {
+            return;
+        }
+        String targetClass = classAndMethod[0];
+        String targetMethod = classAndMethod[1];
+        AbcFile abcFile = getCurrentAbcFile();
+        if (abcFile == null) {
+            return;
+        }
+        for (AbcClass cls : abcFile.getClasses()) {
+            String simpleName = AbcStructureProvider.formatClassName(cls.getName());
+            if (simpleName.contains(".")) {
+                simpleName = simpleName.substring(simpleName.lastIndexOf('.') + 1);
+            }
+            if (simpleName.equals(targetClass)) {
+                for (AbcMethod method : cls.getMethods()) {
+                    if (method.getName().equals(targetMethod)) {
+                        onMethodDoubleClicked(method);
+                        return;
+                    }
+                }
+            }
         }
     }
 
@@ -435,6 +511,9 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             }
             if (callGraphProvider != null) {
                 pluginTool.removeComponentProvider(callGraphProvider);
+            }
+            if (globalSearchProvider != null) {
+                pluginTool.removeComponentProvider(globalSearchProvider);
             }
         }
     }

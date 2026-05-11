@@ -170,6 +170,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private Runnable decompileFileCallback;
     private Consumer<String> symbolHighlightCallback;
     private Consumer<String> jumpToDefinitionCallback;
+    private Runnable globalSearchCallback;
 
     private JButton backButton;
     private JButton forwardButton;
@@ -653,14 +654,25 @@ public class ArkTSOutputProvider extends ComponentProvider {
     // --- Ctrl+F search bar ---
 
     private void installCtrlFBinding() {
-        KeyStroke ctrlF = KeyStroke.getKeyStroke(
-                KeyEvent.VK_F, Toolkit.getDefaultToolkit()
-                        .getMenuShortcutKeyMaskEx());
+        int mask = Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
+        KeyStroke ctrlF = KeyStroke.getKeyStroke(KeyEvent.VK_F, mask);
         codePane.getInputMap(JComponent.WHEN_FOCUSED).put(ctrlF, "openSearch");
         codePane.getActionMap().put("openSearch", new AbstractAction() {
             @Override
             public void actionPerformed(ActionEvent e) {
                 openSearchBar();
+            }
+        });
+
+        KeyStroke ctrlShiftF = KeyStroke.getKeyStroke(
+                KeyEvent.VK_F, mask | java.awt.event.InputEvent.SHIFT_DOWN_MASK);
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(ctrlShiftF, "openGlobalSearch");
+        codePane.getActionMap().put("openGlobalSearch", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (globalSearchCallback != null) {
+                    globalSearchCallback.run();
+                }
             }
         });
     }
@@ -1252,6 +1264,15 @@ public class ArkTSOutputProvider extends ComponentProvider {
      */
     public void setJumpToDefinitionCallback(Consumer<String> callback) {
         this.jumpToDefinitionCallback = callback;
+    }
+
+    /**
+     * Sets a callback invoked when the user presses Ctrl+Shift+F to open the global search panel.
+     *
+     * @param callback the runnable to invoke, or null to disable
+     */
+    public void setGlobalSearchCallback(Runnable callback) {
+        this.globalSearchCallback = callback;
     }
 
     /**
