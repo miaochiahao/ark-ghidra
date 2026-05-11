@@ -40,6 +40,7 @@ public class SettingsProvider extends ComponentProvider {
     private final JCheckBox skipTrivialCheckBox;
     private final JCheckBox showInlineNotesCheckBox;
     private final JCheckBox showComplexityHeaderCheckBox;
+    private final JCheckBox autoSaveNotesCheckBox;
     private final JComboBox<String> fontFamilyCombo;
     private final JSlider lineSpacingSlider;
     private final JComboBox<String> themeCombo;
@@ -78,6 +79,10 @@ public class SettingsProvider extends ComponentProvider {
         showComplexityHeaderCheckBox = new JCheckBox("Show complexity header in method output", true);
         showComplexityHeaderCheckBox.setToolTipText(
                 "Show bytecode size and complexity label at the top of each decompiled method");
+
+        autoSaveNotesCheckBox = new JCheckBox("Auto-save notes on program close", false);
+        autoSaveNotesCheckBox.setToolTipText(
+                "Automatically export notes to a file when Ghidra closes");
 
         lineSpacingSlider = new JSlider(0, 8, 2);
         lineSpacingSlider.setMajorTickSpacing(2);
@@ -129,7 +134,10 @@ public class SettingsProvider extends ComponentProvider {
         gbc.gridy = 5;
         formPanel.add(showComplexityHeaderCheckBox, gbc);
 
-        gbc.gridx = 0; gbc.gridy = 6; gbc.gridwidth = 1;
+        gbc.gridy = 6;
+        formPanel.add(autoSaveNotesCheckBox, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 7; gbc.gridwidth = 1;
         formPanel.add(new JLabel("Spacing:"), gbc);
         gbc.gridx = 1; gbc.gridwidth = 2;
         formPanel.add(lineSpacingSlider, gbc);
@@ -215,6 +223,15 @@ public class SettingsProvider extends ComponentProvider {
     }
 
     /**
+     * Returns whether notes should be auto-saved when the program closes.
+     *
+     * @return true if auto-save is enabled
+     */
+    public boolean isAutoSaveNotes() {
+        return autoSaveNotesCheckBox.isSelected();
+    }
+
+    /**
      * Returns the current line spacing value (0=compact, 8=spacious).
      *
      * @return line spacing value in the range [0, 8]
@@ -243,6 +260,7 @@ public class SettingsProvider extends ComponentProvider {
         skipTrivialCheckBox.addChangeListener(listener);
         showInlineNotesCheckBox.addChangeListener(listener);
         showComplexityHeaderCheckBox.addChangeListener(listener);
+        autoSaveNotesCheckBox.addChangeListener(listener);
         lineSpacingSlider.addChangeListener(listener);
         tabSizeSpinner.addChangeListener(listener);
     }
@@ -284,6 +302,7 @@ public class SettingsProvider extends ComponentProvider {
         skipTrivialCheckBox.setSelected(false);
         showInlineNotesCheckBox.setSelected(true);
         showComplexityHeaderCheckBox.setSelected(true);
+        autoSaveNotesCheckBox.setSelected(false);
         fontFamilyCombo.setSelectedItem("Monospaced");
         lineSpacingSlider.setValue(2);
         themeCombo.setSelectedItem("Auto (follow Ghidra)");

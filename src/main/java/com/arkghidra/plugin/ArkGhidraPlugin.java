@@ -608,14 +608,30 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             outputProvider.showDecompiledCode(method.getName(), displayResult, clsName);
             historyProvider.recordNavigation(method.getName(), result);
             notesProvider.setCurrentKey(method.getName());
-            // Update method info in status bar
-            if (code != null) {
-                long size = code.getCodeSize();
-                String complexity = size > 200 ? "complex" : size > 50 ? "medium" : "simple";
-                outputProvider.setMethodInfo(size + "b · " + complexity);
-            } else {
-                outputProvider.setMethodInfo("abstract/native");
-            }
+            // Update method info in status bar (async to avoid blocking)
+            final String methodName = method.getName();
+            final long codeSize = code != null ? code.getCodeSize() : 0;
+            new javax.swing.SwingWorker<Integer, Void>() {
+                @Override
+                protected Integer doInBackground() {
+                    return countCallers(abcFile, methodName);
+                }
+                @Override
+                protected void done() {
+                    try {
+                        int callers = get();
+                        String complexity = codeSize > 200 ? "complex"
+                                : codeSize > 50 ? "medium" : "simple";
+                        String info = codeSize > 0
+                                ? codeSize + "b · " + complexity + " · " + callers + " caller"
+                                        + (callers == 1 ? "" : "s")
+                                : "abstract/native";
+                        outputProvider.setMethodInfo(info);
+                    } catch (Exception ex) {
+                        outputProvider.setMethodInfo(codeSize + "b");
+                    }
+                }
+            }.execute();
             tool.showComponentProvider(outputProvider, true);
             List<String> allMethodNames = getAllMethodNames(abcFile);
             callGraphProvider.showCallGraph(method.getName(), result, allMethodNames);
@@ -1149,6 +1165,36 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         return names;
     }
 
+    /**
+     * Counts how many methods in the ABC file call the given method name.
+     * Uses simple string matching on decompiled output — fast but approximate.
+     */
+    private int countCallers(AbcFile abcFile, String methodName) {
+        if (abcFile == null || methodName == null || methodName.isEmpty()) {
+            return 0;
+        }
+        String pattern = methodName + "(";
+        int callerCount = 0;
+        ArkTSDecompiler decompiler = createDecompiler();
+        for (AbcClass cls : abcFile.getClasses()) {
+            for (AbcMethod m : cls.getMethods()) {
+                if (m.getName().equals(methodName) || m.getCodeOff() == 0) {
+                    continue;
+                }
+                try {
+                    AbcCode code = abcFile.getCodeForMethod(m);
+                    String decompiled = decompiler.decompileMethod(m, code, abcFile);
+                    if (decompiled.contains(pattern)) {
+                        callerCount++;
+                    }
+                } catch (Exception e) {
+                    // skip
+                }
+            }
+        }
+        return callerCount;
+    }
+
     private String findClassForMethod(AbcFile abcFile, AbcMethod method) {
         for (AbcClass cls : abcFile.getClasses()) {
             for (AbcMethod m : cls.getMethods()) {
@@ -1309,6 +1355,32 @@ public class ArkGhidraPlugin extends ProgramPlugin {
 
     @Override
     public void cleanup() {
+        // Auto-save notes if enabled
+        if (settingsProvider != null && settingsProvider.isAutoSaveNotes()
+                && notesProvider != null && !notesProvider.getAllNotes().isEmpty()) {
+            try {
+                java.io.File notesFile = new java.io.File(
+                        System.getProperty("user.home"), "ark_ghidra_notes.txt");
+                try (java.io.BufferedWriter writer = new java.io.BufferedWriter(
+                        new java.io.OutputStreamWriter(
+                                new java.io.FileOutputStream(notesFile),
+                                java.nio.charset.StandardCharsets.UTF_8))) {
+                    writer.write("Method Notes (auto-saved)\n");
+                    writer.write("=========================\n\n");
+                    for (java.util.Map.Entry<String, String> entry
+                            : new java.util.TreeMap<>(notesProvider.getAllNotes()).entrySet()) {
+                        if (!entry.getValue().isEmpty()) {
+                            writer.write("## " + entry.getKey() + "\n");
+                            writer.write(entry.getValue());
+                            writer.write("\n\n");
+                        }
+                    }
+                }
+                Msg.info(OWNER, "Auto-saved notes to " + notesFile.getPath());
+            } catch (Exception e) {
+                Msg.warn(OWNER, "Auto-save notes failed: " + e.getMessage());
+            }
+        }
         PluginTool pluginTool = getTool();
         if (pluginTool != null) {
             if (abcStructureProvider != null) {
