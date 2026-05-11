@@ -3,11 +3,14 @@ package com.arkghidra.plugin;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Font;
+import java.awt.event.ActionEvent;
+import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
 import java.util.function.BiConsumer;
 
+import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
@@ -18,6 +21,7 @@ import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 import javax.swing.JTree;
+import javax.swing.KeyStroke;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.event.TreeSelectionEvent;
@@ -64,6 +68,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private MethodNavigationListener navigationListener;
     private ClassNavigationListener classNavigationListener;
     private BiConsumer<AbcClass, File> exportClassCallback;
+    private java.util.function.Consumer<AbcClass> copyAsArkTSCallback;
 
     public AbcStructureProvider(Tool tool, String owner) {
         super(tool, "ABC Structure", owner);
@@ -93,6 +98,16 @@ public class AbcStructureProvider extends ComponentProvider {
                 if (e.isPopupTrigger()) {
                     showTreeContextMenu(e);
                 }
+            }
+        });
+
+        // Enter key triggers decompile on the selected node
+        structureTree.getInputMap(JComponent.WHEN_FOCUSED)
+                .put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "activateNode");
+        structureTree.getActionMap().put("activateNode", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                handleDoubleClick();
             }
         });
 
@@ -169,6 +184,15 @@ public class AbcStructureProvider extends ComponentProvider {
         this.exportClassCallback = cb;
     }
 
+    /**
+     * Sets the callback invoked when the user chooses "Copy as ArkTS" for a class node.
+     *
+     * @param cb consumer that receives the selected AbcClass
+     */
+    public void setCopyAsArkTSCallback(java.util.function.Consumer<AbcClass> cb) {
+        this.copyAsArkTSCallback = cb;
+    }
+
     private void showTreeContextMenu(MouseEvent e) {
         TreePath path = structureTree.getPathForLocation(e.getX(), e.getY());
         if (path == null) {
@@ -227,6 +251,13 @@ public class AbcStructureProvider extends ComponentProvider {
                 }
             });
             menu.add(exportItem);
+
+            JMenuItem copyArkTSItem = new JMenuItem("Copy as ArkTS");
+            copyArkTSItem.setEnabled(copyAsArkTSCallback != null);
+            if (copyAsArkTSCallback != null) {
+                copyArkTSItem.addActionListener(ev -> copyAsArkTSCallback.accept(cls));
+            }
+            menu.add(copyArkTSItem);
 
             menu.show(structureTree, e.getX(), e.getY());
         } else if (userObj instanceof String) {

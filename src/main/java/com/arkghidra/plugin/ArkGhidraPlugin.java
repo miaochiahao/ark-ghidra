@@ -75,6 +75,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         abcStructureProvider.setNavigationListener(this::onMethodDoubleClicked);
         abcStructureProvider.setClassNavigationListener(this::onClassClicked);
         abcStructureProvider.setExportClassCallback(this::exportClassToFile);
+        abcStructureProvider.setCopyAsArkTSCallback(this::copyClassAsArkTS);
         outputProvider.setDecompileFileCallback(this::decompileWholeFile);
         outputProvider.setJumpToDefinitionCallback(this::jumpToDefinition);
         xrefProvider.setNavigationListener(offset -> outputProvider.scrollToOffset(offset));
@@ -217,6 +218,33 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             Msg.error(OWNER, "Export failed: " + e.getMessage(), e);
         } catch (Exception e) {
             Msg.error(OWNER, "Export decompilation failed: " + e.getMessage(), e);
+        }
+    }
+
+    private void copyClassAsArkTS(AbcClass abcClass) {
+        Program program = getCurrentProgram();
+        if (program == null) {
+            return;
+        }
+        try {
+            byte[] abcData = DecompileToArkTSAction.readAbcData(program);
+            if (abcData == null) {
+                return;
+            }
+            AbcFile abcFile = AbcFile.parse(abcData);
+            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+            StringBuilder sb = new StringBuilder();
+            for (AbcMethod method : abcClass.getMethods()) {
+                AbcCode code = abcFile.getCodeForMethod(method);
+                sb.append(decompiler.decompileMethod(method, code, abcFile));
+                sb.append("\n\n");
+            }
+            java.awt.Toolkit.getDefaultToolkit().getSystemClipboard()
+                    .setContents(new java.awt.datatransfer.StringSelection(sb.toString()), null);
+            String className = AbcStructureProvider.formatClassName(abcClass.getName());
+            Msg.info(OWNER, "Copied class to clipboard: " + className);
+        } catch (Exception e) {
+            Msg.warn(OWNER, "Copy as ArkTS failed: " + e.getMessage());
         }
     }
 
