@@ -89,6 +89,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         abcStructureProvider.setExportClassCallback(this::exportClassToFile);
         abcStructureProvider.setExportReportCallback(this::exportHapReport);
         abcStructureProvider.setCopyAsArkTSCallback(this::copyClassAsArkTS);
+        abcStructureProvider.setDecompileAllAbilitiesCallback(this::decompileAllAbilities);
         outputProvider.setDecompileFileCallback(this::decompileWholeFile);
         outputProvider.setExportAllCallback(this::exportAllClasses);
         outputProvider.setJumpToDefinitionCallback(this::jumpToDefinition);
@@ -145,6 +146,8 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         outputProvider.setAddBookmarkCallback(this::addCurrentBookmark);
         outputProvider.setQuickOpenCallback(this::showQuickOpen);
         outputProvider.setPinCallback(this::pinCurrentView);
+        outputProvider.setPrevClassCallback(() -> navigateClass(-1));
+        outputProvider.setNextClassCallback(() -> navigateClass(1));
         historyProvider = new HistoryProvider(tool, PLUGIN_NAME);
         historyProvider.setRestoreCallback((name, code) -> outputProvider.showDecompiledCode(name, code));
         tool.addComponentProvider(historyProvider, false);
@@ -158,6 +161,98 @@ public class ArkGhidraPlugin extends ProgramPlugin {
     private void showAllCallers(String methodName) {
         tool.showComponentProvider(globalSearchProvider, true);
         globalSearchProvider.triggerSearch(methodName + "(");
+    }
+
+    private void navigateClass(int direction) {
+        AbcFile abcFile = getCurrentAbcFile();
+        if (abcFile == null) {
+            return;
+        }
+        List<AbcClass> classes = abcFile.getClasses();
+        if (classes.isEmpty()) {
+            return;
+        }
+        String currentName = outputProvider.getLastClassName();
+        int currentIdx = -1;
+        for (int i = 0; i < classes.size(); i++) {
+            String clsName = AbcStructureProvider.formatClassName(classes.get(i).getName());
+            String simpleName = clsName.contains(".")
+                    ? clsName.substring(clsName.lastIndexOf('.') + 1) : clsName;
+            if (simpleName.equals(currentName) || clsName.equals(currentName)) {
+                currentIdx = i;
+                break;
+            }
+        }
+        int nextIdx = (currentIdx + direction + classes.size()) % classes.size();
+        onClassClicked(classes.get(nextIdx));
+        abcStructureProvider.selectClass(classes.get(nextIdx));
+    }
+
+    private void decompileAllAbilities() {
+        Program program = getCurrentProgram();
+        if (program == null) {
+            outputProvider.showMessage("No program is open.");
+            return;
+        }
+        AbcFile abcFile = getCurrentAbcFile();
+        if (abcFile == null) {
+            outputProvider.showMessage("// Could not read ABC data");
+            return;
+        }
+        // Find ability classes: those with lifecycle methods
+        List<String> abilityMethodNames = java.util.Arrays.asList(
+                "onCreate", "onDestroy", "onWindowStageCreate",
+                "onWindowStageDestroy", "onForeground", "onBackground",
+                "build", "aboutToAppear", "aboutToDisappear");
+        List<AbcClass> abilityClasses = new ArrayList<>();
+        for (AbcClass cls : abcFile.getClasses()) {
+            for (AbcMethod method : cls.getMethods()) {
+                if (abilityMethodNames.contains(method.getName())) {
+                    abilityClasses.add(cls);
+                    break;
+                }
+            }
+        }
+        if (abilityClasses.isEmpty()) {
+            outputProvider.showMessage("// No ability classes found");
+            return;
+        }
+        outputProvider.showLoading("Decompiling abilities...");
+        new javax.swing.SwingWorker<Void, Void>() {
+            @Override
+            protected Void doInBackground() {
+                try {
+                    ArkTSDecompiler decompiler = createDecompiler();
+                    StringBuilder sb = new StringBuilder();
+                    for (AbcClass cls : abilityClasses) {
+                        String clsName = AbcStructureProvider.formatClassName(cls.getName());
+                        sb.append("// ===== ").append(clsName).append(" =====\n\n");
+                        for (AbcMethod method : cls.getMethods()) {
+                            try {
+                                AbcCode code = abcFile.getCodeForMethod(method);
+                                sb.append(decompiler.decompileMethod(method, code, abcFile));
+                                sb.append("\n\n");
+                            } catch (Exception e) {
+                                // skip failed methods
+                            }
+                        }
+                    }
+                    final String result = sb.toString();
+                    javax.swing.SwingUtilities.invokeLater(() -> {
+                        outputProvider.showDecompiledCode(
+                                "All Abilities (" + abilityClasses.size() + ")", result);
+                        tool.showComponentProvider(outputProvider, true);
+                    });
+                } catch (Exception e) {
+                    Msg.error(OWNER, "Decompile all abilities failed", e);
+                }
+                return null;
+            }
+            @Override
+            protected void done() {
+                outputProvider.hideLoading();
+            }
+        }.execute();
     }
 
     private ArkTSDecompiler createDecompiler() {

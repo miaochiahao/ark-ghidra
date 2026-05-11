@@ -185,6 +185,8 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private Runnable decompileClassCallback;
     private Runnable quickOpenCallback;
     private Runnable pinCallback;
+    private Runnable prevClassCallback;
+    private Runnable nextClassCallback;
 
     private String lastClassName = "";
 
@@ -1249,6 +1251,24 @@ public class ArkTSOutputProvider extends ComponentProvider {
         });
         toolBar.add(decompileFileButton);
 
+        JButton prevClassButton = new JButton("◀ Class");
+        prevClassButton.setToolTipText("Decompile previous class");
+        prevClassButton.addActionListener(e -> {
+            if (prevClassCallback != null) {
+                prevClassCallback.run();
+            }
+        });
+        toolBar.add(prevClassButton);
+
+        JButton nextClassButton = new JButton("Class ▶");
+        nextClassButton.setToolTipText("Decompile next class");
+        nextClassButton.addActionListener(e -> {
+            if (nextClassCallback != null) {
+                nextClassCallback.run();
+            }
+        });
+        toolBar.add(nextClassButton);
+
         JButton exportAllButton = new JButton("Export All...");
         exportAllButton.setToolTipText("Export all decompiled classes to a directory");
         exportAllButton.addActionListener(e -> {
@@ -2025,6 +2045,24 @@ public class ArkTSOutputProvider extends ComponentProvider {
      */
     public void setPinCallback(Runnable callback) {
         this.pinCallback = callback;
+    }
+
+    /**
+     * Sets the callback invoked when the user clicks "◀ Class" to go to the previous class.
+     *
+     * @param callback the runnable to invoke
+     */
+    public void setPrevClassCallback(Runnable callback) {
+        this.prevClassCallback = callback;
+    }
+
+    /**
+     * Sets the callback invoked when the user clicks "Class ▶" to go to the next class.
+     *
+     * @param callback the runnable to invoke
+     */
+    public void setNextClassCallback(Runnable callback) {
+        this.nextClassCallback = callback;
     }
 
     /**

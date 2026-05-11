@@ -84,6 +84,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private java.util.function.Consumer<AbcClass> copyAsArkTSCallback;
     private Consumer<String> showCallersCallback;
     private Runnable exportReportCallback;
+    private Runnable decompileAllAbilitiesCallback;
     private JToggleButton filterPublicButton;
     private JToggleButton filterPrivateButton;
     private JToggleButton filterStaticButton;
@@ -229,8 +230,16 @@ public class AbcStructureProvider extends ComponentProvider {
         JButton collapseAllButton = new JButton("⊟");
         collapseAllButton.setToolTipText("Collapse all");
         collapseAllButton.addActionListener(e -> collapseTree());
+        JButton decompileAbilitiesButton = new JButton("⚡");
+        decompileAbilitiesButton.setToolTipText("Decompile all abilities");
+        decompileAbilitiesButton.addActionListener(e -> {
+            if (decompileAllAbilitiesCallback != null) {
+                decompileAllAbilitiesCallback.run();
+            }
+        });
         modifierFilterPanel.add(expandAllButton);
         modifierFilterPanel.add(collapseAllButton);
+        modifierFilterPanel.add(decompileAbilitiesButton);
 
         structureTree.addTreeSelectionListener(new TreeSelectionListener() {
             @Override
@@ -289,6 +298,15 @@ public class AbcStructureProvider extends ComponentProvider {
      */
     public void setExportReportCallback(Runnable cb) {
         this.exportReportCallback = cb;
+    }
+
+    /**
+     * Sets the callback invoked when the user clicks the "Decompile All Abilities" button.
+     *
+     * @param cb the runnable to invoke
+     */
+    public void setDecompileAllAbilitiesCallback(Runnable cb) {
+        this.decompileAllAbilitiesCallback = cb;
     }
 
     private void showTreeContextMenu(MouseEvent e) {
