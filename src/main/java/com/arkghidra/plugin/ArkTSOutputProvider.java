@@ -171,6 +171,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private Consumer<String> symbolHighlightCallback;
     private Consumer<String> jumpToDefinitionCallback;
     private Runnable globalSearchCallback;
+    private Consumer<String> globalSearchWordCallback;
 
     private JButton backButton;
     private JButton forwardButton;
@@ -529,6 +530,15 @@ public class ArkTSOutputProvider extends ComponentProvider {
             renameItem.addActionListener(e -> renameSymbol(capturedWord));
         }
         menu.add(renameItem);
+
+        JMenuItem searchAllItem = new JMenuItem("Search in All Methods");
+        searchAllItem.setEnabled(hasWord && globalSearchWordCallback != null);
+        if (hasWord && globalSearchWordCallback != null) {
+            final String capturedWord = word;
+            searchAllItem.addActionListener(
+                    e -> globalSearchWordCallback.accept(capturedWord));
+        }
+        menu.add(searchAllItem);
 
         return menu;
     }
@@ -1273,6 +1283,16 @@ public class ArkTSOutputProvider extends ComponentProvider {
      */
     public void setGlobalSearchCallback(Runnable callback) {
         this.globalSearchCallback = callback;
+    }
+
+    /**
+     * Sets a callback invoked when the user right-clicks a word and selects
+     * "Search in All Methods". Receives the word to search for.
+     *
+     * @param callback consumer that receives the search word
+     */
+    public void setGlobalSearchWordCallback(Consumer<String> callback) {
+        this.globalSearchWordCallback = callback;
     }
 
     /**

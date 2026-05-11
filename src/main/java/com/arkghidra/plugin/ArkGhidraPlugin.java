@@ -9,6 +9,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
+import javax.swing.SwingWorker;
+
 import ghidra.app.plugin.PluginCategoryNames;
 import ghidra.app.plugin.ProgramPlugin;
 import ghidra.app.services.GoToService;
@@ -99,6 +101,11 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         tool.addComponentProvider(globalSearchProvider, false);
         outputProvider.setGlobalSearchCallback(() ->
                 tool.showComponentProvider(globalSearchProvider, true));
+        outputProvider.setGlobalSearchWordCallback(word -> {
+            globalSearchProvider.clearResults();
+            tool.showComponentProvider(globalSearchProvider, true);
+            performGlobalSearch(word);
+        });
     }
 
     private void onMethodDoubleClicked(AbcMethod method) {
@@ -238,46 +245,63 @@ public class ArkGhidraPlugin extends ProgramPlugin {
     }
 
     private void performGlobalSearch(String query) {
-        AbcFile abcFile = getCurrentAbcFile();
-        if (abcFile == null) {
+        Program program = getCurrentProgram();
+        if (program == null) {
             globalSearchProvider.finishSearch(query);
             return;
         }
-        try {
-            byte[] abcData = DecompileToArkTSAction.readAbcData(getCurrentProgram());
-            if (abcData == null) {
-                globalSearchProvider.finishSearch(query);
-                return;
-            }
-            AbcFile freshFile = AbcFile.parse(abcData);
-            ArkTSDecompiler decompiler = new ArkTSDecompiler();
-            String lowerQuery = query.toLowerCase();
-            for (AbcClass cls : freshFile.getClasses()) {
-                String className = AbcStructureProvider.formatClassName(cls.getName());
-                String simpleName = className.contains(".")
-                        ? className.substring(className.lastIndexOf('.') + 1)
-                        : className;
-                for (AbcMethod method : cls.getMethods()) {
-                    try {
-                        AbcCode code = freshFile.getCodeForMethod(method);
-                        String decompiled = decompiler.decompileMethod(method, code, freshFile);
-                        String[] lines = decompiled.split("\n", -1);
-                        for (int i = 0; i < lines.length; i++) {
-                            if (lines[i].toLowerCase().contains(lowerQuery)) {
-                                globalSearchProvider.addResult(
-                                        simpleName, method.getName(), lines[i], i + 1);
+        byte[] abcData = DecompileToArkTSAction.readAbcData(program);
+        if (abcData == null) {
+            globalSearchProvider.finishSearch(query);
+            return;
+        }
+        tool.showComponentProvider(globalSearchProvider, true);
+        new SwingWorker<Void, Void>() {
+            @Override
+            protected Void doInBackground() {
+                try {
+                    AbcFile freshFile = AbcFile.parse(abcData);
+                    ArkTSDecompiler decompiler = new ArkTSDecompiler();
+                    String lowerQuery = query.toLowerCase();
+                    for (AbcClass cls : freshFile.getClasses()) {
+                        String className =
+                                AbcStructureProvider.formatClassName(cls.getName());
+                        String simpleName = className.contains(".")
+                                ? className.substring(className.lastIndexOf('.') + 1)
+                                : className;
+                        for (AbcMethod method : cls.getMethods()) {
+                            try {
+                                AbcCode code = freshFile.getCodeForMethod(method);
+                                String decompiled = decompiler.decompileMethod(
+                                        method, code, freshFile);
+                                String[] lines = decompiled.split("\n", -1);
+                                for (int i = 0; i < lines.length; i++) {
+                                    if (lines[i].toLowerCase().contains(lowerQuery)) {
+                                        final String cls2 = simpleName;
+                                        final String mth = method.getName();
+                                        final String line = lines[i];
+                                        final int lineNum = i + 1;
+                                        javax.swing.SwingUtilities.invokeLater(() ->
+                                                globalSearchProvider.addResult(
+                                                        cls2, mth, line, lineNum));
+                                    }
+                                }
+                            } catch (Exception e) {
+                                // skip methods that fail to decompile
                             }
                         }
-                    } catch (Exception e) {
-                        // skip methods that fail to decompile
                     }
+                } catch (Exception e) {
+                    Msg.warn(OWNER, "Global search failed: " + e.getMessage());
                 }
+                return null;
             }
-        } catch (Exception e) {
-            Msg.warn(OWNER, "Global search failed: " + e.getMessage());
-        }
-        globalSearchProvider.finishSearch(query);
-        tool.showComponentProvider(globalSearchProvider, true);
+
+            @Override
+            protected void done() {
+                globalSearchProvider.finishSearch(query);
+            }
+        }.execute();
     }
 
     private void navigateToSearchResult(String[] classAndMethod) {
