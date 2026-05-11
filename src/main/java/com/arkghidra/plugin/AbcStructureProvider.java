@@ -1233,11 +1233,14 @@ public class AbcStructureProvider extends ComponentProvider {
                                 AbcClass c = (AbcClass) getUserObject();
                                 boolean showBadges = settingsProvider == null
                                         || settingsProvider.isShowClassTypeBadges();
+                                boolean showCount = settingsProvider == null
+                                        || settingsProvider.isShowMethodCountInClassNodes();
                                 String name = showBadges
                                         ? getClassTypeBadge(c) + formatClassName(c.getName())
                                         : formatClassName(c.getName());
                                 int methodCount = c.getMethods().size();
-                                return methodCount > 0 ? name + " (" + methodCount + ")" : name;
+                                return (showCount && methodCount > 0)
+                                        ? name + " (" + methodCount + ")" : name;
                             }
                         };
                 classesNode.add(classNode);
@@ -1308,11 +1311,45 @@ public class AbcStructureProvider extends ComponentProvider {
         }
 
         updateFilterCount();
+
+        // Save which top-level sections are currently expanded
+        java.util.Set<String> expandedSections = new java.util.HashSet<>();
+        int rowsBefore = structureTree.getRowCount();
+        for (int i = 0; i < rowsBefore; i++) {
+            javax.swing.tree.TreePath path = structureTree.getPathForRow(i);
+            if (path != null && path.getPathCount() == 2 && structureTree.isExpanded(path)) {
+                expandedSections.add(path.getLastPathComponent().toString());
+            }
+        }
+
         treeModel.reload();
 
-        // Smart expansion: expand root and top-level sections only
-        // (not individual classes/methods to avoid overwhelming large HAPs)
-        smartExpandTree();
+        // Restore expanded state, or use smart expansion for first load
+        if (expandedSections.isEmpty()) {
+            smartExpandTree();
+        } else {
+            structureTree.expandRow(0);
+            int rowsAfter = structureTree.getRowCount();
+            for (int i = 1; i < rowsAfter; i++) {
+                javax.swing.tree.TreePath path = structureTree.getPathForRow(i);
+                if (path != null && path.getPathCount() == 2) {
+                    String label = path.getLastPathComponent().toString();
+                    // Match by prefix (section name may have changed count)
+                    boolean shouldExpand = false;
+                    for (String saved : expandedSections) {
+                        String savedBase = saved.contains("(") ? saved.substring(0, saved.indexOf('(')).trim() : saved;
+                        String labelBase = label.contains("(") ? label.substring(0, label.indexOf('(')).trim() : label;
+                        if (savedBase.equals(labelBase)) {
+                            shouldExpand = true;
+                            break;
+                        }
+                    }
+                    if (shouldExpand) {
+                        structureTree.expandRow(i);
+                    }
+                }
+            }
+        }
     }
 
     private void updateFilterCount() {

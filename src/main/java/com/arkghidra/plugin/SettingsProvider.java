@@ -49,6 +49,7 @@ public class SettingsProvider extends ComponentProvider {
     private final JCheckBox showInlineNotesCheckBox;
     private final JCheckBox showComplexityHeaderCheckBox;
     private final JCheckBox showClassTypeBadgesCheckBox;
+    private final JCheckBox showMethodCountInClassNodesCheckBox;
     private final JCheckBox autoSaveNotesCheckBox;
     private final JTextField notesPathField;
     private final JComboBox<String> fontFamilyCombo;
@@ -93,6 +94,10 @@ public class SettingsProvider extends ComponentProvider {
         showClassTypeBadgesCheckBox = new JCheckBox("Show class type badges in HAP Explorer", true);
         showClassTypeBadgesCheckBox.setToolTipText(
                 "Show [A]/[P]/[N]/[C] type badges before class names in the tree");
+
+        showMethodCountInClassNodesCheckBox = new JCheckBox("Show method count in class nodes", true);
+        showMethodCountInClassNodesCheckBox.setToolTipText(
+                "Show method count in parentheses after class names, e.g. UserService (12)");
 
         autoSaveNotesCheckBox = new JCheckBox("Auto-save notes on program close", false);
         autoSaveNotesCheckBox.setToolTipText(
@@ -156,36 +161,39 @@ public class SettingsProvider extends ComponentProvider {
         formPanel.add(showClassTypeBadgesCheckBox, gbc);
 
         gbc.gridy = 7;
+        formPanel.add(showMethodCountInClassNodesCheckBox, gbc);
+
+        gbc.gridy = 8;
         formPanel.add(autoSaveNotesCheckBox, gbc);
 
-        gbc.gridx = 0; gbc.gridy = 8; gbc.gridwidth = 1;
+        gbc.gridx = 0; gbc.gridy = 9; gbc.gridwidth = 1;
         formPanel.add(new JLabel("Notes path:"), gbc);
         gbc.gridx = 1; gbc.gridwidth = 2;
         formPanel.add(notesPathField, gbc);
 
-        gbc.gridx = 0; gbc.gridy = 9; gbc.gridwidth = 1;
+        gbc.gridx = 0; gbc.gridy = 10; gbc.gridwidth = 1;
         formPanel.add(new JLabel("Spacing:"), gbc);
         gbc.gridx = 1; gbc.gridwidth = 2;
         formPanel.add(lineSpacingSlider, gbc);
 
-        gbc.gridx = 0; gbc.gridy = 10; gbc.gridwidth = 1;
+        gbc.gridx = 0; gbc.gridy = 11; gbc.gridwidth = 1;
         formPanel.add(new JLabel("Theme:"), gbc);
         gbc.gridx = 1; gbc.gridwidth = 2;
         formPanel.add(themeCombo, gbc);
 
-        gbc.gridx = 0; gbc.gridy = 11; gbc.gridwidth = 1;
+        gbc.gridx = 0; gbc.gridy = 12; gbc.gridwidth = 1;
         formPanel.add(new JLabel("Tab size:"), gbc);
         gbc.gridx = 1; gbc.gridwidth = 1;
         formPanel.add(tabSizeSpinner, gbc);
         gbc.gridx = 2;
         formPanel.add(new JLabel("spaces"), gbc);
 
-        gbc.gridx = 0; gbc.gridy = 12; gbc.gridwidth = 3;
+        gbc.gridx = 0; gbc.gridy = 13; gbc.gridwidth = 3;
         JLabel hintLabel = new JLabel(
                 "<html><small>Increase timeout for complex methods that time out.</small></html>");
         formPanel.add(hintLabel, gbc);
 
-        gbc.gridy = 13;
+        gbc.gridy = 14;
         JButton resetButton = new JButton("Reset to Defaults");
         resetButton.setToolTipText("Restore all settings to their default values");
         resetButton.addActionListener(e -> resetToDefaults());
@@ -207,6 +215,7 @@ public class SettingsProvider extends ComponentProvider {
         showComplexityHeaderCheckBox.addChangeListener(autoSave);
         autoSaveNotesCheckBox.addChangeListener(autoSave);
         showClassTypeBadgesCheckBox.addChangeListener(autoSave);
+        showMethodCountInClassNodesCheckBox.addChangeListener(autoSave);
         lineSpacingSlider.addChangeListener(autoSave);
         tabSizeSpinner.addChangeListener(autoSave);
         fontFamilyCombo.addActionListener(e -> saveSettings());
@@ -271,6 +280,15 @@ public class SettingsProvider extends ComponentProvider {
      */
     public boolean isShowClassTypeBadges() {
         return showClassTypeBadgesCheckBox.isSelected();
+    }
+
+    /**
+     * Returns whether method count should be shown in class nodes.
+     *
+     * @return true if method count is shown
+     */
+    public boolean isShowMethodCountInClassNodes() {
+        return showMethodCountInClassNodesCheckBox.isSelected();
     }
 
     /**
@@ -370,6 +388,7 @@ public class SettingsProvider extends ComponentProvider {
         props.setProperty("show.inline.notes", String.valueOf(showInlineNotesCheckBox.isSelected()));
         props.setProperty("show.complexity.header", String.valueOf(showComplexityHeaderCheckBox.isSelected()));
         props.setProperty("show.class.type.badges", String.valueOf(showClassTypeBadgesCheckBox.isSelected()));
+        props.setProperty("show.method.count", String.valueOf(showMethodCountInClassNodesCheckBox.isSelected()));
         props.setProperty("auto.save.notes", String.valueOf(autoSaveNotesCheckBox.isSelected()));
         props.setProperty("notes.path", notesPathField.getText().trim());
         props.setProperty("font.family", getFontFamily());
@@ -415,6 +434,8 @@ public class SettingsProvider extends ComponentProvider {
                 Boolean.parseBoolean(props.getProperty("show.complexity.header", "true")));
         showClassTypeBadgesCheckBox.setSelected(
                 Boolean.parseBoolean(props.getProperty("show.class.type.badges", "true")));
+        showMethodCountInClassNodesCheckBox.setSelected(
+                Boolean.parseBoolean(props.getProperty("show.method.count", "true")));
         autoSaveNotesCheckBox.setSelected(
                 Boolean.parseBoolean(props.getProperty("auto.save.notes", "false")));
         String notesPath = props.getProperty("notes.path", "");
@@ -447,6 +468,7 @@ public class SettingsProvider extends ComponentProvider {
         showInlineNotesCheckBox.setSelected(true);
         showComplexityHeaderCheckBox.setSelected(true);
         showClassTypeBadgesCheckBox.setSelected(true);
+        showMethodCountInClassNodesCheckBox.setSelected(true);
         autoSaveNotesCheckBox.setSelected(false);
         notesPathField.setText(System.getProperty("user.home") + "/ark_ghidra_notes.txt");
         fontFamilyCombo.setSelectedItem("Monospaced");
