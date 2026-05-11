@@ -146,6 +146,8 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         outputProvider.setAddBookmarkCallback(this::addCurrentBookmark);
         outputProvider.setQuickOpenCallback(this::showQuickOpen);
         outputProvider.setPinCallback(this::pinCurrentView);
+        outputProvider.setShowHapExplorerCallback(() ->
+                tool.showComponentProvider(abcStructureProvider, true));
         outputProvider.setPrevClassCallback(() -> navigateClass(-1));
         outputProvider.setNextClassCallback(() -> navigateClass(1));
         historyProvider = new HistoryProvider(tool, PLUGIN_NAME);
@@ -284,6 +286,20 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         // Build flat list: "ClassName" and "ClassName.methodName (N args)"
         List<String> allItems = new ArrayList<>();
         List<Object[]> itemData = new ArrayList<>(); // [type, AbcClass/AbcMethod, AbcClass]
+
+        // Add recent items at the top (from history)
+        java.util.List<String> recentNames = historyProvider.getRecentNames(5);
+        if (!recentNames.isEmpty()) {
+            allItems.add("--- Recent ---");
+            itemData.add(new Object[]{"separator", null, null});
+            for (String recentName : recentNames) {
+                allItems.add("★ " + recentName);
+                itemData.add(new Object[]{"recent", recentName, null});
+            }
+            allItems.add("--- All ---");
+            itemData.add(new Object[]{"separator", null, null});
+        }
+
         for (AbcClass cls : abcFile.getClasses()) {
             String clsName = AbcStructureProvider.formatClassName(cls.getName());
             allItems.add(clsName);
@@ -438,10 +454,16 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         for (int i = 0; i < allItems.size(); i++) {
             if (allItems.get(i).equals(selected)) {
                 Object[] data = itemData.get(i);
+                if ("separator".equals(data[0])) {
+                    return; // ignore separator clicks
+                }
                 dialog.dispose();
                 if ("class".equals(data[0])) {
                     onClassClicked((AbcClass) data[1]);
                     abcStructureProvider.selectClass((AbcClass) data[1]);
+                } else if ("recent".equals(data[0])) {
+                    // Navigate to the recent item by name
+                    jumpToDefinition((String) data[1]);
                 } else {
                     onMethodDoubleClicked((AbcMethod) data[1]);
                 }

@@ -136,6 +136,20 @@ public class HistoryProvider extends ComponentProvider {
         updateStatus();
     }
 
+    /**
+     * Returns the names of the most recently viewed items (up to maxCount).
+     *
+     * @param maxCount maximum number of items to return
+     * @return list of function/class names, most recent first
+     */
+    public java.util.List<String> getRecentNames(int maxCount) {
+        java.util.List<String> names = new java.util.ArrayList<>();
+        for (int i = 0; i < Math.min(maxCount, historyData.size()); i++) {
+            names.add(historyData.get(i)[0]);
+        }
+        return names;
+    }
+
     private void updateStatus() {
         int count = historyModel.size();
         statusLabel.setText(count == 0 ? "No history"

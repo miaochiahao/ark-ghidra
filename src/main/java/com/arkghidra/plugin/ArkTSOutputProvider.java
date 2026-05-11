@@ -185,6 +185,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private Runnable decompileClassCallback;
     private Runnable quickOpenCallback;
     private Runnable pinCallback;
+    private Runnable showHapExplorerCallback;
     private Runnable prevClassCallback;
     private Runnable nextClassCallback;
 
@@ -1342,6 +1343,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 + "Ctrl+G          Go to line\n"
                 + "Ctrl+Shift+C    Copy current line\n"
                 + "Ctrl+Shift+F    Global search\n"
+                + "Ctrl+Shift+E    Show HAP Explorer\n"
                 + "F3              Next occurrence\n"
                 + "Shift+F3        Previous occurrence\n"
                 + "Ctrl+Down       Next method definition\n"
@@ -1790,6 +1792,19 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 }
             }
         });
+
+        // Ctrl+Shift+E — Show HAP Explorer
+        KeyStroke ctrlShiftE = KeyStroke.getKeyStroke(KeyEvent.VK_E,
+                cmdMask | java.awt.event.InputEvent.SHIFT_DOWN_MASK);
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(ctrlShiftE, "showHapExplorer");
+        codePane.getActionMap().put("showHapExplorer", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (showHapExplorerCallback != null) {
+                    showHapExplorerCallback.run();
+                }
+            }
+        });
     }
 
     // --- Go to line / Copy line ---
@@ -2045,6 +2060,15 @@ public class ArkTSOutputProvider extends ComponentProvider {
      */
     public void setPinCallback(Runnable callback) {
         this.pinCallback = callback;
+    }
+
+    /**
+     * Sets the callback invoked when the user presses Ctrl+Shift+E to show the HAP Explorer.
+     *
+     * @param callback the runnable to invoke
+     */
+    public void setShowHapExplorerCallback(Runnable callback) {
+        this.showHapExplorerCallback = callback;
     }
 
     /**
