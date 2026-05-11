@@ -158,6 +158,8 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                 tool.showComponentProvider(xrefProvider, true));
         outputProvider.setShowNotesCallback(() ->
                 tool.showComponentProvider(notesProvider, true));
+        outputProvider.setShowSettingsCallback(() ->
+                tool.showComponentProvider(settingsProvider, true));
         outputProvider.setPrevClassCallback(() -> navigateClass(-1));
         outputProvider.setNextClassCallback(() -> navigateClass(1));
         historyProvider = new HistoryProvider(tool, PLUGIN_NAME);
@@ -524,7 +526,8 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             String result = decompiler.decompileMethod(method, code, abcFile);
             String clsName = findClassForMethod(abcFile, method);
             String notes = notesProvider.getNotes(method.getName());
-            String displayResult = notes.isEmpty() ? result
+            boolean showNotes = settingsProvider != null && settingsProvider.isShowInlineNotes();
+            String displayResult = (notes.isEmpty() || !showNotes) ? result
                     : "/*\n * Notes:\n * " + notes.replace("\n", "\n * ")
                             + "\n */\n\n" + result;
             outputProvider.showDecompiledCode(method.getName(), displayResult, clsName);

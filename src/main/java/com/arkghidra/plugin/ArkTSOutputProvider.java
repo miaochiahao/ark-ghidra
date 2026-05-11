@@ -190,6 +190,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private Runnable showHistoryCallback;
     private Runnable showXrefCallback;
     private Runnable showNotesCallback;
+    private Runnable showSettingsCallback;
     private Runnable prevClassCallback;
     private Runnable nextClassCallback;
 
@@ -1352,6 +1353,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 + "Ctrl+Shift+H    Show History\n"
                 + "Ctrl+Shift+X    Show Xref\n"
                 + "Ctrl+Shift+N    Show Notes\n"
+                + "Ctrl+Shift+,    Show Settings\n"
                 + "F3              Next occurrence\n"
                 + "Shift+F3        Previous occurrence\n"
                 + "Ctrl+Down       Next method definition\n"
@@ -1865,6 +1867,19 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 }
             }
         });
+
+        // Ctrl+Shift+, — Show Settings
+        KeyStroke ctrlShiftComma = KeyStroke.getKeyStroke(KeyEvent.VK_COMMA,
+                cmdMask | java.awt.event.InputEvent.SHIFT_DOWN_MASK);
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(ctrlShiftComma, "showSettings");
+        codePane.getActionMap().put("showSettings", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (showSettingsCallback != null) {
+                    showSettingsCallback.run();
+                }
+            }
+        });
     }
 
     // --- Go to line / Copy line ---
@@ -2149,6 +2164,11 @@ public class ArkTSOutputProvider extends ComponentProvider {
     /** Sets the callback for Ctrl+Shift+N (Show Notes). */
     public void setShowNotesCallback(Runnable callback) {
         this.showNotesCallback = callback;
+    }
+
+    /** Sets the callback for Ctrl+Shift+, (Show Settings). */
+    public void setShowSettingsCallback(Runnable callback) {
+        this.showSettingsCallback = callback;
     }
 
     /**

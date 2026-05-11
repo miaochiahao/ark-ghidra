@@ -35,6 +35,7 @@ public class SettingsProvider extends ComponentProvider {
     private final JSpinner timeoutSpinner;
     private final JCheckBox autoDecompileCheckBox;
     private final JCheckBox skipTrivialCheckBox;
+    private final JCheckBox showInlineNotesCheckBox;
     private final JLabel timeoutLabel;
 
     private long timeoutMs = DEFAULT_TIMEOUT_MS;
@@ -62,6 +63,10 @@ public class SettingsProvider extends ComponentProvider {
         skipTrivialCheckBox.setToolTipText(
                 "Skip methods with fewer than 20 bytes when decompiling a class");
 
+        showInlineNotesCheckBox = new JCheckBox("Show notes inline in decompiled output", true);
+        showInlineNotesCheckBox.setToolTipText(
+                "Prepend method notes as a comment block in the decompiled output");
+
         JPanel formPanel = new JPanel(new GridBagLayout());
         formPanel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
         GridBagConstraints gbc = new GridBagConstraints();
@@ -82,6 +87,9 @@ public class SettingsProvider extends ComponentProvider {
         formPanel.add(skipTrivialCheckBox, gbc);
 
         gbc.gridy = 3;
+        formPanel.add(showInlineNotesCheckBox, gbc);
+
+        gbc.gridy = 4;
         JLabel hintLabel = new JLabel(
                 "<html><small>Increase timeout for complex methods that time out.</small></html>");
         formPanel.add(hintLabel, gbc);
@@ -126,6 +134,15 @@ public class SettingsProvider extends ComponentProvider {
     }
 
     /**
+     * Returns whether method notes should be prepended as a comment block in decompiled output.
+     *
+     * @return true if inline notes are enabled
+     */
+    public boolean isShowInlineNotes() {
+        return showInlineNotesCheckBox.isSelected();
+    }
+
+    /**
      * Adds a listener that is notified when any setting changes.
      *
      * @param listener the change listener
@@ -134,5 +151,6 @@ public class SettingsProvider extends ComponentProvider {
         timeoutSpinner.addChangeListener(listener);
         autoDecompileCheckBox.addChangeListener(listener);
         skipTrivialCheckBox.addChangeListener(listener);
+        showInlineNotesCheckBox.addChangeListener(listener);
     }
 }

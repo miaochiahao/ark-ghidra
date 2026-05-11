@@ -2,25 +2,35 @@ package com.arkghidra.plugin;
 
 import java.awt.BorderLayout;
 import java.awt.Font;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
 import javax.swing.BorderFactory;
+import javax.swing.DefaultListModel;
 import javax.swing.JButton;
 import javax.swing.JComponent;
+import javax.swing.JDialog;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
+import javax.swing.JList;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JToolBar;
+import javax.swing.ListSelectionModel;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
@@ -82,6 +92,10 @@ public class NotesProvider extends ComponentProvider {
         exportButton.setToolTipText("Export all notes to a text file");
         exportButton.addActionListener(e -> exportNotes());
         toolBar.add(exportButton);
+        JButton showAllButton = new JButton("Show All");
+        showAllButton.setToolTipText("Show all notes across all methods");
+        showAllButton.addActionListener(e -> showAllNotes());
+        toolBar.add(showAllButton);
         mainPanel.add(toolBar, BorderLayout.SOUTH);
 
         setDefaultWindowPosition(WindowPosition.BOTTOM);
@@ -134,6 +148,15 @@ public class NotesProvider extends ComponentProvider {
         return notes != null && !notes.isEmpty();
     }
 
+    /**
+     * Returns all notes as an unmodifiable map.
+     *
+     * @return unmodifiable view of all notes keyed by method/class name
+     */
+    public Map<String, String> getAllNotes() {
+        return Collections.unmodifiableMap(notesMap);
+    }
+
     private void saveCurrentNotes() {
         if (updating || currentKey.isEmpty()) {
             return;
@@ -148,9 +171,9 @@ public class NotesProvider extends ComponentProvider {
 
     private void exportNotes() {
         if (notesMap.isEmpty()) {
-            javax.swing.JOptionPane.showMessageDialog(
+            JOptionPane.showMessageDialog(
                     mainPanel, "No notes to export.", "Export Notes",
-                    javax.swing.JOptionPane.INFORMATION_MESSAGE);
+                    JOptionPane.INFORMATION_MESSAGE);
             return;
         }
         JFileChooser chooser = new JFileChooser();
@@ -174,9 +197,60 @@ public class NotesProvider extends ComponentProvider {
                 }
             }
         } catch (IOException e) {
-            javax.swing.JOptionPane.showMessageDialog(
+            JOptionPane.showMessageDialog(
                     mainPanel, "Export failed: " + e.getMessage(),
-                    "Export Notes", javax.swing.JOptionPane.ERROR_MESSAGE);
+                    "Export Notes", JOptionPane.ERROR_MESSAGE);
         }
+    }
+
+    private void showAllNotes() {
+        Map<String, String> allNotes = new TreeMap<>(notesMap);
+        // Filter out empty notes
+        allNotes.entrySet().removeIf(entry -> entry.getValue() == null || entry.getValue().trim().isEmpty());
+
+        if (allNotes.isEmpty()) {
+            JOptionPane.showMessageDialog(
+                    mainPanel, "No notes yet.", "All Notes",
+                    JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        // Build a list of "methodName: first line of notes"
+        DefaultListModel<String> listModel = new DefaultListModel<>();
+        List<String> keys = new ArrayList<>(allNotes.keySet());
+        for (String key : keys) {
+            String notes = allNotes.get(key);
+            String firstLine = notes.split("\n")[0].trim();
+            if (firstLine.length() > 60) {
+                firstLine = firstLine.substring(0, 57) + "...";
+            }
+            listModel.addElement(key + ": " + firstLine);
+        }
+
+        JList<String> notesList = new JList<>(listModel);
+        notesList.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        notesList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+
+        JDialog dialog = new JDialog();
+        dialog.setTitle("All Notes (" + keys.size() + " methods)");
+        dialog.setModal(false);
+        dialog.setSize(500, 350);
+        dialog.setLocationRelativeTo(mainPanel);
+
+        notesList.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() == 2) {
+                    int idx = notesList.getSelectedIndex();
+                    if (idx >= 0 && idx < keys.size()) {
+                        setCurrentKey(keys.get(idx));
+                        dialog.dispose();
+                    }
+                }
+            }
+        });
+
+        dialog.add(new JScrollPane(notesList));
+        dialog.setVisible(true);
     }
 }
