@@ -338,20 +338,20 @@ class PropertyAccessHandler {
                 : insn.getOpcode();
         List<ArkOperand> operands = insn.getOperands();
 
-        // STOBJBYVALUE (IMM8_V8_V8): acc=key, operands[1]=object, operands[2]=value
+        // STOBJBYVALUE (IMM8_V8_V8): acc=value, operands[1]=object, operands[2]=key
         if (opcode == ArkOpcodesCompat.STOBJBYVALUE
                 || opcode == ArkOpcodesCompat.STOWNBYVALUE) {
-            ArkTSExpression key = accValue != null
+            ArkTSExpression value = accValue != null
                     ? accValue
                     : new ArkTSExpression.VariableExpression(ACC);
             int objReg = (int) operands.get(1).getValue();
             ArkTSExpression obj =
                     new ArkTSExpression.VariableExpression(
                             ctx.resolveRegisterName(objReg));
-            int valReg = (int) operands.get(2).getValue();
-            ArkTSExpression value =
+            int keyReg = (int) operands.get(2).getValue();
+            ArkTSExpression key =
                     new ArkTSExpression.VariableExpression(
-                            ctx.resolveRegisterName(valReg));
+                            ctx.resolveRegisterName(keyReg));
             return new ArkTSExpression.AssignExpression(
                     new ArkTSExpression.MemberExpression(obj, key, true),
                     value);
