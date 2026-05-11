@@ -1150,6 +1150,15 @@ public class ArkTSOutputProvider extends ComponentProvider {
     }
 
     /**
+     * Returns the name of the last decompiled function.
+     *
+     * @return the last function name, or empty string if none
+     */
+    public String getLastFunctionName() {
+        return lastFunctionName;
+    }
+
+    /**
      * Returns the symbol highlighter used by this panel.
      *
      * @return the symbol highlighter

@@ -5,11 +5,17 @@ import java.util.List;
 
 import ghidra.app.plugin.PluginCategoryNames;
 import ghidra.app.plugin.ProgramPlugin;
+import ghidra.app.services.GoToService;
 import ghidra.app.services.ProgramManager;
 import ghidra.framework.plugintool.PluginInfo;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.framework.plugintool.util.PluginStatus;
+import ghidra.program.model.address.Address;
+import ghidra.program.model.listing.Function;
+import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.Program;
+import ghidra.program.util.FunctionSignatureFieldLocation;
+import ghidra.program.util.ProgramLocation;
 import ghidra.util.Msg;
 
 import com.arkghidra.decompile.ArkTSDecompiler;
@@ -103,6 +109,12 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             List<String> allMethodNames = getAllMethodNames(abcFile);
             callGraphProvider.showCallGraph(method.getName(), result, allMethodNames);
             tool.showComponentProvider(callGraphProvider, true);
+            // Navigate Listing to the method's address
+            if (method.getCodeOff() > 0) {
+                Address addr = program.getAddressFactory()
+                        .getDefaultAddressSpace().getAddress(method.getCodeOff());
+                goToAddress(addr);
+            }
             Msg.info(OWNER, "Decompiled method via tree: " + method.getName());
         } catch (Exception e) {
             Msg.error(OWNER, "Decompilation failed for " + method.getName(), e);
@@ -172,6 +184,66 @@ public class ArkGhidraPlugin extends ProgramPlugin {
     private void registerActions(PluginTool tool) {
         tool.addAction(new DecompileToArkTSAction(this));
         tool.addAction(new ShowAbcStructureAction(this));
+    }
+
+    /**
+     * Called by Ghidra when the cursor moves to a new location in the Listing.
+     * Automatically decompiles the function at the new location.
+     */
+    @Override
+    protected void locationChanged(ProgramLocation loc) {
+        if (loc == null || currentProgram == null) {
+            return;
+        }
+        // Only auto-decompile when the output panel is visible
+        if (!outputProvider.isVisible()) {
+            return;
+        }
+        try {
+            FunctionManager funcMgr = currentProgram.getFunctionManager();
+            Function function = funcMgr.getFunctionContaining(loc.getAddress());
+            if (function == null) {
+                return;
+            }
+            // Avoid re-decompiling the same function
+            String funcName = function.getName();
+            if (funcName.equals(outputProvider.getLastFunctionName())) {
+                return;
+            }
+            byte[] abcData = DecompileToArkTSAction.readAbcData(currentProgram);
+            if (abcData == null) {
+                return;
+            }
+            AbcFile abcFile = AbcFile.parse(abcData);
+            long codeOff = function.getEntryPoint().getOffset();
+            AbcMethod abcMethod = DecompileToArkTSAction.findMethodAtOffset(abcFile, codeOff);
+            if (abcMethod == null) {
+                return;
+            }
+            AbcCode code = abcFile.getCodeForMethod(abcMethod);
+            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+            String result = decompiler.decompileMethod(abcMethod, code, abcFile);
+            outputProvider.showDecompiledCode(abcMethod.getName(), result);
+            List<String> allMethodNames = getAllMethodNames(abcFile);
+            callGraphProvider.showCallGraph(abcMethod.getName(), result, allMethodNames);
+            Msg.info(OWNER, "Auto-decompiled on location change: " + abcMethod.getName());
+        } catch (Exception e) {
+            Msg.warn(OWNER, "Auto-decompile on location change failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Navigates the Listing view to the given address using GoToService.
+     */
+    void goToAddress(Address address) {
+        if (address == null || currentProgram == null) {
+            return;
+        }
+        GoToService goToService = tool.getService(GoToService.class);
+        if (goToService != null) {
+            goToService.goTo(new FunctionSignatureFieldLocation(
+                    currentProgram, address));
+        }
     }
 
     private void jumpToDefinition(String word) {
