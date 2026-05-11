@@ -2,6 +2,7 @@ package com.arkghidra.decompile;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +42,12 @@ class ControlFlowReconstructor {
     private final TryCatchProcessor tryCatchProcessor;
 
     private final Map<String, Integer> mergeBlockCache = new HashMap<>();
+
+    /**
+     * Blocks that are fall-through continuations from processed blocks
+     * and should not be treated as dead code by {@link #isDeadCode}.
+     */
+    private final Set<BasicBlock> liveContinuations = new HashSet<>();
 
     ControlFlowReconstructor(ArkTSDecompiler decompiler,
             InstructionHandler instrHandler) {
@@ -168,6 +175,7 @@ class ControlFlowReconstructor {
             Set<BasicBlock> visited) {
 
         mergeBlockCache.clear();
+        liveContinuations.clear();
 
         List<ArkTSStatement> stmts = new ArrayList<>();
 
@@ -794,6 +802,9 @@ class ControlFlowReconstructor {
         if (block == cfg.getEntryBlock()) {
             return false;
         }
+        if (liveContinuations.contains(block)) {
+            return false;
+        }
         for (CFGEdge pred : block.getPredecessors()) {
             if (pred.getType() == EdgeType.EXCEPTION_HANDLER) {
                 return false;
@@ -817,5 +828,11 @@ class ControlFlowReconstructor {
             }
         }
         return true;
+    }
+
+    void addLiveContinuation(BasicBlock block) {
+        if (block != null) {
+            liveContinuations.add(block);
+        }
     }
 }

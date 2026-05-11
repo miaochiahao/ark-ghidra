@@ -347,6 +347,8 @@ class BranchProcessor {
 
         // --- Standard if-only processing ---
         visited.add(branchBlock);
+        // Mark the fall-through as live so isDeadCode doesn't skip it
+        reconstructor.addLiveContinuation(otherBlock);
 
         List<ArkTSStatement> thenStmts =
                 reconstructor.processBlockInstructions(branchBlock, ctx);
