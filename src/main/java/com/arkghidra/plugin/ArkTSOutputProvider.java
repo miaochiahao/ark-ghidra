@@ -1770,18 +1770,18 @@ public class ArkTSOutputProvider extends ComponentProvider {
         File file = chooser.getSelectedFile();
         try (BufferedWriter writer = new BufferedWriter(
                 new OutputStreamWriter(new FileOutputStream(file), StandardCharsets.UTF_8))) {
-            writer.write(buildHtml(text, darkTheme));
+            writer.write(buildHtml(text, darkTheme, lastFunctionName));
             Msg.info(OWNER, "Exported HTML to " + file.getPath());
         } catch (IOException e) {
             Msg.error(OWNER, "Failed to export HTML: " + e.getMessage(), e);
         }
     }
 
-    private String buildHtml(String code, boolean dark) {
+    private String buildHtml(String code, boolean dark, String title) {
         StringBuilder sb = new StringBuilder();
         sb.append("<!DOCTYPE html>\n<html>\n<head>\n");
         sb.append("<meta charset=\"UTF-8\">\n");
-        sb.append("<title>Decompiled ArkTS</title>\n");
+        sb.append("<title>").append(title.isEmpty() ? "Decompiled ArkTS" : title).append("</title>\n");
         sb.append("<style>\n");
         if (dark) {
             sb.append("body { background: #1e1e1e; color: #d4d4d4; font-family: monospace; "
@@ -1805,6 +1805,12 @@ public class ArkTSOutputProvider extends ComponentProvider {
             sb.append(".md { color: #0000cc; font-weight: bold; }\n");
         }
         sb.append("</style>\n</head>\n<body>\n<pre>\n");
+        if (!title.isEmpty()) {
+            String timestamp = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
+                    .format(new java.util.Date());
+            sb.append("<!-- Decompiled: ").append(title)
+                    .append(" | ").append(timestamp).append(" -->\n");
+        }
         String escaped = code.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
         escaped = escaped.replaceAll("(?m)(//[^\n]*)", "<span class=\"cm\">$1</span>");
         escaped = escaped.replaceAll("(\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\")",

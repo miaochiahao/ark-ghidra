@@ -80,6 +80,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private final JTextField filterField;
     private final JLabel filterCountLabel;
     private final JLabel breadcrumbLabel;
+    private final JLabel statsLabel;
     private AbcFile currentAbcFile;
     private HapMetadata currentHapMetadata;
     private String currentHapName = "";
@@ -190,6 +191,11 @@ public class AbcStructureProvider extends ComponentProvider {
         breadcrumbLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 11));
         breadcrumbLabel.setForeground(Color.GRAY);
         breadcrumbLabel.setBorder(BorderFactory.createEmptyBorder(1, 4, 1, 4));
+
+        statsLabel = new JLabel("  ");
+        statsLabel.setForeground(Color.GRAY);
+        statsLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 10));
+        statsLabel.setBorder(BorderFactory.createEmptyBorder(1, 4, 1, 4));
 
         filterPublicButton = new JToggleButton("Pub");
         filterPublicButton.setToolTipText("Show only public methods");
@@ -310,6 +316,7 @@ public class AbcStructureProvider extends ComponentProvider {
         mainPanel = new JPanel(new BorderLayout());
         mainPanel.add(topPanel, BorderLayout.NORTH);
         mainPanel.add(scrollPane, BorderLayout.CENTER);
+        mainPanel.add(statsLabel, BorderLayout.SOUTH);
 
         setDefaultWindowPosition(docking.WindowPosition.LEFT);
         setTitle("HAP Explorer");
@@ -699,6 +706,7 @@ public class AbcStructureProvider extends ComponentProvider {
     public void setAbcFile(AbcFile abcFile) {
         this.currentAbcFile = abcFile;
         rebuildTree();
+        updateStats();
     }
 
     /**
@@ -711,6 +719,34 @@ public class AbcStructureProvider extends ComponentProvider {
         this.currentHapMetadata = metadata;
         this.currentHapName = hapName != null ? hapName : "";
         rebuildTree();
+        updateStats();
+    }
+
+    private void updateStats() {
+        if (currentAbcFile == null) {
+            statsLabel.setText("  ");
+            return;
+        }
+        int totalClasses = currentAbcFile.getClasses().size();
+        int totalMethods = 0;
+        long totalBytes = 0;
+        for (AbcClass cls : currentAbcFile.getClasses()) {
+            totalMethods += cls.getMethods().size();
+            for (AbcMethod method : cls.getMethods()) {
+                if (method.getCodeOff() != 0) {
+                    try {
+                        AbcCode code = currentAbcFile.getCodeForMethod(method);
+                        if (code != null) {
+                            totalBytes += code.getCodeSize();
+                        }
+                    } catch (Exception e) {
+                        // ignore
+                    }
+                }
+            }
+        }
+        statsLabel.setText(totalClasses + " classes · " + totalMethods + " methods · "
+                + (totalBytes / 1024) + " KB");
     }
 
     /**
