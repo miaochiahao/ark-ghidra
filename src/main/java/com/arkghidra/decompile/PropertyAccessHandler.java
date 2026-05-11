@@ -75,30 +75,30 @@ class PropertyAccessHandler {
                 break;
             // CALLTHIS: acc holds the method, first register is this
             case ArkOpcodesCompat.CALLTHIS0: {
+                int thisReg = (int) operands.get(1).getValue();
                 ArkTSExpression thisObj =
                         new ArkTSExpression.VariableExpression(
-                                ctx.resolveRegisterName(
-                                        (int) operands.get(1).getValue()));
-                callee = wrapCallThisCallee(callee, thisObj);
+                                ctx.resolveRegisterName(thisReg));
+                callee = wrapCallThisCallee(callee, thisObj, thisReg, ctx);
                 break;
             }
             case ArkOpcodesCompat.CALLTHIS1: {
+                int thisReg = (int) operands.get(1).getValue();
                 ArkTSExpression thisObj =
                         new ArkTSExpression.VariableExpression(
-                                ctx.resolveRegisterName(
-                                        (int) operands.get(1).getValue()));
-                callee = wrapCallThisCallee(callee, thisObj);
+                                ctx.resolveRegisterName(thisReg));
+                callee = wrapCallThisCallee(callee, thisObj, thisReg, ctx);
                 args.add(new ArkTSExpression.VariableExpression(
                         ctx.resolveRegisterName(
                                 (int) operands.get(2).getValue())));
                 break;
             }
             case ArkOpcodesCompat.CALLTHIS2: {
+                int thisReg = (int) operands.get(1).getValue();
                 ArkTSExpression thisObj =
                         new ArkTSExpression.VariableExpression(
-                                ctx.resolveRegisterName(
-                                        (int) operands.get(1).getValue()));
-                callee = wrapCallThisCallee(callee, thisObj);
+                                ctx.resolveRegisterName(thisReg));
+                callee = wrapCallThisCallee(callee, thisObj, thisReg, ctx);
                 args.add(new ArkTSExpression.VariableExpression(
                         ctx.resolveRegisterName(
                                 (int) operands.get(2).getValue())));
@@ -108,11 +108,11 @@ class PropertyAccessHandler {
                 break;
             }
             case ArkOpcodesCompat.CALLTHIS3: {
+                int thisReg = (int) operands.get(1).getValue();
                 ArkTSExpression thisObj =
                         new ArkTSExpression.VariableExpression(
-                                ctx.resolveRegisterName(
-                                        (int) operands.get(1).getValue()));
-                callee = wrapCallThisCallee(callee, thisObj);
+                                ctx.resolveRegisterName(thisReg));
+                callee = wrapCallThisCallee(callee, thisObj, thisReg, ctx);
                 args.add(new ArkTSExpression.VariableExpression(
                         ctx.resolveRegisterName(
                                 (int) operands.get(2).getValue())));
@@ -125,11 +125,11 @@ class PropertyAccessHandler {
                 break;
             }
             case ArkOpcodesCompat.CALLTHISRANGE: {
+                int thisReg = (int) operands.get(1).getValue();
                 ArkTSExpression thisObj =
                         new ArkTSExpression.VariableExpression(
-                                ctx.resolveRegisterName(
-                                        (int) operands.get(1).getValue()));
-                callee = wrapCallThisCallee(callee, thisObj);
+                                ctx.resolveRegisterName(thisReg));
+                callee = wrapCallThisCallee(callee, thisObj, thisReg, ctx);
                 if (operands.size() >= 3) {
                     int numRangeArgs = (int) operands.get(0).getValue();
                     int firstReg = (int) operands.get(
@@ -681,11 +681,41 @@ class PropertyAccessHandler {
     }
 
     private static ArkTSExpression wrapCallThisCallee(
-            ArkTSExpression callee, ArkTSExpression thisObj) {
+            ArkTSExpression callee, ArkTSExpression thisObj,
+            int thisReg, DecompilationContext ctx) {
         if (callee instanceof ArkTSExpression.MemberExpression) {
+            ArkTSExpression.MemberExpression member =
+                    (ArkTSExpression.MemberExpression) callee;
+            // When the callee's object is the unresolved "acc" fallback,
+            // resolve the thisObj register to get the actual object
+            // expression (e.g., a NewExpression for new Map()).
+            if (isUnresolvedAcc(member.getObject())) {
+                ArkTSExpression resolvedObj =
+                        resolveThisObjExpression(thisReg, ctx);
+                if (resolvedObj != null) {
+                    return new ArkTSExpression.MemberExpression(
+                            resolvedObj, member.getProperty(),
+                            member.isComputed());
+                }
+            }
             return callee;
         }
         return new ArkTSExpression.MemberExpression(thisObj, callee, false);
+    }
+
+    /**
+     * Resolves the thisObj register to its tracked expression,
+     * falling back to a VariableExpression with the register name.
+     */
+    private static ArkTSExpression resolveThisObjExpression(
+            int thisReg, DecompilationContext ctx) {
+        ArkTSExpression stored = ctx.getRegisterExpression(thisReg);
+        if (stored != null && !isLikelyLiteral(stored)
+                && !isUnresolvedAcc(stored)) {
+            return stored;
+        }
+        return new ArkTSExpression.VariableExpression(
+                ctx.resolveRegisterName(thisReg));
     }
 
     /**
