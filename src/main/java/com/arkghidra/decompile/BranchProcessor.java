@@ -159,6 +159,8 @@ class BranchProcessor {
             int target1 = ControlFlowGraph
                     .getJumpTargetPublic(lastInsn);
 
+            // Check falseBranch for true OR short-circuit
+            // (same jump target = both branch to same body)
             BasicBlock nextCondBlock = falseBranch;
             ArkInstruction nextLast = nextCondBlock.getLastInstruction();
             if (nextLast != null
@@ -175,6 +177,31 @@ class BranchProcessor {
                     p.trueBlock = falseBranch;
                     p.falseBlock = trueBranch;
                     p.mergeBlock = cfg.getBlockAt(target1);
+                    return p;
+                }
+            }
+
+            // Check trueBranch for chained AND using JNEZ encoding
+            // Pattern: Block A JNEZ→BlockB (fall→merge),
+            //          Block B JNEZ→body (fall→merge)
+            // Both fall-throughs go to same merge = chained AND
+            if (trueBranch != null
+                    && trueBranch.getLastInstruction() != null
+                    && isOrConditionOpcode(
+                            trueBranch.getLastInstruction().getOpcode())) {
+                int fall1 = lastInsn.getNextOffset();
+                int fall2 = trueBranch.getLastInstruction()
+                        .getNextOffset();
+                if (fall1 == fall2) {
+                    BasicBlock mergeBlock = cfg.getBlockAt(fall1);
+                    ControlFlowReconstructor.ControlFlowPattern p =
+                            new ControlFlowReconstructor.ControlFlowPattern(
+                                    ControlFlowReconstructor.PatternType
+                                            .SHORT_CIRCUIT_AND);
+                    p.conditionBlock = block;
+                    p.trueBlock = trueBranch;
+                    p.falseBlock = falseBranch;
+                    p.mergeBlock = mergeBlock;
                     return p;
                 }
             }
