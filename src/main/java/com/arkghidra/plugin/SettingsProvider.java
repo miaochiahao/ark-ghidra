@@ -8,6 +8,7 @@ import java.awt.Insets;
 
 import javax.swing.BorderFactory;
 import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -36,6 +37,7 @@ public class SettingsProvider extends ComponentProvider {
     private final JCheckBox autoDecompileCheckBox;
     private final JCheckBox skipTrivialCheckBox;
     private final JCheckBox showInlineNotesCheckBox;
+    private final JComboBox<String> fontFamilyCombo;
     private final JLabel timeoutLabel;
 
     private long timeoutMs = DEFAULT_TIMEOUT_MS;
@@ -67,6 +69,11 @@ public class SettingsProvider extends ComponentProvider {
         showInlineNotesCheckBox.setToolTipText(
                 "Prepend method notes as a comment block in the decompiled output");
 
+        String[] fontFamilies = {"Monospaced", "Consolas", "Courier New", "DejaVu Sans Mono", "Source Code Pro"};
+        fontFamilyCombo = new JComboBox<>(fontFamilies);
+        fontFamilyCombo.setSelectedItem("Monospaced");
+        fontFamilyCombo.setToolTipText("Font family for the decompiled code view");
+
         JPanel formPanel = new JPanel(new GridBagLayout());
         formPanel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
         GridBagConstraints gbc = new GridBagConstraints();
@@ -86,10 +93,15 @@ public class SettingsProvider extends ComponentProvider {
         gbc.gridy = 2;
         formPanel.add(skipTrivialCheckBox, gbc);
 
-        gbc.gridy = 3;
+        gbc.gridx = 0; gbc.gridy = 3; gbc.gridwidth = 1;
+        formPanel.add(new JLabel("Font:"), gbc);
+        gbc.gridx = 1; gbc.gridwidth = 2;
+        formPanel.add(fontFamilyCombo, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 4; gbc.gridwidth = 3;
         formPanel.add(showInlineNotesCheckBox, gbc);
 
-        gbc.gridy = 4;
+        gbc.gridy = 5;
         JLabel hintLabel = new JLabel(
                 "<html><small>Increase timeout for complex methods that time out.</small></html>");
         formPanel.add(hintLabel, gbc);
@@ -152,5 +164,24 @@ public class SettingsProvider extends ComponentProvider {
         autoDecompileCheckBox.addChangeListener(listener);
         skipTrivialCheckBox.addChangeListener(listener);
         showInlineNotesCheckBox.addChangeListener(listener);
+    }
+
+    /**
+     * Returns the selected font family name.
+     *
+     * @return font family name, never null
+     */
+    public String getFontFamily() {
+        Object selected = fontFamilyCombo.getSelectedItem();
+        return selected != null ? selected.toString() : "Monospaced";
+    }
+
+    /**
+     * Adds a listener that is notified when the font family selection changes.
+     *
+     * @param listener the action listener
+     */
+    public void addFontChangeListener(java.awt.event.ActionListener listener) {
+        fontFamilyCombo.addActionListener(listener);
     }
 }

@@ -164,6 +164,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
 
     // Font size state
     private int currentFontSize = 13;
+    private String currentFontFamily = "Monospaced";
     private String lastFunctionName = "";
     private String lastCode = "";
 
@@ -244,7 +245,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
             }
         };
         codePane.setEditable(false);
-        codePane.setFont(new Font("Monospaced", Font.PLAIN, 13));
+        codePane.setFont(new Font(currentFontFamily, Font.PLAIN, currentFontSize));
         ToolTipManager.sharedInstance().registerComponent(codePane);
         ToolTipManager.sharedInstance().setDismissDelay(3000);
         installClickToHighlight();
@@ -1498,7 +1499,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
         SimpleAttributeSet style = new SimpleAttributeSet();
         StyleConstants.setForeground(style, color);
         StyleConstants.setBold(style, bold);
-        StyleConstants.setFontFamily(style, "Monospaced");
+        StyleConstants.setFontFamily(style, currentFontFamily);
         StyleConstants.setFontSize(style, currentFontSize);
         return style;
     }
@@ -1550,7 +1551,23 @@ public class ArkTSOutputProvider extends ComponentProvider {
 
     private void setFontSize(int size) {
         currentFontSize = Math.max(8, Math.min(24, size));
-        codePane.setFont(new Font("Monospaced", Font.PLAIN, currentFontSize));
+        codePane.setFont(new Font(currentFontFamily, Font.PLAIN, currentFontSize));
+        if (!lastCode.isEmpty()) {
+            renderHighlightedCode(lastCode);
+        }
+    }
+
+    /**
+     * Updates the font family used in the code view and re-renders if content is present.
+     *
+     * @param family font family name; ignored if null or empty
+     */
+    public void setFontFamily(String family) {
+        if (family == null || family.isEmpty()) {
+            return;
+        }
+        currentFontFamily = family;
+        codePane.setFont(new Font(currentFontFamily, Font.PLAIN, currentFontSize));
         if (!lastCode.isEmpty()) {
             renderHighlightedCode(lastCode);
         }

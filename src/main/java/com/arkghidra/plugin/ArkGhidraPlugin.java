@@ -36,8 +36,10 @@ import ghidra.program.util.ProgramLocation;
 import ghidra.util.Msg;
 
 import com.arkghidra.decompile.ArkTSDecompiler;
+import com.arkghidra.format.AbcAccessFlags;
 import com.arkghidra.format.AbcClass;
 import com.arkghidra.format.AbcCode;
+import com.arkghidra.format.AbcField;
 import com.arkghidra.format.AbcFile;
 import com.arkghidra.format.AbcMethod;
 import com.arkghidra.loader.HapMetadata;
@@ -169,6 +171,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         tool.addComponentProvider(statsProvider, false);
         settingsProvider = new SettingsProvider(tool, PLUGIN_NAME);
         tool.addComponentProvider(settingsProvider, false);
+        settingsProvider.addFontChangeListener(e -> outputProvider.setFontFamily(settingsProvider.getFontFamily()));
         notesProvider = new NotesProvider(tool, PLUGIN_NAME);
         tool.addComponentProvider(notesProvider, false);
         abcStructureProvider.setNotesProvider(notesProvider);
@@ -575,6 +578,27 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             boolean skipTrivial = settingsProvider != null
                     && settingsProvider.isSkipTrivialMethods();
             StringBuilder sb = new StringBuilder();
+            sb.append("// class ").append(className).append("\n");
+            if (!abcClass.getFields().isEmpty()) {
+                sb.append("//   fields:\n");
+                for (AbcField field : abcClass.getFields()) {
+                    long flags = field.getAccessFlags();
+                    String prefix;
+                    if ((flags & AbcAccessFlags.ACC_PUBLIC) != 0) {
+                        prefix = "+";
+                    } else if ((flags & AbcAccessFlags.ACC_PRIVATE) != 0) {
+                        prefix = "-";
+                    } else if ((flags & AbcAccessFlags.ACC_PROTECTED) != 0) {
+                        prefix = "#";
+                    } else {
+                        prefix = "~";
+                    }
+                    String staticTag = ((flags & AbcAccessFlags.ACC_STATIC) != 0) ? " [S]" : "";
+                    sb.append("//     ").append(prefix).append(staticTag)
+                            .append(" ").append(field.getName()).append("\n");
+                }
+            }
+            sb.append("\n");
             for (AbcMethod method : abcClass.getMethods()) {
                 if (skipTrivial && method.getCodeOff() != 0) {
                     try {
