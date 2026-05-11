@@ -31,6 +31,7 @@ import docking.Tool;
 import ghidra.util.Msg;
 
 import com.arkghidra.format.AbcClass;
+import com.arkghidra.format.AbcCode;
 import com.arkghidra.format.AbcField;
 import com.arkghidra.format.AbcFile;
 import com.arkghidra.format.AbcMethod;
@@ -480,7 +481,7 @@ public class AbcStructureProvider extends ComponentProvider {
                             @Override
                             public String toString() {
                                 AbcMethod m = (AbcMethod) getUserObject();
-                                return m.getName() + formatMethodSuffix(m);
+                                return m.getName() + formatMethodSuffixWithArgs(m, currentAbcFile);
                             }
                         };
                 methodsNode.add(methodNode);
@@ -528,6 +529,25 @@ public class AbcStructureProvider extends ComponentProvider {
     private static String formatMethodSuffix(AbcMethod method) {
         if (method.getCodeOff() == 0) {
             return " (abstract/native)";
+        }
+        return " @0x" + Long.toHexString(method.getCodeOff());
+    }
+
+    private static String formatMethodSuffixWithArgs(AbcMethod method, AbcFile abcFile) {
+        if (method.getCodeOff() == 0) {
+            return " (abstract/native)";
+        }
+        if (abcFile != null) {
+            try {
+                AbcCode code = abcFile.getCodeForMethod(method);
+                if (code != null) {
+                    long numArgs = code.getNumArgs();
+                    return " (" + numArgs + " arg" + (numArgs == 1 ? "" : "s")
+                            + ") @0x" + Long.toHexString(method.getCodeOff());
+                }
+            } catch (Exception e) {
+                // fall through to default
+            }
         }
         return " @0x" + Long.toHexString(method.getCodeOff());
     }

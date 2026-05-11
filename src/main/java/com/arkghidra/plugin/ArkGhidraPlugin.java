@@ -59,6 +59,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
     private HapInfoProvider hapInfoProvider;
     private CallGraphProvider callGraphProvider;
     private GlobalSearchProvider globalSearchProvider;
+    private BookmarkProvider bookmarkProvider;
 
     public ArkGhidraPlugin(PluginTool tool) {
         super(tool);
@@ -106,6 +107,10 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             tool.showComponentProvider(globalSearchProvider, true);
             performGlobalSearch(word);
         });
+        bookmarkProvider = new BookmarkProvider(tool, PLUGIN_NAME);
+        bookmarkProvider.setNavigationCallback(this::navigateToSearchResult);
+        tool.addComponentProvider(bookmarkProvider, false);
+        outputProvider.setAddBookmarkCallback(this::addCurrentBookmark);
     }
 
     private void onMethodDoubleClicked(AbcMethod method) {
@@ -517,6 +522,24 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         tool.showComponentProvider(hapInfoProvider, true);
     }
 
+    /**
+     * Bookmarks the currently displayed method and makes the Bookmarks panel visible.
+     */
+    public void addCurrentBookmark() {
+        String funcName = outputProvider.getLastFunctionName();
+        if (funcName == null || funcName.isEmpty()) {
+            return;
+        }
+        String className = "";
+        String methodName = funcName;
+        if (funcName.startsWith("Class: ")) {
+            className = funcName.substring(7);
+            methodName = className;
+        }
+        bookmarkProvider.addBookmark(className, methodName);
+        tool.showComponentProvider(bookmarkProvider, true);
+    }
+
     @Override
     public void cleanup() {
         PluginTool pluginTool = getTool();
@@ -538,6 +561,9 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             }
             if (globalSearchProvider != null) {
                 pluginTool.removeComponentProvider(globalSearchProvider);
+            }
+            if (bookmarkProvider != null) {
+                pluginTool.removeComponentProvider(bookmarkProvider);
             }
         }
     }

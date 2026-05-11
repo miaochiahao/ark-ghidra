@@ -172,6 +172,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private Consumer<String> jumpToDefinitionCallback;
     private Runnable globalSearchCallback;
     private Consumer<String> globalSearchWordCallback;
+    private Runnable addBookmarkCallback;
 
     private JButton backButton;
     private JButton forwardButton;
@@ -505,6 +506,13 @@ public class ArkTSOutputProvider extends ComponentProvider {
             gotoDefItem.addActionListener(e -> jumpToDefinitionCallback.accept(capturedWord));
         }
         menu.add(gotoDefItem);
+
+        JMenuItem bookmarkItem = new JMenuItem("Add Bookmark");
+        bookmarkItem.setEnabled(addBookmarkCallback != null);
+        if (addBookmarkCallback != null) {
+            bookmarkItem.addActionListener(e -> addBookmarkCallback.run());
+        }
+        menu.add(bookmarkItem);
 
         JMenuItem copySymbolItem = new JMenuItem("Copy Symbol Name");
         copySymbolItem.setEnabled(hasWord);
@@ -932,6 +940,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 + "Escape          Close search bar\n"
                 + "Alt+Left        Navigate back\n"
                 + "Alt+Right       Navigate forward\n"
+                + "Ctrl+B          Add bookmark\n"
                 + "Ctrl+=          Increase font size\n"
                 + "Ctrl+-          Decrease font size\n"
                 + "Ctrl+0          Reset font size\n"
@@ -1229,6 +1238,18 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 navigateForward();
             }
         });
+
+        int cmdMask = Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
+        KeyStroke ctrlB = KeyStroke.getKeyStroke(KeyEvent.VK_B, cmdMask);
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(ctrlB, "addBookmark");
+        codePane.getActionMap().put("addBookmark", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (addBookmarkCallback != null) {
+                    addBookmarkCallback.run();
+                }
+            }
+        });
     }
 
     // --- Tooltip ---
@@ -1283,6 +1304,16 @@ public class ArkTSOutputProvider extends ComponentProvider {
      */
     public void setGlobalSearchCallback(Runnable callback) {
         this.globalSearchCallback = callback;
+    }
+
+    /**
+     * Sets a callback invoked when the user presses Ctrl+B or selects "Add Bookmark"
+     * from the context menu.
+     *
+     * @param callback the runnable to invoke, or null to disable
+     */
+    public void setAddBookmarkCallback(Runnable callback) {
+        this.addBookmarkCallback = callback;
     }
 
     /**
