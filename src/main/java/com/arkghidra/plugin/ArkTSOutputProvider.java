@@ -27,6 +27,7 @@ import javax.swing.JLabel;
 import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
+import javax.swing.JOptionPane;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 import javax.swing.JTextPane;
@@ -372,7 +373,74 @@ public class ArkTSOutputProvider extends ComponentProvider {
         }
         menu.add(copySymbolItem);
 
+        menu.addSeparator();
+
+        JMenuItem addCommentItem = new JMenuItem("Add Comment...");
+        addCommentItem.addActionListener(e -> addCommentAtOffset(offset));
+        menu.add(addCommentItem);
+
+        JMenuItem renameItem = new JMenuItem("Rename Symbol...");
+        renameItem.setEnabled(hasWord);
+        if (hasWord) {
+            final String capturedWord = word;
+            renameItem.addActionListener(e -> renameSymbol(capturedWord));
+        }
+        menu.add(renameItem);
+
         return menu;
+    }
+
+    private void addCommentAtOffset(int offset) {
+        String comment = JOptionPane.showInputDialog(
+                mainPanel, "Enter comment:", "Add Comment",
+                JOptionPane.PLAIN_MESSAGE);
+        if (comment == null || comment.isEmpty()) {
+            return;
+        }
+        try {
+            StyledDocument doc = codePane.getStyledDocument();
+            String text = doc.getText(0, doc.getLength());
+            int lineEnd = text.indexOf('\n', offset);
+            if (lineEnd < 0) {
+                lineEnd = text.length();
+            }
+            String insertion = "  // user: " + comment;
+            SimpleAttributeSet commentStyle = createStyle(
+                    new Color(0x808080), false);
+            doc.insertString(lineEnd, insertion, commentStyle);
+        } catch (BadLocationException ex) {
+            Msg.warn(OWNER, "Failed to insert comment: " + ex.getMessage());
+        }
+    }
+
+    private void renameSymbol(String oldName) {
+        String newName = (String) JOptionPane.showInputDialog(
+                mainPanel, "Rename \"" + oldName + "\" to:",
+                "Rename Symbol", JOptionPane.PLAIN_MESSAGE,
+                null, null, oldName);
+        if (newName == null || newName.isEmpty()
+                || newName.equals(oldName)) {
+            return;
+        }
+        try {
+            StyledDocument doc = codePane.getStyledDocument();
+            String text = doc.getText(0, doc.getLength());
+            List<Integer> positions =
+                    symbolHighlighter.findAllOccurrences(text, oldName);
+            for (int i = positions.size() - 1; i >= 0; i--) {
+                int pos = positions.get(i);
+                doc.remove(pos, oldName.length());
+                doc.insertString(pos, newName,
+                        createStyle(COLOR_PLAIN, false));
+            }
+            if (currentHighlightedWord.equals(oldName)) {
+                currentHighlightedWord = newName;
+            }
+            Msg.info(OWNER, "Renamed \"" + oldName + "\" to \""
+                    + newName + "\" (" + positions.size() + " occurrences)");
+        } catch (BadLocationException ex) {
+            Msg.warn(OWNER, "Failed to rename symbol: " + ex.getMessage());
+        }
     }
 
     private void handleSymbolClick(MouseEvent e) {
