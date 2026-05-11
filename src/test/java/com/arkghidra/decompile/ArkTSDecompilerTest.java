@@ -14837,4 +14837,73 @@ class ArkTSDecompilerTest {
                 getterMethod.getName()));
         assertFalse(DeclarationBuilder.isAccessorPrefix("#~@0>#method"));
     }
+
+    @Test
+    void testIfElseIfChain_threeBranches() {
+        // Simulates: if (v0 >= 90) { v1 = 1 } else if (v0 >= 80) { v1 = 2 } else { v1 = 3 }; return
+        // CFG: cond1 -> then1 -> merge, cond1 -> cond2 -> then2 -> merge, cond2 -> else_final -> merge
+        byte[] code = concat(
+            bytes(0x60, 0x00),              // offset 0: lda v0 (2)
+            bytes(0x62, 0x5A, 0, 0, 0),    // offset 2: ldai 90 (5)
+            bytes(0x14, 0x00, 0x00),        // offset 7: greatereq IC=0,v0 (3)
+            bytes(0x4F, 0x09),              // offset 10: jeqz +9 -> 21 (2)
+            bytes(0x62, 0x01, 0, 0, 0),    // offset 12: ldai 1 (5)
+            bytes(0x61, 0x01),              // offset 17: sta v1 (2)
+            bytes(0x4D, 0x1C),              // offset 19: jmp +28 -> 49 (2)
+            bytes(0x60, 0x00),              // offset 21: lda v0 (2)
+            bytes(0x62, 0x50, 0, 0, 0),    // offset 23: ldai 80 (5)
+            bytes(0x14, 0x00, 0x00),        // offset 28: greatereq IC=0,v0 (3)
+            bytes(0x4F, 0x09),              // offset 31: jeqz +9 -> 42 (2)
+            bytes(0x62, 0x02, 0, 0, 0),    // offset 33: ldai 2 (5)
+            bytes(0x61, 0x01),              // offset 38: sta v1 (2)
+            bytes(0x4D, 0x07),              // offset 40: jmp +7 -> 49 (2)
+            bytes(0x62, 0x03, 0, 0, 0),    // offset 42: ldai 3 (5)
+            bytes(0x61, 0x01),              // offset 47: sta v1 (2)
+            bytes(0x64)                     // offset 49: return (1)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("if"),
+                "Should produce if statement, got: " + result);
+        assertTrue(result.contains("else"),
+                "Should produce else clause for else-if, got: " + result);
+        // All three values should appear
+        assertTrue(result.contains("1"),
+                "Should contain value 1 (grade A), got: " + result);
+        assertTrue(result.contains("2"),
+                "Should contain value 2 (grade B), got: " + result);
+        assertTrue(result.contains("3"),
+                "Should contain value 3 (grade F), got: " + result);
+    }
+
+    @Test
+    void testIfElseIfChain_jnezEncoding() {
+        // Simulates negated condition: if (v0 >= 90) encoded as !(v0 <= 89)
+        // Uses lesseq + jnez instead of greatereq + jeqz
+        byte[] code = concat(
+            bytes(0x60, 0x00),              // offset 0: lda v0 (2)
+            bytes(0x62, 0x59, 0, 0, 0),    // offset 2: ldai 89 (5)
+            bytes(0x12, 0x00, 0x00),        // offset 7: lesseq IC=0,v0 (3)
+            bytes(0x51, 0x09),              // offset 10: jnez +9 -> 21 (2)
+            bytes(0x62, 0x01, 0, 0, 0),    // offset 12: ldai 1 (5)
+            bytes(0x61, 0x01),              // offset 17: sta v1 (2)
+            bytes(0x4D, 0x1C),              // offset 19: jmp +28 -> 49 (2)
+            bytes(0x60, 0x00),              // offset 21: lda v0 (2)
+            bytes(0x62, 0x4F, 0, 0, 0),    // offset 23: ldai 79 (5)
+            bytes(0x12, 0x00, 0x00),        // offset 28: lesseq IC=0,v0 (3)
+            bytes(0x51, 0x09),              // offset 31: jnez +9 -> 42 (2)
+            bytes(0x62, 0x02, 0, 0, 0),    // offset 33: ldai 2 (5)
+            bytes(0x61, 0x01),              // offset 38: sta v1 (2)
+            bytes(0x4D, 0x07),              // offset 40: jmp +7 -> 49 (2)
+            bytes(0x62, 0x03, 0, 0, 0),    // offset 42: ldai 3 (5)
+            bytes(0x61, 0x01),              // offset 47: sta v1 (2)
+            bytes(0x64)                     // offset 49: return (1)
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertTrue(result.contains("if"),
+                "Should produce if statement, got: " + result);
+        assertTrue(result.contains("else"),
+                "Should produce else clause for else-if, got: " + result);
+    }
 }
