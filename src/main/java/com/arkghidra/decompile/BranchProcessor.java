@@ -222,7 +222,11 @@ class BranchProcessor {
         }
 
         // Mark merge block as visited early to prevent it from being
-        // collected into branch sub-graphs
+        // collected into branch sub-graphs. Track if it was already
+        // visited by a parent if-else chain to avoid duplicate
+        // processing of the merge block in else-if chains.
+        boolean mergeAlreadyVisited = pattern.mergeBlock != null
+                && visited.contains(pattern.mergeBlock);
         if (pattern.mergeBlock != null) {
             visited.add(pattern.mergeBlock);
         }
@@ -267,8 +271,11 @@ class BranchProcessor {
                         elseStmt);
         stmts.add(ifStmt);
 
-        // Process the merge block (code after both branches converge)
-        if (pattern.mergeBlock != null) {
+        // Process the merge block (code after both branches converge).
+        // Only process if this if-else is the owner (first to visit it).
+        // Nested if-else in else-if chains share the same merge block
+        // and should not duplicate it.
+        if (pattern.mergeBlock != null && !mergeAlreadyVisited) {
             List<ArkTSStatement> mergeStmts =
                     reconstructor.processBlockInstructions(
                             pattern.mergeBlock, ctx);
