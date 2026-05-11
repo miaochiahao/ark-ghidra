@@ -61,7 +61,14 @@ public class ShortcutsProvider extends ComponentProvider {
             + "  args:>N           Methods with more than N args\n"
             + "  args:<N           Methods with fewer than N args\n"
             + "  size:>N           Methods larger than N bytes\n"
-            + "  size:<N           Methods smaller than N bytes\n";
+            + "  size:<N           Methods smaller than N bytes\n"
+            + "  name:pattern      Methods whose name contains pattern\n"
+            + "  class:pattern     Classes whose name contains pattern\n\n"
+            + "EXPORT\n"
+            + "  HTML...           Export with dark or light theme\n"
+            + "  Save...           Export as plain .ets file\n"
+            + "  Export All...     Export all classes to directory\n"
+            + "  Copy as Markdown  Wrap in ```typescript fences\n";
 
     public ShortcutsProvider(Tool tool, String owner) {
         super(tool, "Shortcuts", owner);

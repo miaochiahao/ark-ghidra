@@ -1751,6 +1751,16 @@ public class ArkTSOutputProvider extends ComponentProvider {
             Msg.warn(OWNER, "No code to export");
             return;
         }
+        // Ask user for theme
+        String[] options = {"Dark Theme", "Light Theme", "Cancel"};
+        int choice = JOptionPane.showOptionDialog(
+                mainPanel, "Choose HTML export theme:", "Export as HTML",
+                JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE,
+                null, options, options[0]);
+        if (choice == 2 || choice == JOptionPane.CLOSED_OPTION) {
+            return;
+        }
+        boolean darkTheme = choice == 0;
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Export as HTML");
         chooser.setSelectedFile(new File("decompiled.html"));
@@ -1760,28 +1770,40 @@ public class ArkTSOutputProvider extends ComponentProvider {
         File file = chooser.getSelectedFile();
         try (BufferedWriter writer = new BufferedWriter(
                 new OutputStreamWriter(new FileOutputStream(file), StandardCharsets.UTF_8))) {
-            writer.write(buildHtml(text));
+            writer.write(buildHtml(text, darkTheme));
             Msg.info(OWNER, "Exported HTML to " + file.getPath());
         } catch (IOException e) {
             Msg.error(OWNER, "Failed to export HTML: " + e.getMessage(), e);
         }
     }
 
-    private String buildHtml(String code) {
+    private String buildHtml(String code, boolean dark) {
         StringBuilder sb = new StringBuilder();
         sb.append("<!DOCTYPE html>\n<html>\n<head>\n");
         sb.append("<meta charset=\"UTF-8\">\n");
         sb.append("<title>Decompiled ArkTS</title>\n");
         sb.append("<style>\n");
-        sb.append("body { background: #1e1e1e; color: #d4d4d4; font-family: monospace; "
-                + "font-size: 13px; padding: 16px; }\n");
-        sb.append(".kw { color: #82aaff; font-weight: bold; }\n");
-        sb.append(".ty { color: #89ddff; font-weight: bold; }\n");
-        sb.append(".st { color: #c3e88d; }\n");
-        sb.append(".cm { color: #546e7a; }\n");
-        sb.append(".dc { color: #c792ea; font-weight: bold; }\n");
-        sb.append(".nm { color: #f78c6c; }\n");
-        sb.append(".md { color: #82aaff; font-weight: bold; }\n");
+        if (dark) {
+            sb.append("body { background: #1e1e1e; color: #d4d4d4; font-family: monospace; "
+                    + "font-size: 13px; padding: 16px; }\n");
+            sb.append(".kw { color: #82aaff; font-weight: bold; }\n");
+            sb.append(".ty { color: #89ddff; font-weight: bold; }\n");
+            sb.append(".st { color: #c3e88d; }\n");
+            sb.append(".cm { color: #546e7a; }\n");
+            sb.append(".dc { color: #c792ea; font-weight: bold; }\n");
+            sb.append(".nm { color: #f78c6c; }\n");
+            sb.append(".md { color: #82aaff; font-weight: bold; }\n");
+        } else {
+            sb.append("body { background: #ffffff; color: #000000; font-family: monospace; "
+                    + "font-size: 13px; padding: 16px; }\n");
+            sb.append(".kw { color: #0000cc; font-weight: bold; }\n");
+            sb.append(".ty { color: #008080; font-weight: bold; }\n");
+            sb.append(".st { color: #008000; }\n");
+            sb.append(".cm { color: #808080; }\n");
+            sb.append(".dc { color: #800080; font-weight: bold; }\n");
+            sb.append(".nm { color: #ff8c00; }\n");
+            sb.append(".md { color: #0000cc; font-weight: bold; }\n");
+        }
         sb.append("</style>\n</head>\n<body>\n<pre>\n");
         String escaped = code.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
         escaped = escaped.replaceAll("(?m)(//[^\n]*)", "<span class=\"cm\">$1</span>");
