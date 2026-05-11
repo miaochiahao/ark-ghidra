@@ -71,6 +71,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
     private BookmarkProvider bookmarkProvider;
     private HistoryProvider historyProvider;
     private StatsProvider statsProvider;
+    private SettingsProvider settingsProvider;
 
     public ArkGhidraPlugin(PluginTool tool) {
         super(tool);
@@ -147,12 +148,22 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         tool.addComponentProvider(historyProvider, false);
         statsProvider = new StatsProvider(tool, PLUGIN_NAME);
         tool.addComponentProvider(statsProvider, false);
+        settingsProvider = new SettingsProvider(tool, PLUGIN_NAME);
+        tool.addComponentProvider(settingsProvider, false);
         abcStructureProvider.setShowCallersCallback(this::showAllCallers);
     }
 
     private void showAllCallers(String methodName) {
         tool.showComponentProvider(globalSearchProvider, true);
         globalSearchProvider.triggerSearch(methodName + "(");
+    }
+
+    private ArkTSDecompiler createDecompiler() {
+        ArkTSDecompiler decompiler = new ArkTSDecompiler();
+        if (settingsProvider != null) {
+            decompiler.setMethodTimeoutMs(settingsProvider.getTimeoutMs());
+        }
+        return decompiler;
     }
 
     private void showQuickOpen() {
@@ -236,6 +247,34 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             }
         });
 
+        // Arrow keys in filter field move the list selection
+        javax.swing.KeyStroke down = javax.swing.KeyStroke.getKeyStroke(
+                java.awt.event.KeyEvent.VK_DOWN, 0);
+        javax.swing.KeyStroke up = javax.swing.KeyStroke.getKeyStroke(
+                java.awt.event.KeyEvent.VK_UP, 0);
+        filterField.getInputMap().put(down, "selectDown");
+        filterField.getInputMap().put(up, "selectUp");
+        filterField.getActionMap().put("selectDown", new javax.swing.AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                int idx = resultList.getSelectedIndex();
+                if (idx < listModel.size() - 1) {
+                    resultList.setSelectedIndex(idx + 1);
+                    resultList.ensureIndexIsVisible(idx + 1);
+                }
+            }
+        });
+        filterField.getActionMap().put("selectUp", new javax.swing.AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                int idx = resultList.getSelectedIndex();
+                if (idx > 0) {
+                    resultList.setSelectedIndex(idx - 1);
+                    resultList.ensureIndexIsVisible(idx - 1);
+                }
+            }
+        });
+
         resultList.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
             public void mouseClicked(java.awt.event.MouseEvent e) {
@@ -299,7 +338,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             }
             AbcFile abcFile = AbcFile.parse(abcData);
             AbcCode code = abcFile.getCodeForMethod(method);
-            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+            ArkTSDecompiler decompiler = createDecompiler();
             String result = decompiler.decompileMethod(method, code, abcFile);
             String clsName = findClassForMethod(abcFile, method);
             outputProvider.showDecompiledCode(method.getName(), result, clsName);
@@ -340,7 +379,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                 return;
             }
             AbcFile abcFile = AbcFile.parse(abcData);
-            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+            ArkTSDecompiler decompiler = createDecompiler();
             StringBuilder sb = new StringBuilder();
             for (AbcMethod method : abcClass.getMethods()) {
                 AbcCode code = abcFile.getCodeForMethod(method);
@@ -373,7 +412,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                 return;
             }
             AbcFile abcFile = AbcFile.parse(abcData);
-            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+            ArkTSDecompiler decompiler = createDecompiler();
             StringBuilder sb = new StringBuilder();
             for (AbcMethod method : abcClass.getMethods()) {
                 AbcCode code = abcFile.getCodeForMethod(method);
@@ -404,7 +443,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                 return;
             }
             AbcFile abcFile = AbcFile.parse(abcData);
-            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+            ArkTSDecompiler decompiler = createDecompiler();
             StringBuilder sb = new StringBuilder();
             for (AbcMethod method : abcClass.getMethods()) {
                 AbcCode code = abcFile.getCodeForMethod(method);
@@ -435,7 +474,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                 return;
             }
             AbcFile abcFile = AbcFile.parse(abcData);
-            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+            ArkTSDecompiler decompiler = createDecompiler();
             String result = decompiler.decompileFile(abcFile);
             outputProvider.showDecompiledCode("File: " + program.getName(), result);
             historyProvider.recordNavigation("File: " + program.getName(), result);
@@ -477,7 +516,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                         return null;
                     }
                     AbcFile abcFile = AbcFile.parse(abcData);
-                    ArkTSDecompiler decompiler = new ArkTSDecompiler();
+                    ArkTSDecompiler decompiler = createDecompiler();
                     int count = 0;
                     for (AbcClass cls : abcFile.getClasses()) {
                         try {
@@ -546,7 +585,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             protected Void doInBackground() {
                 try {
                     AbcFile freshFile = AbcFile.parse(abcData);
-                    ArkTSDecompiler decompiler = new ArkTSDecompiler();
+                    ArkTSDecompiler decompiler = createDecompiler();
                     String lowerQuery = query.toLowerCase();
                     for (AbcClass cls : freshFile.getClasses()) {
                         String className =
@@ -659,7 +698,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                 return;
             }
             AbcCode code = abcFile.getCodeForMethod(abcMethod);
-            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+            ArkTSDecompiler decompiler = createDecompiler();
             String result = decompiler.decompileMethod(abcMethod, code, abcFile);
             String clsName = findClassForMethod(abcFile, abcMethod);
             outputProvider.showDecompiledCode(abcMethod.getName(), result, clsName);
@@ -873,6 +912,9 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             }
             if (statsProvider != null) {
                 pluginTool.removeComponentProvider(statsProvider);
+            }
+            if (settingsProvider != null) {
+                pluginTool.removeComponentProvider(settingsProvider);
             }
         }
     }
