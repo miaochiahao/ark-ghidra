@@ -46,6 +46,7 @@ import com.arkghidra.format.AbcCode;
 import com.arkghidra.format.AbcField;
 import com.arkghidra.format.AbcFile;
 import com.arkghidra.format.AbcMethod;
+import com.arkghidra.loader.HapMetadata;
 
 /**
  * Component provider that displays the ABC file structure as a tree.
@@ -72,6 +73,8 @@ public class AbcStructureProvider extends ComponentProvider {
     private final JTextField filterField;
     private final JLabel breadcrumbLabel;
     private AbcFile currentAbcFile;
+    private HapMetadata currentHapMetadata;
+    private String currentHapName = "";
     private MethodNavigationListener navigationListener;
     private ClassNavigationListener classNavigationListener;
     private BiConsumer<AbcClass, File> exportClassCallback;
@@ -85,8 +88,8 @@ public class AbcStructureProvider extends ComponentProvider {
     private JTextField minSizeField;
 
     public AbcStructureProvider(Tool tool, String owner) {
-        super(tool, "ABC Structure", owner);
-        rootNode = new DefaultMutableTreeNode("ABC File (not loaded)");
+        super(tool, "HAP Explorer", owner);
+        rootNode = new DefaultMutableTreeNode("HAP (not loaded)");
         treeModel = new DefaultTreeModel(rootNode);
         structureTree = new JTree(treeModel);
         structureTree.setRootVisible(true);
@@ -244,7 +247,7 @@ public class AbcStructureProvider extends ComponentProvider {
         mainPanel.add(scrollPane, BorderLayout.CENTER);
 
         setDefaultWindowPosition(docking.WindowPosition.LEFT);
-        setTitle("ABC Structure");
+        setTitle("HAP Explorer");
     }
 
     /**
@@ -557,6 +560,18 @@ public class AbcStructureProvider extends ComponentProvider {
     }
 
     /**
+     * Sets the HAP metadata (from module.json5) to show Abilities section.
+     *
+     * @param metadata the parsed HAP metadata, or null to clear
+     * @param hapName the HAP file name for the root node label
+     */
+    public void setHapMetadata(HapMetadata metadata, String hapName) {
+        this.currentHapMetadata = metadata;
+        this.currentHapName = hapName != null ? hapName : "";
+        rebuildTree();
+    }
+
+    /**
      * Shows an error message in place of the tree content.
      *
      * @param message the error message
@@ -565,7 +580,7 @@ public class AbcStructureProvider extends ComponentProvider {
         rootNode.removeAllChildren();
         rootNode.setUserObject("Error: " + message);
         treeModel.reload();
-        Msg.warn(OWNER, "ABC Structure error: " + message);
+        Msg.warn(OWNER, "HAP Explorer error: " + message);
     }
 
     /**
@@ -673,11 +688,29 @@ public class AbcStructureProvider extends ComponentProvider {
         }
     }
 
+    private AbcClass findClassForAbility(String abilityName) {
+        if (currentAbcFile == null || abilityName == null) {
+            return null;
+        }
+        String lowerAbility = abilityName.toLowerCase();
+        for (AbcClass cls : currentAbcFile.getClasses()) {
+            String simpleName = formatClassName(cls.getName());
+            if (simpleName.contains(".")) {
+                simpleName = simpleName.substring(simpleName.lastIndexOf('.') + 1);
+            }
+            if (simpleName.toLowerCase().contains(lowerAbility)
+                    || lowerAbility.contains(simpleName.toLowerCase())) {
+                return cls;
+            }
+        }
+        return null;
+    }
+
     private void rebuildTree() {
         rootNode.removeAllChildren();
 
         if (currentAbcFile == null) {
-            rootNode.setUserObject("ABC File (not loaded)");
+            rootNode.setUserObject("HAP (not loaded)");
             treeModel.reload();
             return;
         }
@@ -687,8 +720,52 @@ public class AbcStructureProvider extends ComponentProvider {
             filter = "";
         }
 
-        rootNode.setUserObject("ABC File ("
-                + currentAbcFile.getClasses().size() + " classes)");
+        // Root node: show HAP name if available
+        String rootLabel = currentHapName.isEmpty()
+                ? "HAP (" + currentAbcFile.getClasses().size() + " classes)"
+                : currentHapName + " (" + currentAbcFile.getClasses().size() + " classes)";
+        rootNode.setUserObject(rootLabel);
+
+        // Abilities section from HapMetadata
+        if (currentHapMetadata != null && !currentHapMetadata.getAbilities().isEmpty()) {
+            DefaultMutableTreeNode abilitiesNode =
+                    new DefaultMutableTreeNode("Abilities");
+            rootNode.add(abilitiesNode);
+            for (HapMetadata.AbilityInfo ability : currentHapMetadata.getAbilities()) {
+                String abilityLabel = ability.getName();
+                if (!ability.getType().isEmpty()) {
+                    abilityLabel += " [" + ability.getType() + "]";
+                }
+                // Find the matching AbcClass for this ability
+                AbcClass abilityClass = findClassForAbility(ability.getName());
+                if (abilityClass != null) {
+                    final AbcClass finalCls = abilityClass;
+                    final String finalLabel = abilityLabel;
+                    DefaultMutableTreeNode abilityNode =
+                            new DefaultMutableTreeNode(finalCls) {
+                                @Override
+                                public String toString() {
+                                    return finalLabel;
+                                }
+                            };
+                    abilitiesNode.add(abilityNode);
+                    // Add methods under ability
+                    for (AbcMethod method : abilityClass.getMethods()) {
+                        DefaultMutableTreeNode methodNode =
+                                new DefaultMutableTreeNode(method) {
+                                    @Override
+                                    public String toString() {
+                                        AbcMethod m = (AbcMethod) getUserObject();
+                                        return m.getName();
+                                    }
+                                };
+                        abilityNode.add(methodNode);
+                    }
+                } else {
+                    abilitiesNode.add(new DefaultMutableTreeNode(abilityLabel));
+                }
+            }
+        }
 
         DefaultMutableTreeNode classesNode =
                 new DefaultMutableTreeNode("Classes");

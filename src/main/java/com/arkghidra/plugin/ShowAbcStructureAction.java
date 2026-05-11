@@ -81,6 +81,9 @@ public class ShowAbcStructureAction extends DockingAction {
                 metadata = buildSyntheticMetadata(program, abcFile);
             }
             plugin.showHapMetadata(metadata);
+            // Also update the HAP Explorer tree with abilities
+            String hapName = program.getName();
+            plugin.getAbcStructureProvider().setHapMetadata(metadata, hapName);
         } catch (Exception e) {
             Msg.warn(OWNER, "Failed to load HAP metadata: " + e.getMessage());
         }
