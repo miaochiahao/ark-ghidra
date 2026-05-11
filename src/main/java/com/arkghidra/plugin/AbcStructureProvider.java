@@ -81,6 +81,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private BiConsumer<AbcClass, File> exportClassCallback;
     private java.util.function.Consumer<AbcClass> copyAsArkTSCallback;
     private Consumer<String> showCallersCallback;
+    private Runnable exportReportCallback;
     private JToggleButton filterPublicButton;
     private JToggleButton filterPrivateButton;
     private JToggleButton filterStaticButton;
@@ -278,6 +279,15 @@ public class AbcStructureProvider extends ComponentProvider {
         this.showCallersCallback = cb;
     }
 
+    /**
+     * Sets the callback invoked when the user chooses "Export Report" from the root context menu.
+     *
+     * @param cb the runnable to invoke
+     */
+    public void setExportReportCallback(Runnable cb) {
+        this.exportReportCallback = cb;
+    }
+
     private void showTreeContextMenu(MouseEvent e) {
         TreePath path = structureTree.getPathForLocation(e.getX(), e.getY());
         if (path == null) {
@@ -371,7 +381,17 @@ public class AbcStructureProvider extends ComponentProvider {
             menu.show(structureTree, e.getX(), e.getY());
         } else if (userObj instanceof String) {
             String label = (String) userObj;
-            if (isClassNameNode(label)) {
+            // Root node or HAP label — show Export Report
+            if (label.startsWith("HAP") || label.endsWith("classes)")) {
+                JPopupMenu menu = new JPopupMenu();
+                JMenuItem exportReportItem = new JMenuItem("Export Report...");
+                exportReportItem.setEnabled(exportReportCallback != null);
+                if (exportReportCallback != null) {
+                    exportReportItem.addActionListener(ev -> exportReportCallback.run());
+                }
+                menu.add(exportReportItem);
+                menu.show(structureTree, e.getX(), e.getY());
+            } else if (isClassNameNode(label)) {
                 JPopupMenu menu = new JPopupMenu();
 
                 JMenuItem copyNameItem = new JMenuItem("Copy Name");
@@ -840,6 +860,46 @@ public class AbcStructureProvider extends ComponentProvider {
         DefaultMutableTreeNode classesNode =
                 new DefaultMutableTreeNode("Classes");
         rootNode.add(classesNode);
+
+        // Native Modules section: classes where all methods are abstract/native
+        List<AbcClass> nativeClasses = new ArrayList<>();
+        for (AbcClass cls : currentAbcFile.getClasses()) {
+            if (cls.getMethods().isEmpty()) {
+                continue;
+            }
+            boolean allNative = true;
+            for (AbcMethod method : cls.getMethods()) {
+                if (method.getCodeOff() != 0) {
+                    allNative = false;
+                    break;
+                }
+            }
+            if (allNative) {
+                nativeClasses.add(cls);
+            }
+        }
+        if (!nativeClasses.isEmpty()) {
+            DefaultMutableTreeNode nativeNode =
+                    new DefaultMutableTreeNode(
+                            "Native Modules (" + nativeClasses.size() + ")");
+            rootNode.add(nativeNode);
+            for (AbcClass nativeCls : nativeClasses) {
+                String nativeLabel = formatClassName(nativeCls.getName());
+                if (nativeLabel.contains(".")) {
+                    nativeLabel = nativeLabel.substring(nativeLabel.lastIndexOf('.') + 1);
+                }
+                final AbcClass finalNativeCls = nativeCls;
+                final String finalNativeLabel = nativeLabel;
+                DefaultMutableTreeNode nativeClsNode =
+                        new DefaultMutableTreeNode(finalNativeCls) {
+                            @Override
+                            public String toString() {
+                                return finalNativeLabel;
+                            }
+                        };
+                nativeNode.add(nativeClsNode);
+            }
+        }
 
         for (AbcClass cls : currentAbcFile.getClasses()) {
             String className = formatClassName(cls.getName());

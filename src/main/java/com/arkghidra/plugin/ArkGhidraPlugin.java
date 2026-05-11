@@ -87,6 +87,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         abcStructureProvider.setNavigationListener(this::onMethodDoubleClicked);
         abcStructureProvider.setClassNavigationListener(this::onClassClicked);
         abcStructureProvider.setExportClassCallback(this::exportClassToFile);
+        abcStructureProvider.setExportReportCallback(this::exportHapReport);
         abcStructureProvider.setCopyAsArkTSCallback(this::copyClassAsArkTS);
         outputProvider.setDecompileFileCallback(this::decompileWholeFile);
         outputProvider.setExportAllCallback(this::exportAllClasses);
@@ -428,6 +429,54 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                     "// Decompilation failed: " + e.getMessage());
         } finally {
             outputProvider.hideLoading();
+        }
+    }
+
+    private void exportHapReport() {
+        AbcFile abcFile = getCurrentAbcFile();
+        if (abcFile == null) {
+            return;
+        }
+        javax.swing.JFileChooser chooser = new javax.swing.JFileChooser();
+        chooser.setDialogTitle("Export HAP Report");
+        chooser.setSelectedFile(new File("hap_report.txt"));
+        if (chooser.showSaveDialog(null) != javax.swing.JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        File file = chooser.getSelectedFile();
+        try (BufferedWriter writer = new BufferedWriter(
+                new OutputStreamWriter(
+                        new FileOutputStream(file), StandardCharsets.UTF_8))) {
+            Program program = getCurrentProgram();
+            writer.write("HAP Report\n");
+            writer.write("==========\n");
+            if (program != null) {
+                writer.write("File: " + program.getName() + "\n");
+            }
+            writer.write("Classes: " + abcFile.getClasses().size() + "\n");
+            int totalMethods = 0;
+            for (AbcClass cls : abcFile.getClasses()) {
+                totalMethods += cls.getMethods().size();
+            }
+            writer.write("Methods: " + totalMethods + "\n\n");
+            for (AbcClass cls : abcFile.getClasses()) {
+                String clsName = AbcStructureProvider.formatClassName(cls.getName());
+                writer.write("Class: " + clsName + "\n");
+                for (AbcMethod method : cls.getMethods()) {
+                    String prefix = AbcStructureProvider.formatMethodPrefix(method);
+                    writer.write("  " + prefix + method.getName());
+                    if (method.getCodeOff() == 0) {
+                        writer.write(" (abstract/native)");
+                    } else {
+                        writer.write(" @0x" + Long.toHexString(method.getCodeOff()));
+                    }
+                    writer.write("\n");
+                }
+                writer.write("\n");
+            }
+            Msg.info(OWNER, "Exported HAP report to " + file.getPath());
+        } catch (IOException e) {
+            Msg.error(OWNER, "Export report failed: " + e.getMessage(), e);
         }
     }
 
