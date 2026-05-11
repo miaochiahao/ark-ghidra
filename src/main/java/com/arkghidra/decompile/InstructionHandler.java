@@ -116,11 +116,6 @@ class InstructionHandler {
                 ArkTSExpression expr =
                         new ArkTSExpression.VariableExpression(
                                 ctx.resolveRegisterName(reg));
-                // Track class-like expressions for newobjrange recovery
-                ArkTSExpression stored = ctx.getRegisterExpression(reg);
-                if (stored != null && isClassLikeExpression(stored)) {
-                    ctx.setLastClassCandidate(stored);
-                }
                 return new StatementResult(null, expr);
             }
             case ArkOpcodesCompat.LDUNDEFINED:
