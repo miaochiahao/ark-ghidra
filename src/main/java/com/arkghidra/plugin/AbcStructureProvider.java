@@ -2,6 +2,7 @@ package com.arkghidra.plugin;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Font;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
@@ -33,6 +34,7 @@ import javax.swing.event.DocumentListener;
 import javax.swing.event.TreeSelectionEvent;
 import javax.swing.event.TreeSelectionListener;
 import javax.swing.tree.DefaultMutableTreeNode;
+import javax.swing.tree.DefaultTreeCellRenderer;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreePath;
 
@@ -97,6 +99,7 @@ public class AbcStructureProvider extends ComponentProvider {
         structureTree.setRootVisible(true);
         structureTree.setShowsRootHandles(true);
         structureTree.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        structureTree.setCellRenderer(new MethodComplexityCellRenderer());
         structureTree.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -1092,5 +1095,53 @@ public class AbcStructureProvider extends ComponentProvider {
             }
         }
         return staticTag + " @0x" + Long.toHexString(method.getCodeOff());
+    }
+
+    /**
+     * Tree cell renderer that color-codes method nodes by bytecode size.
+     * Abstract/native methods: gray.
+     * Large methods (> 200b): red.
+     * Medium methods (50-200b): orange.
+     * Small methods (< 50b): default color.
+     */
+    private class MethodComplexityCellRenderer extends DefaultTreeCellRenderer {
+
+        private static final int SIZE_LARGE = 200;
+        private static final int SIZE_MEDIUM = 50;
+        private static final Color COLOR_LARGE = new Color(0xC62828);
+        private static final Color COLOR_MEDIUM = new Color(0xE65100);
+        private static final Color COLOR_ABSTRACT = new Color(0x757575);
+
+        @Override
+        public Component getTreeCellRendererComponent(JTree tree, Object value,
+                boolean selected, boolean expanded, boolean leaf,
+                int row, boolean hasFocus) {
+            super.getTreeCellRendererComponent(
+                    tree, value, selected, expanded, leaf, row, hasFocus);
+            if (!selected && value instanceof DefaultMutableTreeNode) {
+                Object userObj = ((DefaultMutableTreeNode) value).getUserObject();
+                if (userObj instanceof AbcMethod) {
+                    AbcMethod method = (AbcMethod) userObj;
+                    if (method.getCodeOff() == 0) {
+                        setForeground(COLOR_ABSTRACT);
+                    } else if (currentAbcFile != null) {
+                        try {
+                            AbcCode code = currentAbcFile.getCodeForMethod(method);
+                            if (code != null) {
+                                long size = code.getCodeSize();
+                                if (size > SIZE_LARGE) {
+                                    setForeground(COLOR_LARGE);
+                                } else if (size > SIZE_MEDIUM) {
+                                    setForeground(COLOR_MEDIUM);
+                                }
+                            }
+                        } catch (Exception e) {
+                            // ignore
+                        }
+                    }
+                }
+            }
+            return this;
+        }
     }
 }

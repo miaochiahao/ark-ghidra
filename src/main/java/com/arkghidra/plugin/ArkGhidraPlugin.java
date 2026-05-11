@@ -899,6 +899,32 @@ public class ArkGhidraPlugin extends ProgramPlugin {
     }
 
     /**
+     * Called when a program is activated (opened or switched to).
+     * Auto-loads the HAP structure if the output panel is visible.
+     */
+    @Override
+    protected void programActivated(Program program) {
+        if (program == null) {
+            return;
+        }
+        // Auto-load HAP structure when a program is opened
+        try {
+            byte[] abcData = DecompileToArkTSAction.readAbcData(program);
+            if (abcData == null) {
+                return;
+            }
+            AbcFile abcFile = AbcFile.parse(abcData);
+            abcStructureProvider.setAbcFile(abcFile);
+            tool.showComponentProvider(abcStructureProvider, true);
+            // Load HAP metadata
+            showAbcStats(abcFile);
+            Msg.info(OWNER, "Auto-loaded HAP structure for: " + program.getName());
+        } catch (Exception e) {
+            Msg.warn(OWNER, "Auto-load HAP structure failed: " + e.getMessage());
+        }
+    }
+
+    /**
      * Gets the ABC structure provider.
      *
      * @return the ABC structure provider
