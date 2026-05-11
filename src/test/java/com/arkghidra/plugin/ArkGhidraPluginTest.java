@@ -188,4 +188,33 @@ class ArkGhidraPluginTest {
         }
         assertFalse(threw);
     }
+
+    @Test
+    @DisplayName("AbcStructureProvider matchesFilter returns true for empty filter")
+    void testMatchesFilter_emptyFilter() {
+        assertTrue(AbcStructureProvider.matchesFilter("MyClass", ""));
+        assertTrue(AbcStructureProvider.matchesFilter("MyClass", null));
+    }
+
+    @Test
+    @DisplayName("AbcStructureProvider matchesFilter is case-insensitive")
+    void testMatchesFilter_caseInsensitive() {
+        assertTrue(AbcStructureProvider.matchesFilter("UserService", "user"));
+        assertTrue(AbcStructureProvider.matchesFilter("UserService", "USER"));
+        assertTrue(AbcStructureProvider.matchesFilter("UserService", "Service"));
+    }
+
+    @Test
+    @DisplayName("AbcStructureProvider matchesFilter returns false for non-matching filter")
+    void testMatchesFilter_noMatch() {
+        assertFalse(AbcStructureProvider.matchesFilter("UserService", "admin"));
+        assertFalse(AbcStructureProvider.matchesFilter("login", "logout"));
+    }
+
+    @Test
+    @DisplayName("AbcStructureProvider matchesFilter handles null name")
+    void testMatchesFilter_nullName() {
+        assertFalse(AbcStructureProvider.matchesFilter(null, "foo"));
+        assertTrue(AbcStructureProvider.matchesFilter(null, ""));
+    }
 }

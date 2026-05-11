@@ -8,7 +8,10 @@ import java.awt.event.MouseEvent;
 import javax.swing.JComponent;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JTextField;
 import javax.swing.JTree;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreePath;
@@ -42,6 +45,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private final JTree structureTree;
     private final DefaultTreeModel treeModel;
     private final DefaultMutableTreeNode rootNode;
+    private final JTextField filterField;
     private AbcFile currentAbcFile;
     private MethodNavigationListener navigationListener;
 
@@ -62,9 +66,28 @@ public class AbcStructureProvider extends ComponentProvider {
             }
         });
 
+        filterField = new JTextField();
+        filterField.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                rebuildTree();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                rebuildTree();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                rebuildTree();
+            }
+        });
+
         JScrollPane scrollPane = new JScrollPane(structureTree);
 
         mainPanel = new JPanel(new BorderLayout());
+        mainPanel.add(filterField, BorderLayout.NORTH);
         mainPanel.add(scrollPane, BorderLayout.CENTER);
 
         setDefaultWindowPosition(docking.WindowPosition.LEFT);
@@ -132,6 +155,24 @@ public class AbcStructureProvider extends ComponentProvider {
         return currentAbcFile;
     }
 
+    /**
+     * Returns true if the given name contains the filter text (case-insensitive),
+     * or if the filter is empty.
+     *
+     * @param name   the string to test
+     * @param filter the filter text
+     * @return true if name matches the filter
+     */
+    static boolean matchesFilter(String name, String filter) {
+        if (filter == null || filter.isEmpty()) {
+            return true;
+        }
+        if (name == null) {
+            return false;
+        }
+        return name.toLowerCase().contains(filter.toLowerCase());
+    }
+
     private void rebuildTree() {
         rootNode.removeAllChildren();
 
@@ -141,6 +182,8 @@ public class AbcStructureProvider extends ComponentProvider {
             return;
         }
 
+        String filter = filterField.getText();
+
         rootNode.setUserObject("ABC File ("
                 + currentAbcFile.getClasses().size() + " classes)");
 
@@ -149,9 +192,25 @@ public class AbcStructureProvider extends ComponentProvider {
         rootNode.add(classesNode);
 
         for (AbcClass cls : currentAbcFile.getClasses()) {
+            String className = formatClassName(cls.getName());
+            boolean classNameMatches = matchesFilter(className, filter);
+
+            boolean anyMethodMatches = false;
+            if (!classNameMatches && !filter.isEmpty()) {
+                for (AbcMethod method : cls.getMethods()) {
+                    if (matchesFilter(method.getName(), filter)) {
+                        anyMethodMatches = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!filter.isEmpty() && !classNameMatches && !anyMethodMatches) {
+                continue;
+            }
+
             DefaultMutableTreeNode classNode =
-                    new DefaultMutableTreeNode(
-                            formatClassName(cls.getName()));
+                    new DefaultMutableTreeNode(className);
             classesNode.add(classNode);
 
             DefaultMutableTreeNode methodsNode =
@@ -160,6 +219,10 @@ public class AbcStructureProvider extends ComponentProvider {
             classNode.add(methodsNode);
 
             for (AbcMethod method : cls.getMethods()) {
+                if (!filter.isEmpty() && !classNameMatches
+                        && !matchesFilter(method.getName(), filter)) {
+                    continue;
+                }
                 DefaultMutableTreeNode methodNode =
                         new DefaultMutableTreeNode(method) {
                             @Override

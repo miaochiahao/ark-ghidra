@@ -20,7 +20,9 @@ import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
+import javax.swing.JMenuItem;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 import javax.swing.JTextPane;
@@ -52,6 +54,7 @@ import ghidra.util.Msg;
  * <p>Interactive features:</p>
  * <ul>
  *   <li>Click a symbol to highlight all occurrences in the current view.</li>
+ *   <li>Right-click for context menu: Copy, Find All References, Copy Symbol Name.</li>
  *   <li>Ctrl+F opens an inline search bar; Escape closes it.</li>
  * </ul>
  */
@@ -187,7 +190,72 @@ public class ArkTSOutputProvider extends ComponentProvider {
                     handleSymbolClick(e);
                 }
             }
+
+            @Override
+            public void mousePressed(MouseEvent e) {
+                if (e.isPopupTrigger()) {
+                    showContextMenu(e);
+                }
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                if (e.isPopupTrigger()) {
+                    showContextMenu(e);
+                }
+            }
         });
+    }
+
+    private void showContextMenu(MouseEvent e) {
+        int offset = codePane.viewToModel2D(e.getPoint());
+        JPopupMenu menu = buildContextMenu(offset);
+        menu.show(codePane, e.getX(), e.getY());
+    }
+
+    private JPopupMenu buildContextMenu(int offset) {
+        String text = codePane.getText();
+        String word = symbolHighlighter.extractWordAt(text, offset);
+        boolean hasWord = word != null && !word.isEmpty();
+
+        JPopupMenu menu = new JPopupMenu();
+
+        JMenuItem copyItem = new JMenuItem("Copy");
+        copyItem.addActionListener(e -> {
+            String selected = codePane.getSelectedText();
+            String toCopy = (selected != null && !selected.isEmpty())
+                    ? selected
+                    : codePane.getText();
+            if (toCopy != null && !toCopy.isEmpty()) {
+                Toolkit.getDefaultToolkit().getSystemClipboard()
+                        .setContents(new StringSelection(toCopy), null);
+            }
+        });
+        menu.add(copyItem);
+
+        JMenuItem findRefsItem = new JMenuItem("Find All References");
+        findRefsItem.setEnabled(hasWord);
+        if (hasWord) {
+            final String capturedWord = word;
+            findRefsItem.addActionListener(e -> {
+                currentHighlightedWord = capturedWord;
+                applySymbolHighlights(text, capturedWord);
+            });
+        }
+        menu.add(findRefsItem);
+
+        JMenuItem copySymbolItem = new JMenuItem("Copy Symbol Name");
+        copySymbolItem.setEnabled(hasWord);
+        if (hasWord) {
+            final String capturedWord = word;
+            copySymbolItem.addActionListener(e ->
+                Toolkit.getDefaultToolkit().getSystemClipboard()
+                        .setContents(new StringSelection(capturedWord), null)
+            );
+        }
+        menu.add(copySymbolItem);
+
+        return menu;
     }
 
     private void handleSymbolClick(MouseEvent e) {
