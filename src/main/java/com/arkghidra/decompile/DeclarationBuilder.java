@@ -1036,8 +1036,10 @@ class DeclarationBuilder {
         if (name != null && name.startsWith("#~@")
                 && isAccessorPrefix(name)) {
             AbcProto proto = decompiler.resolveProto(method, abcFile);
-            int paramCount = proto != null
-                    ? proto.getShorty().size() - 1 : 0;
+            if (proto == null) {
+                return false;
+            }
+            int paramCount = proto.getShorty().size() - 1;
             return paramCount == 0;
         }
         return false;
@@ -1057,8 +1059,10 @@ class DeclarationBuilder {
         if (name != null && name.startsWith("#~@")
                 && isAccessorPrefix(name)) {
             AbcProto proto = decompiler.resolveProto(method, abcFile);
-            int paramCount = proto != null
-                    ? proto.getShorty().size() - 1 : 0;
+            if (proto == null) {
+                return false;
+            }
+            int paramCount = proto.getShorty().size() - 1;
             return paramCount == 1;
         }
         return false;
