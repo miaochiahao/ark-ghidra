@@ -386,6 +386,8 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                         .getDefaultAddressSpace().getAddress(method.getCodeOff());
                 goToAddress(addr);
             }
+            // Select the method in the HAP Explorer tree
+            abcStructureProvider.selectMethod(method);
             Msg.info(OWNER, "Decompiled method via tree: " + method.getName());
         } catch (Exception e) {
             Msg.error(OWNER, "Decompilation failed for " + method.getName(), e);
@@ -413,8 +415,20 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             }
             AbcFile abcFile = AbcFile.parse(abcData);
             ArkTSDecompiler decompiler = createDecompiler();
+            boolean skipTrivial = settingsProvider != null
+                    && settingsProvider.isSkipTrivialMethods();
             StringBuilder sb = new StringBuilder();
             for (AbcMethod method : abcClass.getMethods()) {
+                if (skipTrivial && method.getCodeOff() != 0) {
+                    try {
+                        AbcCode code = abcFile.getCodeForMethod(method);
+                        if (code != null && code.getCodeSize() < 20) {
+                            continue;
+                        }
+                    } catch (Exception ignored) {
+                        // fall through
+                    }
+                }
                 AbcCode code = abcFile.getCodeForMethod(method);
                 sb.append(decompiler.decompileMethod(method, code, abcFile));
                 sb.append("\n\n");

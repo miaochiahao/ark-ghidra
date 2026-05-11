@@ -34,6 +34,7 @@ public class SettingsProvider extends ComponentProvider {
     private final JPanel mainPanel;
     private final JSpinner timeoutSpinner;
     private final JCheckBox autoDecompileCheckBox;
+    private final JCheckBox skipTrivialCheckBox;
     private final JLabel timeoutLabel;
 
     private long timeoutMs = DEFAULT_TIMEOUT_MS;
@@ -57,6 +58,10 @@ public class SettingsProvider extends ComponentProvider {
         autoDecompileCheckBox.setToolTipText(
                 "Automatically decompile when cursor moves to a function in the Listing");
 
+        skipTrivialCheckBox = new JCheckBox("Skip trivial methods (< 20 bytes)", false);
+        skipTrivialCheckBox.setToolTipText(
+                "Skip methods with fewer than 20 bytes when decompiling a class");
+
         JPanel formPanel = new JPanel(new GridBagLayout());
         formPanel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
         GridBagConstraints gbc = new GridBagConstraints();
@@ -74,6 +79,9 @@ public class SettingsProvider extends ComponentProvider {
         formPanel.add(autoDecompileCheckBox, gbc);
 
         gbc.gridy = 2;
+        formPanel.add(skipTrivialCheckBox, gbc);
+
+        gbc.gridy = 3;
         JLabel hintLabel = new JLabel(
                 "<html><small>Increase timeout for complex methods that time out.</small></html>");
         formPanel.add(hintLabel, gbc);
@@ -109,6 +117,15 @@ public class SettingsProvider extends ComponentProvider {
     }
 
     /**
+     * Returns whether trivial methods (< 20 bytes) should be skipped when decompiling a class.
+     *
+     * @return true if trivial methods should be skipped
+     */
+    public boolean isSkipTrivialMethods() {
+        return skipTrivialCheckBox.isSelected();
+    }
+
+    /**
      * Adds a listener that is notified when any setting changes.
      *
      * @param listener the change listener
@@ -116,5 +133,6 @@ public class SettingsProvider extends ComponentProvider {
     public void addSettingsChangeListener(ChangeListener listener) {
         timeoutSpinner.addChangeListener(listener);
         autoDecompileCheckBox.addChangeListener(listener);
+        skipTrivialCheckBox.addChangeListener(listener);
     }
 }

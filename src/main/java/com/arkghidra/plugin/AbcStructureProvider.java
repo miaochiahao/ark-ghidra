@@ -670,6 +670,35 @@ public class AbcStructureProvider extends ComponentProvider {
     }
 
     /**
+     * Selects the tree node for the given method, expanding its parent class if needed.
+     *
+     * @param targetMethod the method to select
+     */
+    public void selectMethod(AbcMethod targetMethod) {
+        if (targetMethod == null) {
+            return;
+        }
+        DefaultMutableTreeNode root = (DefaultMutableTreeNode) treeModel.getRoot();
+        java.util.Enumeration<?> nodes = root.depthFirstEnumeration();
+        while (nodes.hasMoreElements()) {
+            DefaultMutableTreeNode node =
+                    (DefaultMutableTreeNode) nodes.nextElement();
+            Object userObj = node.getUserObject();
+            if (userObj instanceof AbcMethod) {
+                AbcMethod method = (AbcMethod) userObj;
+                if (method.getOffset() == targetMethod.getOffset()) {
+                    TreePath path = new TreePath(node.getPath());
+                    structureTree.expandPath(path.getParentPath());
+                    structureTree.setSelectionPath(path);
+                    structureTree.scrollPathToVisible(path);
+                    getTool().showComponentProvider(this, true);
+                    return;
+                }
+            }
+        }
+    }
+
+    /**
      * Returns true if the given name contains the filter text (case-insensitive),
      * or if the filter is empty.
      *
