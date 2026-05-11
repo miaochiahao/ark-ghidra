@@ -95,6 +95,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private JToggleButton filterPrivateButton;
     private JToggleButton filterStaticButton;
     private JToggleButton filterAbstractButton;
+    private JToggleButton filterHasNotesButton;
     private JToggleButton sortBySizeButton;
     private JTextField minSizeField;
     private String classTypeFilter = "All";
@@ -203,11 +204,16 @@ public class AbcStructureProvider extends ComponentProvider {
         filterAbstractButton.setToolTipText("Show only abstract/native methods");
         filterAbstractButton.addActionListener(e -> rebuildTree());
 
+        filterHasNotesButton = new JToggleButton("★");
+        filterHasNotesButton.setToolTipText("Show only methods with notes");
+        filterHasNotesButton.addActionListener(e -> rebuildTree());
+
         JPanel modifierFilterPanel = new JPanel();
         modifierFilterPanel.add(filterPublicButton);
         modifierFilterPanel.add(filterPrivateButton);
         modifierFilterPanel.add(filterStaticButton);
         modifierFilterPanel.add(filterAbstractButton);
+        modifierFilterPanel.add(filterHasNotesButton);
 
         sortBySizeButton = new JToggleButton("Sort↓");
         sortBySizeButton.setToolTipText("Sort methods by bytecode size (largest first)");
@@ -816,7 +822,8 @@ public class AbcStructureProvider extends ComponentProvider {
         boolean privSelected = filterPrivateButton != null && filterPrivateButton.isSelected();
         boolean staticSelected = filterStaticButton != null && filterStaticButton.isSelected();
         boolean abstractSelected = filterAbstractButton != null && filterAbstractButton.isSelected();
-        if (!pubSelected && !privSelected && !staticSelected && !abstractSelected) {
+        boolean hasNotesSelected = filterHasNotesButton != null && filterHasNotesButton.isSelected();
+        if (!pubSelected && !privSelected && !staticSelected && !abstractSelected && !hasNotesSelected) {
             return true;
         }
         long flags = method.getAccessFlags();
@@ -830,6 +837,9 @@ public class AbcStructureProvider extends ComponentProvider {
             return true;
         }
         if (abstractSelected && method.getCodeOff() == 0) {
+            return true;
+        }
+        if (hasNotesSelected && notesProvider != null && notesProvider.hasNotes(method.getName())) {
             return true;
         }
         return false;
@@ -1067,7 +1077,8 @@ public class AbcStructureProvider extends ComponentProvider {
                 boolean modifierFilterActive = (filterPublicButton != null && filterPublicButton.isSelected())
                         || (filterPrivateButton != null && filterPrivateButton.isSelected())
                         || (filterStaticButton != null && filterStaticButton.isSelected())
-                        || (filterAbstractButton != null && filterAbstractButton.isSelected());
+                        || (filterAbstractButton != null && filterAbstractButton.isSelected())
+                        || (filterHasNotesButton != null && filterHasNotesButton.isSelected());
                 if (modifierFilterActive && !anyMethodPassesModifier) {
                     continue;
                 }

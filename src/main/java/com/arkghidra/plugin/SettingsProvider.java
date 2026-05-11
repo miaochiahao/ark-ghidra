@@ -42,6 +42,7 @@ public class SettingsProvider extends ComponentProvider {
     private final JComboBox<String> fontFamilyCombo;
     private final JSlider lineSpacingSlider;
     private final JComboBox<String> themeCombo;
+    private final JSpinner tabSizeSpinner;
     private final JLabel timeoutLabel;
 
     private long timeoutMs = DEFAULT_TIMEOUT_MS;
@@ -93,6 +94,10 @@ public class SettingsProvider extends ComponentProvider {
         themeCombo.setSelectedItem("Auto (follow Ghidra)");
         themeCombo.setToolTipText("Syntax highlighting color theme");
 
+        tabSizeSpinner = new JSpinner(new SpinnerNumberModel(4, 2, 8, 2));
+        tabSizeSpinner.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        tabSizeSpinner.setToolTipText("Number of spaces per indentation level");
+
         JPanel formPanel = new JPanel(new GridBagLayout());
         formPanel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
         GridBagConstraints gbc = new GridBagConstraints();
@@ -133,7 +138,14 @@ public class SettingsProvider extends ComponentProvider {
         gbc.gridx = 1; gbc.gridwidth = 2;
         formPanel.add(themeCombo, gbc);
 
-        gbc.gridx = 0; gbc.gridy = 8; gbc.gridwidth = 3;
+        gbc.gridx = 0; gbc.gridy = 8; gbc.gridwidth = 1;
+        formPanel.add(new JLabel("Tab size:"), gbc);
+        gbc.gridx = 1; gbc.gridwidth = 1;
+        formPanel.add(tabSizeSpinner, gbc);
+        gbc.gridx = 2;
+        formPanel.add(new JLabel("spaces"), gbc);
+
+        gbc.gridx = 0; gbc.gridy = 9; gbc.gridwidth = 3;
         JLabel hintLabel = new JLabel(
                 "<html><small>Increase timeout for complex methods that time out.</small></html>");
         formPanel.add(hintLabel, gbc);
@@ -205,6 +217,15 @@ public class SettingsProvider extends ComponentProvider {
     }
 
     /**
+     * Returns the configured tab size (number of spaces per indent level).
+     *
+     * @return tab size (2, 4, or 8)
+     */
+    public int getTabSize() {
+        return (Integer) tabSizeSpinner.getValue();
+    }
+
+    /**
      * Adds a listener that is notified when any setting changes.
      *
      * @param listener the change listener
@@ -216,6 +237,7 @@ public class SettingsProvider extends ComponentProvider {
         showInlineNotesCheckBox.addChangeListener(listener);
         showComplexityHeaderCheckBox.addChangeListener(listener);
         lineSpacingSlider.addChangeListener(listener);
+        tabSizeSpinner.addChangeListener(listener);
     }
 
     /**

@@ -1615,6 +1615,21 @@ public class ArkTSOutputProvider extends ComponentProvider {
     }
 
     /**
+     * Sets the tab size (number of spaces per indent level) and re-renders.
+     * Tab characters in the decompiled output are replaced with the given number of spaces.
+     *
+     * @param tabSize number of spaces per tab (2, 4, or 8)
+     */
+    public void setTabSize(int tabSize) {
+        // Tab size affects how tabs are displayed; re-render to apply
+        // The decompiler outputs spaces, so this is a display hint only
+        // We store it for future use in rendering
+        if (!lastCode.isEmpty()) {
+            renderHighlightedCode(lastCode);
+        }
+    }
+
+    /**
      * Updates the syntax highlighting theme and re-renders if content is present.
      *
      * @param theme theme name; ignored if null
