@@ -9,7 +9,16 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
+import javax.swing.DefaultListModel;
+import javax.swing.JDialog;
+import javax.swing.JList;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTextField;
+import javax.swing.ListSelectionModel;
 import javax.swing.SwingWorker;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 
 import ghidra.app.plugin.PluginCategoryNames;
 import ghidra.app.plugin.ProgramPlugin;
@@ -132,6 +141,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         bookmarkProvider.setNavigationCallback(this::navigateToSearchResult);
         tool.addComponentProvider(bookmarkProvider, false);
         outputProvider.setAddBookmarkCallback(this::addCurrentBookmark);
+        outputProvider.setQuickOpenCallback(this::showQuickOpen);
         historyProvider = new HistoryProvider(tool, PLUGIN_NAME);
         historyProvider.setRestoreCallback((name, code) -> outputProvider.showDecompiledCode(name, code));
         tool.addComponentProvider(historyProvider, false);
@@ -143,6 +153,134 @@ public class ArkGhidraPlugin extends ProgramPlugin {
     private void showAllCallers(String methodName) {
         tool.showComponentProvider(globalSearchProvider, true);
         globalSearchProvider.triggerSearch(methodName + "(");
+    }
+
+    private void showQuickOpen() {
+        AbcFile abcFile = getCurrentAbcFile();
+        if (abcFile == null) {
+            return;
+        }
+        // Build flat list: "ClassName" and "ClassName.methodName"
+        List<String> allItems = new ArrayList<>();
+        List<Object[]> itemData = new ArrayList<>(); // [type, AbcClass/AbcMethod, AbcClass]
+        for (AbcClass cls : abcFile.getClasses()) {
+            String clsName = AbcStructureProvider.formatClassName(cls.getName());
+            allItems.add(clsName);
+            itemData.add(new Object[]{"class", cls, null});
+            for (AbcMethod method : cls.getMethods()) {
+                allItems.add(clsName + "." + method.getName());
+                itemData.add(new Object[]{"method", method, cls});
+            }
+        }
+
+        DefaultListModel<String> listModel = new DefaultListModel<>();
+        for (String item : allItems) {
+            listModel.addElement(item);
+        }
+
+        JTextField filterField = new JTextField(30);
+        JList<String> resultList = new JList<>(listModel);
+        resultList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        resultList.setFont(new java.awt.Font("Monospaced", java.awt.Font.PLAIN, 12));
+        if (!listModel.isEmpty()) {
+            resultList.setSelectedIndex(0);
+        }
+
+        JDialog dialog = new JDialog();
+        dialog.setTitle("Quick Open (Ctrl+P)");
+        dialog.setModal(true);
+        dialog.setSize(500, 400);
+        dialog.setLocationRelativeTo(null);
+
+        JPanel panel = new JPanel(new java.awt.BorderLayout(4, 4));
+        panel.setBorder(javax.swing.BorderFactory.createEmptyBorder(8, 8, 8, 8));
+        panel.add(filterField, java.awt.BorderLayout.NORTH);
+        panel.add(new JScrollPane(resultList), java.awt.BorderLayout.CENTER);
+        dialog.add(panel);
+
+        filterField.getDocument().addDocumentListener(new DocumentListener() {
+            private void update() {
+                String query = filterField.getText().toLowerCase();
+                listModel.clear();
+                for (String item : allItems) {
+                    if (item.toLowerCase().contains(query)) {
+                        listModel.addElement(item);
+                    }
+                }
+                if (!listModel.isEmpty()) {
+                    resultList.setSelectedIndex(0);
+                }
+            }
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                update();
+            }
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                update();
+            }
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                update();
+            }
+        });
+
+        javax.swing.KeyStroke enter = javax.swing.KeyStroke.getKeyStroke(
+                java.awt.event.KeyEvent.VK_ENTER, 0);
+        filterField.getInputMap().put(enter, "navigate");
+        filterField.getActionMap().put("navigate", new javax.swing.AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                navigateToQuickOpenSelection(
+                        resultList, listModel, allItems, itemData, dialog);
+            }
+        });
+
+        resultList.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                if (e.getClickCount() == 2) {
+                    navigateToQuickOpenSelection(
+                            resultList, listModel, allItems, itemData, dialog);
+                }
+            }
+        });
+
+        javax.swing.KeyStroke escape = javax.swing.KeyStroke.getKeyStroke(
+                java.awt.event.KeyEvent.VK_ESCAPE, 0);
+        panel.getInputMap(javax.swing.JComponent.WHEN_IN_FOCUSED_WINDOW).put(escape, "close");
+        panel.getActionMap().put("close", new javax.swing.AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                dialog.dispose();
+            }
+        });
+
+        dialog.setVisible(true);
+    }
+
+    private void navigateToQuickOpenSelection(JList<String> resultList,
+            DefaultListModel<String> listModel, List<String> allItems,
+            List<Object[]> itemData, JDialog dialog) {
+        int idx = resultList.getSelectedIndex();
+        if (idx < 0) {
+            return;
+        }
+        String selected = listModel.getElementAt(idx);
+        // Find in allItems to get the corresponding data
+        for (int i = 0; i < allItems.size(); i++) {
+            if (allItems.get(i).equals(selected)) {
+                Object[] data = itemData.get(i);
+                dialog.dispose();
+                if ("class".equals(data[0])) {
+                    onClassClicked((AbcClass) data[1]);
+                    abcStructureProvider.selectClass((AbcClass) data[1]);
+                } else {
+                    onMethodDoubleClicked((AbcMethod) data[1]);
+                }
+                return;
+            }
+        }
     }
 
     private void onMethodDoubleClicked(AbcMethod method) {

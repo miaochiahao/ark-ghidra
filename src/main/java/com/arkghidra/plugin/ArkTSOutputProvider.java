@@ -183,6 +183,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private Consumer<String> globalSearchWordCallback;
     private Runnable addBookmarkCallback;
     private Runnable decompileClassCallback;
+    private Runnable quickOpenCallback;
 
     private String lastClassName = "";
 
@@ -1296,6 +1297,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 + "Shift+F3        Previous occurrence\n"
                 + "Ctrl+Down       Next method definition\n"
                 + "Ctrl+Up         Previous method definition\n"
+                + "Ctrl+P          Quick Open (jump to class/method)\n"
                 + "Escape          Close search bar\n"
                 + "Alt+Left        Navigate back\n"
                 + "Alt+Right       Navigate forward\n"
@@ -1727,6 +1729,18 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 jumpToMethod(-1);
             }
         });
+
+        // Ctrl+P — Quick Open (jump to any class or method)
+        KeyStroke ctrlP = KeyStroke.getKeyStroke(KeyEvent.VK_P, cmdMask);
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(ctrlP, "quickOpen");
+        codePane.getActionMap().put("quickOpen", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (quickOpenCallback != null) {
+                    quickOpenCallback.run();
+                }
+            }
+        });
     }
 
     // --- Go to line / Copy line ---
@@ -1964,6 +1978,15 @@ public class ArkTSOutputProvider extends ComponentProvider {
      */
     public void setDecompileClassCallback(Runnable callback) {
         this.decompileClassCallback = callback;
+    }
+
+    /**
+     * Sets the callback invoked when the user presses Ctrl+P to open Quick Open.
+     *
+     * @param callback the runnable to invoke
+     */
+    public void setQuickOpenCallback(Runnable callback) {
+        this.quickOpenCallback = callback;
     }
 
     /**
