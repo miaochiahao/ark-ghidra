@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+import com.arkghidra.disasm.ArkInstruction;
 import com.arkghidra.format.AbcCatchBlock;
 import com.arkghidra.format.AbcTryBlock;
 
@@ -106,6 +107,15 @@ class TryCatchProcessor {
             ControlFlowReconstructor.TryCatchRegion tcr,
             DecompilationContext ctx, ControlFlowGraph cfg,
             Set<BasicBlock> visited) {
+
+        // Check if this try-catch is a compiler-generated iterator
+        // cleanup wrapper around a for-of/for-in loop. If the try body
+        // contains iterator opcodes and the catch is just cleanup+rethrow,
+        // process the inner blocks through pattern detection instead.
+        if (isIteratorCleanupWrapper(tcr, ctx, cfg)) {
+            return processIteratorCleanupWrapper(
+                    tcr, ctx, cfg, visited);
+        }
 
         List<ArkTSStatement> stmts = new ArrayList<>();
 
@@ -283,5 +293,90 @@ class TryCatchProcessor {
             return null;
         }
         return typeName;
+    }
+
+    /**
+     * Checks if a try-catch region is a compiler-generated iterator
+     * cleanup wrapper. The pattern is: try body contains iterator
+     * opcodes (getiterator, closeiterator, getnextpropertyname)
+     * and the catch body is just cleanup + rethrow.
+     */
+    private boolean isIteratorCleanupWrapper(
+            ControlFlowReconstructor.TryCatchRegion tcr,
+            DecompilationContext ctx, ControlFlowGraph cfg) {
+        boolean hasIteratorOp = false;
+        for (BasicBlock block : cfg.getBlocks()) {
+            if (block.getStartOffset() >= tcr.startPc
+                    && block.getStartOffset() < tcr.endPc) {
+                for (ArkInstruction insn : block.getInstructions()) {
+                    int opcode = insn.getOpcode();
+                    if (ArkOpcodesCompat.isGetIterator(opcode)
+                            || ArkOpcodesCompat.isCloseIterator(opcode)
+                            || opcode
+                                    == ArkOpcodesCompat.GETNEXTPROPNAME) {
+                        hasIteratorOp = true;
+                        break;
+                    }
+                }
+                if (hasIteratorOp) {
+                    break;
+                }
+            }
+        }
+        if (!hasIteratorOp) {
+            return false;
+        }
+        // Check catch body: should be small (cleanup + rethrow)
+        for (ControlFlowReconstructor.CatchHandler handler :
+                tcr.handlers) {
+            BasicBlock catchBlock =
+                    cfg.getBlockAt(handler.handlerPc);
+            if (catchBlock != null) {
+                int insnCount = catchBlock.getInstructions().size();
+                // Iterator cleanup catch blocks are typically
+                // 3-6 instructions: closeiterator, lda, throw
+                if (insnCount > 10) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Processes an iterator cleanup wrapper by un-wrapping the
+     * try-catch and processing the inner blocks through normal
+     * pattern detection (for-of/for-in loops).
+     */
+    private List<ArkTSStatement> processIteratorCleanupWrapper(
+            ControlFlowReconstructor.TryCatchRegion tcr,
+            DecompilationContext ctx, ControlFlowGraph cfg,
+            Set<BasicBlock> visited) {
+        List<ArkTSStatement> stmts = new ArrayList<>();
+        // Collect all blocks in the try range and process them
+        // through the normal control flow reconstruction so
+        // for-of/for-in patterns can be detected
+        List<BasicBlock> innerBlocks = new ArrayList<>();
+        for (BasicBlock block : cfg.getBlocks()) {
+            if (block.getStartOffset() >= tcr.startPc
+                    && block.getStartOffset() < tcr.endPc
+                    && !visited.contains(block)) {
+                innerBlocks.add(block);
+            }
+        }
+        // Also mark catch blocks as visited (skip cleanup code)
+        for (ControlFlowReconstructor.CatchHandler handler :
+                tcr.handlers) {
+            BasicBlock catchBlock =
+                    cfg.getBlockAt(handler.handlerPc);
+            if (catchBlock != null) {
+                visited.add(catchBlock);
+            }
+        }
+        if (!innerBlocks.isEmpty()) {
+            stmts.addAll(reconstructor.reconstructControlFlow(
+                    cfg, innerBlocks, ctx, visited));
+        }
+        return stmts;
     }
 }
