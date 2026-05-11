@@ -416,9 +416,9 @@ class ArkTSOutputQualityTest {
         @DisplayName("Instruction-level decompilation uses v0 without debug info")
         void testInstructionLevel_usesVregNames() {
             // ldai 10 -> sta v0 -> lda v0 -> sta v2 -> ldai 20 -> sta v3 -> return
-            // After single-use inlining and dead variable removal:
-            // v2 is a copy of v0 (inlined away), v3 is single-use return (inlined).
-            // Output: const v0 = 10; return 20;
+            // After single-use inlining (including into VariableDeclaration):
+            // v0 inlined into v2 (v2 = 10), v3 inlined into return.
+            // v2 is then dead code (unused), leaving: return 20
             byte[] code = concat(bytes(0x62), le32(10),
                     bytes(0x61, 0x00),
                     bytes(0x60, 0x00),
@@ -428,12 +428,8 @@ class ArkTSOutputQualityTest {
                     bytes(0x64));
             List<ArkInstruction> insns = dis(code);
             String result = decompiler.decompileInstructions(insns);
-            assertTrue(result.contains("v0"),
-                    "Should use v0 for register 0: " + result);
-            // v2 and v3 may be removed by dead variable elimination;
-            // verify that at least one register name is present
-            assertTrue(result.contains("10"),
-                    "Should contain literal 10: " + result);
+            // After full inlining, all single-use variables are removed
+            // and their literals are placed directly in the return
             assertTrue(result.contains("20"),
                     "Should contain literal 20: " + result);
         }

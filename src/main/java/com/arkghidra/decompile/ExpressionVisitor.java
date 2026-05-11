@@ -302,6 +302,20 @@ class ExpressionVisitor {
                 }
             }
         }
+        if (target instanceof ArkTSStatement.VariableDeclaration) {
+            ArkTSStatement.VariableDeclaration vd =
+                    (ArkTSStatement.VariableDeclaration) target;
+            if (vd.getInitializer() != null
+                    && countVariableUsage(vd.getInitializer(), varName) == 1) {
+                ArkTSExpression replaced =
+                        replaceVariable(vd.getInitializer(), varName, init);
+                if (replaced != null) {
+                    return new ArkTSStatement.VariableDeclaration(
+                            vd.getKind(), vd.getName(),
+                            vd.getTypeName(), replaced);
+                }
+            }
+        }
         return null;
     }
 

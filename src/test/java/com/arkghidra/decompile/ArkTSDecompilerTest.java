@@ -13379,6 +13379,43 @@ class ArkTSDecompilerTest {
                 "Should contain literal 42: " + result);
     }
 
+    @Test
+    void testInlineStringLiteralIntoCall() {
+        // const v0 = "hello"; return v0;
+        // v0 should be inlined so result is return "hello"
+        byte[] code = concat(
+                bytes(0x62), le32(42),       // ldai 42 (dummy)
+                bytes(0x61, 0x01),           // sta v1
+                bytes(0x60, 0x01),           // lda v1
+                bytes(0x61, 0x00)            // sta v0
+        );
+        // Use ExpressionVisitor directly for unit test
+        List<ArkTSStatement> stmts = new ArrayList<>();
+        stmts.add(new ArkTSStatement.VariableDeclaration("const", "v0",
+                null, new ArkTSExpression.LiteralExpression("testTag",
+                        ArkTSExpression.LiteralExpression.LiteralKind.STRING)));
+        stmts.add(new ArkTSStatement.VariableDeclaration("let", "v8",
+                null, new ArkTSExpression.VariableExpression("v0")));
+        List<ArkTSStatement> result =
+                ExpressionVisitor.inlineSingleUseVariables(stmts);
+        // v0 should be inlined into v8's initializer
+        boolean hasV0Decl = result.stream().anyMatch(s ->
+                s instanceof ArkTSStatement.VariableDeclaration
+                        && "v0".equals(
+                                ((ArkTSStatement.VariableDeclaration) s)
+                                        .getName()));
+        assertFalse(hasV0Decl, "v0 declaration should be removed: " + result);
+        boolean hasInlined = result.stream().anyMatch(s ->
+                s instanceof ArkTSStatement.VariableDeclaration
+                        && ((ArkTSStatement.VariableDeclaration) s)
+                                .getInitializer() != null
+                        && ((ArkTSStatement.VariableDeclaration) s)
+                                .getInitializer().toArkTS()
+                                .contains("testTag"));
+        assertTrue(hasInlined,
+                "v8 should have inlined string literal: " + result);
+    }
+
     // --- Type inference tests (#89) ---
 
     @Test
