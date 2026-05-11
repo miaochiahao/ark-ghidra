@@ -91,15 +91,52 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private final Deque<HistoryEntry> backStack = new ArrayDeque<>();
     private final Deque<HistoryEntry> forwardStack = new ArrayDeque<>();
 
-    // Syntax highlighting colors
-    private static final Color COLOR_KEYWORD = new Color(0x0000CC);
-    private static final Color COLOR_TYPE = new Color(0x008080);
-    private static final Color COLOR_STRING = new Color(0x008000);
-    private static final Color COLOR_COMMENT = new Color(0x808080);
-    private static final Color COLOR_DECORATOR = new Color(0x800080);
-    private static final Color COLOR_NUMBER = new Color(0xFF8C00);
-    private static final Color COLOR_MODIFIER = new Color(0x0000CC);
-    private static final Color COLOR_PLAIN = Color.BLACK;
+    private static boolean isDarkBackground() {
+        Color bg = javax.swing.UIManager.getColor("TextArea.background");
+        if (bg == null) {
+            return false;
+        }
+        double luminance = 0.299 * bg.getRed()
+                + 0.587 * bg.getGreen()
+                + 0.114 * bg.getBlue();
+        return luminance < 128;
+    }
+
+    private static class ColorScheme {
+        final Color keyword;
+        final Color type;
+        final Color string;
+        final Color comment;
+        final Color decorator;
+        final Color number;
+        final Color modifier;
+        final Color plain;
+        final Color background;
+
+        ColorScheme(boolean dark) {
+            if (dark) {
+                keyword    = new Color(0x82AAFF);
+                type       = new Color(0x89DDFF);
+                string     = new Color(0xC3E88D);
+                comment    = new Color(0x546E7A);
+                decorator  = new Color(0xC792EA);
+                number     = new Color(0xF78C6C);
+                modifier   = new Color(0x82AAFF);
+                plain      = new Color(0xEEEEEE);
+                background = new Color(0x263238);
+            } else {
+                keyword    = new Color(0x0000CC);
+                type       = new Color(0x008080);
+                string     = new Color(0x008000);
+                comment    = new Color(0x808080);
+                decorator  = new Color(0x800080);
+                number     = new Color(0xFF8C00);
+                modifier   = new Color(0x0000CC);
+                plain      = Color.BLACK;
+                background = Color.WHITE;
+            }
+        }
+    }
 
     // Highlight colors
     private static final Color COLOR_SYMBOL_HIGHLIGHT = new Color(0xFFE082);
@@ -468,7 +505,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
             }
             String insertion = "  // user: " + comment;
             SimpleAttributeSet commentStyle = createStyle(
-                    new Color(0x808080), false);
+                    new ColorScheme(isDarkBackground()).comment, false);
             doc.insertString(lineEnd, insertion, commentStyle);
         } catch (BadLocationException ex) {
             Msg.warn(OWNER, "Failed to insert comment: " + ex.getMessage());
@@ -493,7 +530,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 int pos = positions.get(i);
                 doc.remove(pos, oldName.length());
                 doc.insertString(pos, newName,
-                        createStyle(COLOR_PLAIN, false));
+                        createStyle(new ColorScheme(isDarkBackground()).plain, false));
             }
             if (currentHighlightedWord.equals(oldName)) {
                 currentHighlightedWord = newName;
@@ -853,16 +890,16 @@ public class ArkTSOutputProvider extends ComponentProvider {
         java.util.List<java.util.List<ArkTSColorizer.StyledSegment>>
                 allLines = colorizer.colorizeSource(code);
 
-        SimpleAttributeSet plainStyle = createStyle(COLOR_PLAIN, false);
-        SimpleAttributeSet keywordStyle = createStyle(COLOR_KEYWORD, true);
-        SimpleAttributeSet typeStyle = createStyle(COLOR_TYPE, true);
-        SimpleAttributeSet stringStyle = createStyle(COLOR_STRING, false);
-        SimpleAttributeSet commentStyle = createStyle(COLOR_COMMENT, false);
-        SimpleAttributeSet decoratorStyle = createStyle(
-                COLOR_DECORATOR, true);
-        SimpleAttributeSet numberStyle = createStyle(COLOR_NUMBER, false);
-        SimpleAttributeSet modifierStyle = createStyle(
-                COLOR_MODIFIER, true);
+        ColorScheme cs = new ColorScheme(isDarkBackground());
+        codePane.setBackground(cs.background);
+        SimpleAttributeSet plainStyle = createStyle(cs.plain, false);
+        SimpleAttributeSet keywordStyle = createStyle(cs.keyword, true);
+        SimpleAttributeSet typeStyle = createStyle(cs.type, true);
+        SimpleAttributeSet stringStyle = createStyle(cs.string, false);
+        SimpleAttributeSet commentStyle = createStyle(cs.comment, false);
+        SimpleAttributeSet decoratorStyle = createStyle(cs.decorator, true);
+        SimpleAttributeSet numberStyle = createStyle(cs.number, false);
+        SimpleAttributeSet modifierStyle = createStyle(cs.modifier, true);
 
         for (int i = 0; i < allLines.size(); i++) {
             java.util.List<ArkTSColorizer.StyledSegment> lineSegments =

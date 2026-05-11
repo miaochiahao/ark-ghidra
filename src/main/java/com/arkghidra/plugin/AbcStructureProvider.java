@@ -5,9 +5,12 @@ import java.awt.Color;
 import java.awt.Font;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.io.File;
+import java.util.function.BiConsumer;
 
 import javax.swing.BorderFactory;
 import javax.swing.JComponent;
+import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JMenuItem;
 import javax.swing.JPanel;
@@ -48,6 +51,8 @@ public class AbcStructureProvider extends ComponentProvider {
     private static final String OWNER =
             AbcStructureProvider.class.getSimpleName();
 
+    private static final String FILTER_PLACEHOLDER = "Filter classes and methods...";
+
     private final JPanel mainPanel;
     private final JTree structureTree;
     private final DefaultTreeModel treeModel;
@@ -57,6 +62,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private AbcFile currentAbcFile;
     private MethodNavigationListener navigationListener;
     private ClassNavigationListener classNavigationListener;
+    private BiConsumer<AbcClass, File> exportClassCallback;
 
     public AbcStructureProvider(Tool tool, String owner) {
         super(tool, "ABC Structure", owner);
@@ -90,6 +96,25 @@ public class AbcStructureProvider extends ComponentProvider {
         });
 
         filterField = new JTextField();
+        filterField.setForeground(Color.GRAY);
+        filterField.setText(FILTER_PLACEHOLDER);
+        filterField.addFocusListener(new java.awt.event.FocusAdapter() {
+            @Override
+            public void focusGained(java.awt.event.FocusEvent e) {
+                if (FILTER_PLACEHOLDER.equals(filterField.getText())) {
+                    filterField.setText("");
+                    filterField.setForeground(Color.BLACK);
+                }
+            }
+
+            @Override
+            public void focusLost(java.awt.event.FocusEvent e) {
+                if (filterField.getText().isEmpty()) {
+                    filterField.setForeground(Color.GRAY);
+                    filterField.setText(FILTER_PLACEHOLDER);
+                }
+            }
+        });
         filterField.getDocument().addDocumentListener(new DocumentListener() {
             @Override
             public void insertUpdate(DocumentEvent e) {
@@ -134,6 +159,15 @@ public class AbcStructureProvider extends ComponentProvider {
         setTitle("ABC Structure");
     }
 
+    /**
+     * Sets the callback invoked when the user chooses "Export to .ets..." for a class node.
+     *
+     * @param cb a BiConsumer receiving the selected AbcClass and the target File
+     */
+    public void setExportClassCallback(BiConsumer<AbcClass, File> cb) {
+        this.exportClassCallback = cb;
+    }
+
     private void showTreeContextMenu(MouseEvent e) {
         TreePath path = structureTree.getPathForLocation(e.getX(), e.getY());
         if (path == null) {
@@ -174,6 +208,24 @@ public class AbcStructureProvider extends ComponentProvider {
             JMenuItem copyNameItem = new JMenuItem("Copy Name");
             copyNameItem.addActionListener(ev -> copyToClipboard(label));
             menu.add(copyNameItem);
+
+            JMenuItem exportItem = new JMenuItem("Export to .ets...");
+            exportItem.addActionListener(ev -> {
+                if (exportClassCallback == null) {
+                    return;
+                }
+                String shortName = formatClassName(cls.getName());
+                String simpleName = shortName.contains(".")
+                        ? shortName.substring(shortName.lastIndexOf('.') + 1)
+                        : shortName;
+                JFileChooser chooser = new JFileChooser();
+                chooser.setSelectedFile(new File(simpleName + ".ets"));
+                chooser.setDialogTitle("Export Decompiled Class");
+                if (chooser.showSaveDialog(mainPanel) == JFileChooser.APPROVE_OPTION) {
+                    exportClassCallback.accept(cls, chooser.getSelectedFile());
+                }
+            });
+            menu.add(exportItem);
 
             menu.show(structureTree, e.getX(), e.getY());
         } else if (userObj instanceof String) {
@@ -374,6 +426,9 @@ public class AbcStructureProvider extends ComponentProvider {
         }
 
         String filter = filterField.getText();
+        if (FILTER_PLACEHOLDER.equals(filter)) {
+            filter = "";
+        }
 
         rootNode.setUserObject("ABC File ("
                 + currentAbcFile.getClasses().size() + " classes)");

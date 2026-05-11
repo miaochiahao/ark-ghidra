@@ -1,5 +1,11 @@
 package com.arkghidra.plugin;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -64,6 +70,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         xrefProvider = new XrefProvider(tool, PLUGIN_NAME);
         abcStructureProvider.setNavigationListener(this::onMethodDoubleClicked);
         abcStructureProvider.setClassNavigationListener(this::onClassClicked);
+        abcStructureProvider.setExportClassCallback(this::exportClassToFile);
         outputProvider.setDecompileFileCallback(this::decompileWholeFile);
         outputProvider.setJumpToDefinitionCallback(this::jumpToDefinition);
         xrefProvider.setNavigationListener(offset -> outputProvider.scrollToOffset(offset));
@@ -152,6 +159,39 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             Msg.error(OWNER, "Decompilation failed for class " + className, e);
             outputProvider.showMessage(
                     "// Decompilation failed: " + e.getMessage());
+        }
+    }
+
+    private void exportClassToFile(AbcClass abcClass, File file) {
+        Program program = getCurrentProgram();
+        if (program == null) {
+            Msg.warn(OWNER, "No program open for export");
+            return;
+        }
+        try {
+            byte[] abcData = DecompileToArkTSAction.readAbcData(program);
+            if (abcData == null) {
+                Msg.warn(OWNER, "Could not read ABC data for export");
+                return;
+            }
+            AbcFile abcFile = AbcFile.parse(abcData);
+            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+            StringBuilder sb = new StringBuilder();
+            for (AbcMethod method : abcClass.getMethods()) {
+                AbcCode code = abcFile.getCodeForMethod(method);
+                sb.append(decompiler.decompileMethod(method, code, abcFile));
+                sb.append("\n\n");
+            }
+            try (BufferedWriter writer = new BufferedWriter(
+                    new OutputStreamWriter(
+                            new FileOutputStream(file), StandardCharsets.UTF_8))) {
+                writer.write(sb.toString());
+            }
+            Msg.info(OWNER, "Exported class to " + file.getPath());
+        } catch (IOException e) {
+            Msg.error(OWNER, "Export failed: " + e.getMessage(), e);
+        } catch (Exception e) {
+            Msg.error(OWNER, "Export decompilation failed: " + e.getMessage(), e);
         }
     }
 
