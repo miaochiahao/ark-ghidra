@@ -46,6 +46,13 @@ public class DecompilationContext {
     ArkTSExpression currentAccValue;
 
     /**
+     * Tracks the most recent class-like expression loaded into a register
+     * via LDA, used as fallback for newobjrange callee recovery when
+     * the accumulator holds a literal (last stored argument).
+     */
+    private ArkTSExpression lastClassCandidate;
+
+    /**
      * Index of the rest parameter in the parameter list, or -1 if none.
      * Detected by scanning instructions for COPYRESTARGS opcode.
      */
@@ -499,6 +506,14 @@ public class DecompilationContext {
             }
         }
         return max;
+    }
+
+    public void setLastClassCandidate(ArkTSExpression expr) {
+        this.lastClassCandidate = expr;
+    }
+
+    public ArkTSExpression getLastClassCandidate() {
+        return lastClassCandidate;
     }
 
     /**

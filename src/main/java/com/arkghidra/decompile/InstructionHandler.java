@@ -116,6 +116,11 @@ class InstructionHandler {
                 ArkTSExpression expr =
                         new ArkTSExpression.VariableExpression(
                                 ctx.resolveRegisterName(reg));
+                // Track class-like expressions for newobjrange recovery
+                ArkTSExpression stored = ctx.getRegisterExpression(reg);
+                if (stored != null && isClassLikeExpression(stored)) {
+                    ctx.setLastClassCandidate(stored);
+                }
                 return new StatementResult(null, expr);
             }
             case ArkOpcodesCompat.LDUNDEFINED:
@@ -1590,6 +1595,16 @@ class InstructionHandler {
                         callee = stored;
                         break;
                     }
+                }
+            }
+
+            // Final fallback: use the last class-like expression
+            // loaded via LDA before argument registers were overwritten.
+            if (isLikelyLiteral(callee)) {
+                ArkTSExpression candidate =
+                        ctx.getLastClassCandidate();
+                if (candidate != null) {
+                    callee = candidate;
                 }
             }
         }
