@@ -1412,7 +1412,59 @@ class InstructionHandler {
                         .getName();
             }
         }
+        // New expression: new ClassName() → className (lowercase first)
+        if (value instanceof ArkTSExpression.NewExpression) {
+            ArkTSExpression callee =
+                    ((ArkTSExpression.NewExpression) value).getCallee();
+            if (callee instanceof ArkTSExpression.VariableExpression) {
+                String name =
+                        ((ArkTSExpression.VariableExpression) callee)
+                                .getName();
+                if (name != null && !name.isEmpty()) {
+                    return Character.toLowerCase(name.charAt(0))
+                            + name.substring(1);
+                }
+            }
+            if (callee instanceof ArkTSExpression.MemberExpression) {
+                ArkTSExpression prop =
+                        ((ArkTSExpression.MemberExpression) callee)
+                                .getProperty();
+                if (prop instanceof ArkTSExpression.VariableExpression) {
+                    String name =
+                            ((ArkTSExpression.VariableExpression) prop)
+                                    .getName();
+                    if (name != null && !name.isEmpty()) {
+                        return Character.toLowerCase(name.charAt(0))
+                                + name.substring(1);
+                    }
+                }
+            }
+        }
+        // Binary expression with length: arr.length - 1 → index
+        if (value instanceof ArkTSExpression.BinaryExpression) {
+            ArkTSExpression.BinaryExpression bin =
+                    (ArkTSExpression.BinaryExpression) value;
+            String op = bin.getOperator();
+            if (("-".equals(op) || "+".equals(op))
+                    && isLengthAccess(bin.getLeft())) {
+                return "length";
+            }
+        }
         return null;
+    }
+
+    private static boolean isLengthAccess(ArkTSExpression expr) {
+        if (expr instanceof ArkTSExpression.MemberExpression) {
+            ArkTSExpression.MemberExpression member =
+                    (ArkTSExpression.MemberExpression) expr;
+            ArkTSExpression prop = member.getProperty();
+            if (prop instanceof ArkTSExpression.VariableExpression) {
+                return "length".equals(
+                        ((ArkTSExpression.VariableExpression) prop)
+                                .getName());
+            }
+        }
+        return false;
     }
 
     /**
