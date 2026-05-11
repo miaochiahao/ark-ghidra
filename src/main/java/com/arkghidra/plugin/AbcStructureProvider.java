@@ -8,10 +8,14 @@ import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.function.BiConsumer;
 
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
+import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
@@ -74,6 +78,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private JToggleButton filterPublicButton;
     private JToggleButton filterPrivateButton;
     private JToggleButton filterStaticButton;
+    private JToggleButton sortBySizeButton;
 
     public AbcStructureProvider(Tool tool, String owner) {
         super(tool, "ABC Structure", owner);
@@ -174,6 +179,20 @@ public class AbcStructureProvider extends ComponentProvider {
         modifierFilterPanel.add(filterPublicButton);
         modifierFilterPanel.add(filterPrivateButton);
         modifierFilterPanel.add(filterStaticButton);
+
+        sortBySizeButton = new JToggleButton("Sort↓");
+        sortBySizeButton.setToolTipText("Sort methods by bytecode size (largest first)");
+        sortBySizeButton.addActionListener(e -> rebuildTree());
+        modifierFilterPanel.add(sortBySizeButton);
+
+        JButton expandAllButton = new JButton("⊞");
+        expandAllButton.setToolTipText("Expand all");
+        expandAllButton.addActionListener(e -> expandTree());
+        JButton collapseAllButton = new JButton("⊟");
+        collapseAllButton.setToolTipText("Collapse all");
+        collapseAllButton.addActionListener(e -> collapseTree());
+        modifierFilterPanel.add(expandAllButton);
+        modifierFilterPanel.add(collapseAllButton);
 
         structureTree.addTreeSelectionListener(new TreeSelectionListener() {
             @Override
@@ -559,7 +578,21 @@ public class AbcStructureProvider extends ComponentProvider {
                             "Methods (" + cls.getMethods().size() + ")");
             classNode.add(methodsNode);
 
-            for (AbcMethod method : cls.getMethods()) {
+            // Build sorted/filtered method list
+            List<AbcMethod> methodList = new ArrayList<>(cls.getMethods());
+            if (sortBySizeButton != null && sortBySizeButton.isSelected()
+                    && currentAbcFile != null) {
+                methodList.sort(Comparator.comparingLong((AbcMethod m) -> {
+                    try {
+                        AbcCode c = currentAbcFile.getCodeForMethod(m);
+                        return c != null ? c.getCodeSize() : 0L;
+                    } catch (Exception ex) {
+                        return 0L;
+                    }
+                }).reversed());
+            }
+
+            for (AbcMethod method : methodList) {
                 if (!filter.isEmpty() && !classNameMatches
                         && !matchesFilter(method.getName(), filter)) {
                     continue;
@@ -601,6 +634,12 @@ public class AbcStructureProvider extends ComponentProvider {
     private void expandTree() {
         for (int i = 0; i < structureTree.getRowCount(); i++) {
             structureTree.expandRow(i);
+        }
+    }
+
+    private void collapseTree() {
+        for (int i = structureTree.getRowCount() - 1; i >= 0; i--) {
+            structureTree.collapseRow(i);
         }
     }
 
