@@ -1187,7 +1187,7 @@ public class AbcStructureProvider extends ComponentProvider {
                             @Override
                             public String toString() {
                                 AbcClass c = (AbcClass) getUserObject();
-                                return formatClassName(c.getName());
+                                return getClassTypeBadge(c) + formatClassName(c.getName());
                             }
                         };
                 classesNode.add(classNode);
@@ -1471,5 +1471,41 @@ public class AbcStructureProvider extends ComponentProvider {
             }
             return this;
         }
+    }
+
+    /**
+     * Returns a type badge for a class: [A] Ability, [P] Page, [N] Native, [C] regular.
+     *
+     * @param cls the class to classify
+     * @return the badge string including trailing space
+     */
+    static String getClassTypeBadge(AbcClass cls) {
+        if (cls.getMethods().isEmpty()) {
+            return "[C] ";
+        }
+        boolean allNative = true;
+        for (AbcMethod m : cls.getMethods()) {
+            if (m.getCodeOff() != 0) {
+                allNative = false;
+                break;
+            }
+        }
+        if (allNative) {
+            return "[N] ";
+        }
+        for (AbcMethod m : cls.getMethods()) {
+            if ("build".equals(m.getName())) {
+                return "[P] ";
+            }
+        }
+        java.util.Set<String> lifecycle = new java.util.HashSet<>(
+                java.util.Arrays.asList("onCreate", "onDestroy", "onWindowStageCreate",
+                        "onForeground", "onBackground", "onBackup", "onRestore"));
+        for (AbcMethod m : cls.getMethods()) {
+            if (lifecycle.contains(m.getName())) {
+                return "[A] ";
+            }
+        }
+        return "[C] ";
     }
 }

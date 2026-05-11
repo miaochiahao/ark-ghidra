@@ -431,24 +431,72 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             resultList.setSelectedIndex(0);
         }
 
+        // Type filter radio buttons
+        javax.swing.ButtonGroup typeGroup = new javax.swing.ButtonGroup();
+        javax.swing.JRadioButton allBtn = new javax.swing.JRadioButton("All", true);
+        javax.swing.JRadioButton abilityBtn = new javax.swing.JRadioButton("[A]");
+        javax.swing.JRadioButton pageBtn = new javax.swing.JRadioButton("[P]");
+        javax.swing.JRadioButton nativeBtn = new javax.swing.JRadioButton("[N]");
+        javax.swing.JRadioButton classBtn = new javax.swing.JRadioButton("[C]");
+        typeGroup.add(allBtn); typeGroup.add(abilityBtn); typeGroup.add(pageBtn);
+        typeGroup.add(nativeBtn); typeGroup.add(classBtn);
+        JPanel typePanel = new JPanel();
+        typePanel.add(allBtn); typePanel.add(abilityBtn); typePanel.add(pageBtn);
+        typePanel.add(nativeBtn); typePanel.add(classBtn);
+
         JDialog dialog = new JDialog();
         dialog.setTitle("Quick Open (Ctrl+P)");
         dialog.setModal(true);
-        dialog.setSize(500, 400);
+        dialog.setSize(520, 430);
         dialog.setLocationRelativeTo(null);
+
+        JPanel topPanel = new JPanel(new java.awt.BorderLayout(2, 2));
+        topPanel.add(filterField, java.awt.BorderLayout.NORTH);
+        topPanel.add(typePanel, java.awt.BorderLayout.SOUTH);
 
         JPanel panel = new JPanel(new java.awt.BorderLayout(4, 4));
         panel.setBorder(javax.swing.BorderFactory.createEmptyBorder(8, 8, 8, 8));
-        panel.add(filterField, java.awt.BorderLayout.NORTH);
+        panel.add(topPanel, java.awt.BorderLayout.NORTH);
         panel.add(new JScrollPane(resultList), java.awt.BorderLayout.CENTER);
         dialog.add(panel);
+
+        // Type filter action
+        java.awt.event.ActionListener typeFilter = e -> {
+            String query = filterField.getText().toLowerCase();
+            String badge = allBtn.isSelected() ? "" :
+                    abilityBtn.isSelected() ? "[a]" :
+                    pageBtn.isSelected() ? "[p]" :
+                    nativeBtn.isSelected() ? "[n]" : "[c]";
+            listModel.clear();
+            for (String item : allItems) {
+                String lower = item.toLowerCase();
+                if ((badge.isEmpty() || lower.startsWith(badge))
+                        && (query.isEmpty() || lower.contains(query))) {
+                    listModel.addElement(item);
+                }
+            }
+            if (!listModel.isEmpty()) {
+                resultList.setSelectedIndex(0);
+            }
+        };
+        allBtn.addActionListener(typeFilter);
+        abilityBtn.addActionListener(typeFilter);
+        pageBtn.addActionListener(typeFilter);
+        nativeBtn.addActionListener(typeFilter);
+        classBtn.addActionListener(typeFilter);
 
         filterField.getDocument().addDocumentListener(new DocumentListener() {
             private void update() {
                 String query = filterField.getText().toLowerCase();
+                String badge = allBtn.isSelected() ? "" :
+                        abilityBtn.isSelected() ? "[a]" :
+                        pageBtn.isSelected() ? "[p]" :
+                        nativeBtn.isSelected() ? "[n]" : "[c]";
                 listModel.clear();
                 for (String item : allItems) {
-                    if (item.toLowerCase().contains(query)) {
+                    String lower = item.toLowerCase();
+                    if ((badge.isEmpty() || lower.startsWith(badge))
+                            && (query.isEmpty() || lower.contains(query))) {
                         listModel.addElement(item);
                     }
                 }
@@ -537,35 +585,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
      * [A] Ability, [P] Page (has build()), [N] Native (all abstract), [C] regular class.
      */
     private String getClassTypeBadge(AbcClass cls) {
-        // Check if it's a native/abstract class (all methods have no code)
-        if (!cls.getMethods().isEmpty()) {
-            boolean allNative = true;
-            for (AbcMethod m : cls.getMethods()) {
-                if (m.getCodeOff() != 0) {
-                    allNative = false;
-                    break;
-                }
-            }
-            if (allNative) {
-                return "[N] ";
-            }
-        }
-        // Check if it's a Page (has build() method)
-        for (AbcMethod m : cls.getMethods()) {
-            if ("build".equals(m.getName())) {
-                return "[P] ";
-            }
-        }
-        // Check if it's an Ability (has lifecycle methods)
-        java.util.Set<String> lifecycleMethods = new java.util.HashSet<>(
-                java.util.Arrays.asList("onCreate", "onDestroy", "onWindowStageCreate",
-                        "onForeground", "onBackground", "onBackup", "onRestore"));
-        for (AbcMethod m : cls.getMethods()) {
-            if (lifecycleMethods.contains(m.getName())) {
-                return "[A] ";
-            }
-        }
-        return "[C] ";
+        return AbcStructureProvider.getClassTypeBadge(cls);
     }
 
     private String buildQuickOpenMethodSuffix(AbcMethod method, AbcFile abcFile) {
