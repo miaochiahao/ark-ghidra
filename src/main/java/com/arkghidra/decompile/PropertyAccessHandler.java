@@ -37,9 +37,11 @@ class PropertyAccessHandler {
                 ? accValue
                 : new ArkTSExpression.VariableExpression(ACC);
 
-        // CALLTHIS: when acc holds a literal (last stored argument),
-        // the method reference was stored in a register. Try to recover.
-        if (isCallThisOpcode(opcode) && isLikelyLiteral(callee)) {
+        // CALLTHIS: when acc holds a literal (last stored argument)
+        // or is unresolved (acc variable), the method reference was
+        // stored in a register. Try to recover.
+        if (isCallThisOpcode(opcode)
+                && (isLikelyLiteral(callee) || isUnresolvedAcc(callee))) {
             ArkTSExpression recovered =
                     recoverCalleeFromRegisters(ctx);
             if (recovered != null) {
@@ -77,8 +79,7 @@ class PropertyAccessHandler {
                         new ArkTSExpression.VariableExpression(
                                 ctx.resolveRegisterName(
                                         (int) operands.get(1).getValue()));
-                callee = new ArkTSExpression.MemberExpression(
-                        thisObj, callee, false);
+                callee = wrapCallThisCallee(callee, thisObj);
                 break;
             }
             case ArkOpcodesCompat.CALLTHIS1: {
@@ -86,8 +87,7 @@ class PropertyAccessHandler {
                         new ArkTSExpression.VariableExpression(
                                 ctx.resolveRegisterName(
                                         (int) operands.get(1).getValue()));
-                callee = new ArkTSExpression.MemberExpression(
-                        thisObj, callee, false);
+                callee = wrapCallThisCallee(callee, thisObj);
                 args.add(new ArkTSExpression.VariableExpression(
                         ctx.resolveRegisterName(
                                 (int) operands.get(2).getValue())));
@@ -98,8 +98,7 @@ class PropertyAccessHandler {
                         new ArkTSExpression.VariableExpression(
                                 ctx.resolveRegisterName(
                                         (int) operands.get(1).getValue()));
-                callee = new ArkTSExpression.MemberExpression(
-                        thisObj, callee, false);
+                callee = wrapCallThisCallee(callee, thisObj);
                 args.add(new ArkTSExpression.VariableExpression(
                         ctx.resolveRegisterName(
                                 (int) operands.get(2).getValue())));
@@ -113,8 +112,7 @@ class PropertyAccessHandler {
                         new ArkTSExpression.VariableExpression(
                                 ctx.resolveRegisterName(
                                         (int) operands.get(1).getValue()));
-                callee = new ArkTSExpression.MemberExpression(
-                        thisObj, callee, false);
+                callee = wrapCallThisCallee(callee, thisObj);
                 args.add(new ArkTSExpression.VariableExpression(
                         ctx.resolveRegisterName(
                                 (int) operands.get(2).getValue())));
@@ -131,8 +129,7 @@ class PropertyAccessHandler {
                         new ArkTSExpression.VariableExpression(
                                 ctx.resolveRegisterName(
                                         (int) operands.get(1).getValue()));
-                callee = new ArkTSExpression.MemberExpression(
-                        thisObj, callee, false);
+                callee = wrapCallThisCallee(callee, thisObj);
                 if (operands.size() >= 3) {
                     int numRangeArgs = (int) operands.get(0).getValue();
                     int firstReg = (int) operands.get(
@@ -673,6 +670,22 @@ class PropertyAccessHandler {
                     || "false".equals(name);
         }
         return false;
+    }
+
+    private static boolean isUnresolvedAcc(ArkTSExpression expr) {
+        if (expr instanceof ArkTSExpression.VariableExpression) {
+            return ACC.equals(
+                    ((ArkTSExpression.VariableExpression) expr).getName());
+        }
+        return false;
+    }
+
+    private static ArkTSExpression wrapCallThisCallee(
+            ArkTSExpression callee, ArkTSExpression thisObj) {
+        if (callee instanceof ArkTSExpression.MemberExpression) {
+            return callee;
+        }
+        return new ArkTSExpression.MemberExpression(thisObj, callee, false);
     }
 
     /**
