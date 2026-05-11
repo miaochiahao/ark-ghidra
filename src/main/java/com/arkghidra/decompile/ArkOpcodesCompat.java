@@ -113,6 +113,10 @@ final class ArkOpcodesCompat {
 
     static final int JSTRICTEQUNDEFINED_IMM16 =
             ArkOpcodes.JSTRICTEQUNDEFINED_IMM16;
+    static final int JSTRICTEQUNDEFINED_IMM8 =
+            ArkOpcodes.JSTRICTEQUNDEFINED_IMM8;
+    static final int JNSTRICTEQUNDEFINED_IMM8 =
+            ArkOpcodes.JNSTRICTEQUNDEFINED_IMM8;
     static final int JNSTRICTEQUNDEFINED_IMM16 =
             ArkOpcodes.JNSTRICTEQUNDEFINED_IMM16;
 
@@ -588,7 +592,9 @@ final class ArkOpcodesCompat {
                 || opcode == JSTRICTEQNULL_IMM16
                 || opcode == JNSTRICTEQNULL_IMM8
                 || opcode == JNSTRICTEQNULL_IMM16
+                || opcode == JSTRICTEQUNDEFINED_IMM8
                 || opcode == JSTRICTEQUNDEFINED_IMM16
+                || opcode == JNSTRICTEQUNDEFINED_IMM8
                 || opcode == JNSTRICTEQUNDEFINED_IMM16
                 || opcode == JSTRICTEQ_IMM8 || opcode == JSTRICTEQ_IMM16
                 || opcode == JNSTRICTEQ_IMM8

@@ -667,7 +667,8 @@ class ControlFlowReconstructor {
         }
 
         // --- Strict undefined comparison jumps ---
-        if (opcode == ArkOpcodesCompat.JSTRICTEQUNDEFINED_IMM16) {
+        if (opcode == ArkOpcodesCompat.JSTRICTEQUNDEFINED_IMM8
+                || opcode == ArkOpcodesCompat.JSTRICTEQUNDEFINED_IMM16) {
             return new ArkTSExpression.BinaryExpression(
                     ctx.currentAccValue != null
                             ? ctx.currentAccValue
@@ -677,7 +678,8 @@ class ControlFlowReconstructor {
                             ArkTSExpression.LiteralExpression
                                     .LiteralKind.UNDEFINED));
         }
-        if (opcode == ArkOpcodesCompat.JNSTRICTEQUNDEFINED_IMM16) {
+        if (opcode == ArkOpcodesCompat.JNSTRICTEQUNDEFINED_IMM8
+                || opcode == ArkOpcodesCompat.JNSTRICTEQUNDEFINED_IMM16) {
             return new ArkTSExpression.BinaryExpression(
                     ctx.currentAccValue != null
                             ? ctx.currentAccValue
@@ -726,6 +728,7 @@ class ControlFlowReconstructor {
                 || opcode == ArkOpcodesCompat.JSTRICTEQZ_IMM16
                 || opcode == ArkOpcodesCompat.JSTRICTEQNULL_IMM8
                 || opcode == ArkOpcodesCompat.JSTRICTEQNULL_IMM16
+                || opcode == ArkOpcodesCompat.JSTRICTEQUNDEFINED_IMM8
                 || opcode == ArkOpcodesCompat.JSTRICTEQUNDEFINED_IMM16
                 || opcode == ArkOpcodesCompat.JSTRICTEQ_IMM8
                 || opcode == ArkOpcodesCompat.JSTRICTEQ_IMM16;

@@ -174,6 +174,8 @@ public final class ArkOpcodes {
     public static final int JNSTRICTEQNULL_IMM8 = 0x57;
     public static final int JEQUNDEFINED_IMM8 = 0x58;
     public static final int JNEUNDEFINED_IMM8 = 0x59;
+    public static final int JSTRICTEQUNDEFINED_IMM8 = 0x5A;
+    public static final int JNSTRICTEQUNDEFINED_IMM8 = 0x5B;
 
     // --- Jump instructions (16-bit offset) ---
     public static final int JMP_IMM16 = 0x4E;
@@ -511,7 +513,9 @@ public final class ArkOpcodes {
             case JEQUNDEFINED_IMM16: return "jequndefined";
             case JNEUNDEFINED_IMM8: return "jneundefined";
             case JNEUNDEFINED_IMM16: return "jneundefined";
+            case JSTRICTEQUNDEFINED_IMM8: return "jstrictequndefined";
             case JSTRICTEQUNDEFINED_IMM16: return "jstrictequndefined";
+            case JNSTRICTEQUNDEFINED_IMM8: return "jnstrictequndefined";
             case JNSTRICTEQUNDEFINED_IMM16: return "jnstrictequndefined";
             case JEQ_IMM8: return "jeq";
             case JEQ_IMM16: return "jeq";
@@ -855,6 +859,8 @@ public final class ArkOpcodes {
             case JNSTRICTEQNULL_IMM8:
             case JEQUNDEFINED_IMM8:
             case JNEUNDEFINED_IMM8:
+            case JSTRICTEQUNDEFINED_IMM8:
+            case JNSTRICTEQUNDEFINED_IMM8:
                 return ArkInstructionFormat.IMM8;
 
             case JMP_IMM16:
