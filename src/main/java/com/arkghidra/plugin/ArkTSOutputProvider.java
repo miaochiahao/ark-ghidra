@@ -143,6 +143,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private static final Color COLOR_SYMBOL_HIGHLIGHT = new Color(0xFFE082);
     private static final Color COLOR_SEARCH_HIGHLIGHT = new Color(0xA5D6A7);
     private static final Color COLOR_SEARCH_CURRENT = new Color(0xFF8A65);
+    private static final Color COLOR_BRACKET_MATCH = new Color(0xB2EBF2);
 
     private final JPanel mainPanel;
     private final JTextPane codePane;
@@ -155,6 +156,9 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private final JPanel searchPanel;
     private JTextField searchField;
     private JLabel searchStatusLabel;
+    private JTextField replaceField;
+    private JPanel replaceRow;
+    private boolean replaceMode = false;
 
     // Font size state
     private int currentFontSize = 13;
@@ -166,6 +170,8 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private List<Integer> searchMatchPositions = java.util.Collections.emptyList();
     private int searchMatchIndex = -1;
     private Object currentLineHighlight = null;
+    private Object bracketHighlight1 = null;
+    private Object bracketHighlight2 = null;
 
     private Runnable decompileFileCallback;
     private Runnable exportAllCallback;
@@ -341,6 +347,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
         }
         statusBar.setText(sb.toString());
         highlightCurrentLine();
+        highlightMatchingBracket();
     }
 
     private void highlightCurrentLine() {
@@ -372,6 +379,122 @@ public class ArkTSOutputProvider extends ComponentProvider {
         } catch (BadLocationException e) {
             // ignore
         }
+    }
+
+    // --- Bracket matching ---
+
+    private void highlightMatchingBracket() {
+        Highlighter highlighter = codePane.getHighlighter();
+        if (bracketHighlight1 != null) {
+            highlighter.removeHighlight(bracketHighlight1);
+            bracketHighlight1 = null;
+        }
+        if (bracketHighlight2 != null) {
+            highlighter.removeHighlight(bracketHighlight2);
+            bracketHighlight2 = null;
+        }
+
+        String text = codePane.getText();
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        int pos = codePane.getCaretPosition();
+
+        int bracketPos = -1;
+        char bracket = 0;
+        if (pos < text.length()) {
+            char c = text.charAt(pos);
+            if (isBracket(c)) {
+                bracketPos = pos;
+                bracket = c;
+            }
+        }
+        if (bracketPos < 0 && pos > 0) {
+            char c = text.charAt(pos - 1);
+            if (isBracket(c)) {
+                bracketPos = pos - 1;
+                bracket = c;
+            }
+        }
+        if (bracketPos < 0) {
+            return;
+        }
+
+        int matchPos = findMatchingBracket(text, bracketPos, bracket);
+        if (matchPos < 0) {
+            return;
+        }
+
+        Highlighter.HighlightPainter painter =
+                new DefaultHighlighter.DefaultHighlightPainter(COLOR_BRACKET_MATCH);
+        try {
+            bracketHighlight1 = highlighter.addHighlight(
+                    bracketPos, bracketPos + 1, painter);
+            bracketHighlight2 = highlighter.addHighlight(
+                    matchPos, matchPos + 1, painter);
+        } catch (BadLocationException ex) {
+            // ignore
+        }
+    }
+
+    private static boolean isBracket(char c) {
+        return c == '(' || c == ')' || c == '{' || c == '}' || c == '[' || c == ']';
+    }
+
+    private static int findMatchingBracket(String text, int pos, char bracket) {
+        char open;
+        char close;
+        boolean forward;
+        switch (bracket) {
+            case '(': {
+                open = '('; close = ')'; forward = true; break;
+            }
+            case ')': {
+                open = '('; close = ')'; forward = false; break;
+            }
+            case '{': {
+                open = '{'; close = '}'; forward = true; break;
+            }
+            case '}': {
+                open = '{'; close = '}'; forward = false; break;
+            }
+            case '[': {
+                open = '['; close = ']'; forward = true; break;
+            }
+            case ']': {
+                open = '['; close = ']'; forward = false; break;
+            }
+            default: {
+                return -1;
+            }
+        }
+        int depth = 1;
+        if (forward) {
+            for (int i = pos + 1; i < text.length(); i++) {
+                char c = text.charAt(i);
+                if (c == open) {
+                    depth++;
+                } else if (c == close) {
+                    depth--;
+                    if (depth == 0) {
+                        return i;
+                    }
+                }
+            }
+        } else {
+            for (int i = pos - 1; i >= 0; i--) {
+                char c = text.charAt(i);
+                if (c == close) {
+                    depth++;
+                } else if (c == open) {
+                    depth--;
+                    if (depth == 0) {
+                        return i;
+                    }
+                }
+            }
+        }
+        return -1;
     }
 
     // --- Line number gutter ---
@@ -642,7 +765,10 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private void applySymbolHighlights(String text, String word) {
         Highlighter highlighter = codePane.getHighlighter();
         highlighter.removeAllHighlights();
+        bracketHighlight1 = null;
+        bracketHighlight2 = null;
         highlightCurrentLine();
+        highlightMatchingBracket();
         List<Integer> positions =
                 symbolHighlighter.findAllOccurrences(text, word);
         Highlighter.HighlightPainter painter =
@@ -663,7 +789,10 @@ public class ArkTSOutputProvider extends ComponentProvider {
 
     private void clearSymbolHighlights() {
         codePane.getHighlighter().removeAllHighlights();
+        bracketHighlight1 = null;
+        bracketHighlight2 = null;
         highlightCurrentLine();
+        highlightMatchingBracket();
         updateStatusBar();
         if (symbolHighlightCallback != null) {
             symbolHighlightCallback.accept("");
@@ -694,12 +823,23 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 }
             }
         });
+
+        KeyStroke ctrlH = KeyStroke.getKeyStroke(KeyEvent.VK_H, mask);
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(ctrlH, "openReplace");
+        codePane.getActionMap().put("openReplace", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                openSearchBar();
+                if (!replaceMode) {
+                    toggleReplaceRow();
+                }
+            }
+        });
     }
 
     private JPanel buildSearchPanel() {
-        JPanel panel = new JPanel(new BorderLayout(4, 0));
-        panel.setBorder(
-                javax.swing.BorderFactory.createEmptyBorder(2, 4, 2, 4));
+        JPanel findRow = new JPanel(new BorderLayout(4, 0));
+        findRow.setBorder(javax.swing.BorderFactory.createEmptyBorder(2, 4, 1, 4));
 
         searchField = new JTextField(20);
         searchStatusLabel = new JLabel("  ");
@@ -715,6 +855,10 @@ public class ArkTSOutputProvider extends ComponentProvider {
         JButton closeButton = new JButton("\u00D7");
         closeButton.setToolTipText("Close search (Esc)");
         closeButton.addActionListener(e -> closeSearchBar());
+
+        JButton replaceToggle = new JButton("\u25BE");
+        replaceToggle.setToolTipText("Show/hide replace (Ctrl+H)");
+        replaceToggle.addActionListener(e -> toggleReplaceRow());
 
         searchField.addActionListener(e -> navigateSearch(1));
         searchField.getDocument().addDocumentListener(
@@ -745,14 +889,37 @@ public class ArkTSOutputProvider extends ComponentProvider {
         });
 
         JPanel buttons = new JPanel();
+        buttons.add(replaceToggle);
         buttons.add(prevButton);
         buttons.add(nextButton);
         buttons.add(searchStatusLabel);
         buttons.add(closeButton);
 
-        panel.add(new JLabel("Find: "), BorderLayout.WEST);
-        panel.add(searchField, BorderLayout.CENTER);
-        panel.add(buttons, BorderLayout.EAST);
+        findRow.add(new JLabel("Find: "), BorderLayout.WEST);
+        findRow.add(searchField, BorderLayout.CENTER);
+        findRow.add(buttons, BorderLayout.EAST);
+
+        replaceField = new JTextField(20);
+        JButton replaceButton = new JButton("Replace");
+        replaceButton.addActionListener(e -> replaceCurrentMatch());
+        JButton replaceAllButton = new JButton("Replace All");
+        replaceAllButton.addActionListener(e -> replaceAllMatches());
+
+        JPanel replaceButtons = new JPanel();
+        replaceButtons.add(replaceButton);
+        replaceButtons.add(replaceAllButton);
+
+        replaceRow = new JPanel(new BorderLayout(4, 0));
+        replaceRow.setBorder(javax.swing.BorderFactory.createEmptyBorder(1, 4, 2, 4));
+        replaceRow.add(new JLabel("Replace: "), BorderLayout.WEST);
+        replaceRow.add(replaceField, BorderLayout.CENTER);
+        replaceRow.add(replaceButtons, BorderLayout.EAST);
+        replaceRow.setVisible(false);
+
+        JPanel panel = new JPanel();
+        panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
+        panel.add(findRow);
+        panel.add(replaceRow);
 
         return panel;
     }
@@ -766,11 +933,66 @@ public class ArkTSOutputProvider extends ComponentProvider {
 
     private void closeSearchBar() {
         searchPanel.setVisible(false);
+        replaceMode = false;
+        if (replaceRow != null) {
+            replaceRow.setVisible(false);
+        }
         clearSearchHighlights();
         searchMatchPositions = java.util.Collections.emptyList();
         searchMatchIndex = -1;
         codePane.requestFocusInWindow();
         mainPanel.revalidate();
+    }
+
+    private void toggleReplaceRow() {
+        replaceMode = !replaceMode;
+        replaceRow.setVisible(replaceMode);
+        if (replaceMode) {
+            replaceField.requestFocusInWindow();
+        }
+        mainPanel.revalidate();
+    }
+
+    private void replaceCurrentMatch() {
+        if (searchMatchPositions.isEmpty() || searchMatchIndex < 0) {
+            return;
+        }
+        String query = searchField.getText();
+        String replacement = replaceField.getText();
+        if (query.isEmpty()) {
+            return;
+        }
+        int pos = searchMatchPositions.get(searchMatchIndex);
+        try {
+            StyledDocument doc = codePane.getStyledDocument();
+            doc.remove(pos, query.length());
+            doc.insertString(pos, replacement,
+                    createStyle(new ColorScheme(isDarkBackground()).plain, false));
+            runSearch();
+        } catch (BadLocationException ex) {
+            Msg.warn(OWNER, "Replace failed: " + ex.getMessage());
+        }
+    }
+
+    private void replaceAllMatches() {
+        String query = searchField.getText();
+        String replacement = replaceField.getText();
+        if (query.isEmpty() || searchMatchPositions.isEmpty()) {
+            return;
+        }
+        try {
+            StyledDocument doc = codePane.getStyledDocument();
+            List<Integer> positions = new java.util.ArrayList<>(searchMatchPositions);
+            for (int i = positions.size() - 1; i >= 0; i--) {
+                int pos = positions.get(i);
+                doc.remove(pos, query.length());
+                doc.insertString(pos, replacement,
+                        createStyle(new ColorScheme(isDarkBackground()).plain, false));
+            }
+            runSearch();
+        } catch (BadLocationException ex) {
+            Msg.warn(OWNER, "Replace all failed: " + ex.getMessage());
+        }
     }
 
     private void runSearch() {
@@ -947,6 +1169,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 "Keyboard Shortcuts\n"
                 + "------------------------------\n"
                 + "Ctrl+F          Find / Search\n"
+                + "Ctrl+H          Find & Replace\n"
                 + "Escape          Close search bar\n"
                 + "Alt+Left        Navigate back\n"
                 + "Alt+Right       Navigate forward\n"
