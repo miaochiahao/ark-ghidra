@@ -60,6 +60,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
     private CallGraphProvider callGraphProvider;
     private GlobalSearchProvider globalSearchProvider;
     private BookmarkProvider bookmarkProvider;
+    private HistoryProvider historyProvider;
 
     public ArkGhidraPlugin(PluginTool tool) {
         super(tool);
@@ -77,6 +78,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         abcStructureProvider.setExportClassCallback(this::exportClassToFile);
         abcStructureProvider.setCopyAsArkTSCallback(this::copyClassAsArkTS);
         outputProvider.setDecompileFileCallback(this::decompileWholeFile);
+        outputProvider.setExportAllCallback(this::exportAllClasses);
         outputProvider.setJumpToDefinitionCallback(this::jumpToDefinition);
         xrefProvider.setNavigationListener(offset -> outputProvider.scrollToOffset(offset));
         outputProvider.setSymbolHighlightCallback(word -> {
@@ -112,6 +114,9 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         bookmarkProvider.setNavigationCallback(this::navigateToSearchResult);
         tool.addComponentProvider(bookmarkProvider, false);
         outputProvider.setAddBookmarkCallback(this::addCurrentBookmark);
+        historyProvider = new HistoryProvider(tool, PLUGIN_NAME);
+        historyProvider.setRestoreCallback((name, code) -> outputProvider.showDecompiledCode(name, code));
+        tool.addComponentProvider(historyProvider, false);
     }
 
     private void onMethodDoubleClicked(AbcMethod method) {
@@ -133,6 +138,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             ArkTSDecompiler decompiler = new ArkTSDecompiler();
             String result = decompiler.decompileMethod(method, code, abcFile);
             outputProvider.showDecompiledCode(method.getName(), result);
+            historyProvider.recordNavigation(method.getName(), result);
             tool.showComponentProvider(outputProvider, true);
             List<String> allMethodNames = getAllMethodNames(abcFile);
             callGraphProvider.showCallGraph(method.getName(), result, allMethodNames);
@@ -177,6 +183,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                 sb.append("\n\n");
             }
             outputProvider.showDecompiledCode("Class: " + className, sb.toString());
+            historyProvider.recordNavigation("Class: " + className, sb.toString());
             tool.showComponentProvider(outputProvider, true);
             Msg.info(OWNER, "Decompiled class via tree: " + className);
         } catch (Exception e) {
@@ -266,6 +273,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             ArkTSDecompiler decompiler = new ArkTSDecompiler();
             String result = decompiler.decompileFile(abcFile);
             outputProvider.showDecompiledCode("File: " + program.getName(), result);
+            historyProvider.recordNavigation("File: " + program.getName(), result);
             tool.showComponentProvider(outputProvider, true);
             Msg.info(OWNER, "Decompiled whole file: " + program.getName());
         } catch (Exception e) {
@@ -275,6 +283,85 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         } finally {
             outputProvider.hideLoading();
         }
+    }
+
+    private void exportAllClasses() {
+        Program program = getCurrentProgram();
+        if (program == null) {
+            outputProvider.showMessage("No program is open.");
+            return;
+        }
+        javax.swing.JFileChooser chooser = new javax.swing.JFileChooser();
+        chooser.setDialogTitle("Export All Classes \u2014 Choose Directory");
+        chooser.setFileSelectionMode(javax.swing.JFileChooser.DIRECTORIES_ONLY);
+        if (chooser.showSaveDialog(null) != javax.swing.JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        File dir = chooser.getSelectedFile();
+        if (!dir.exists() && !dir.mkdirs()) {
+            Msg.error(OWNER, "Could not create directory: " + dir.getPath());
+            return;
+        }
+        outputProvider.showLoading("Exporting...");
+        new SwingWorker<Void, Void>() {
+            @Override
+            protected Void doInBackground() {
+                try {
+                    byte[] abcData = DecompileToArkTSAction.readAbcData(program);
+                    if (abcData == null) {
+                        return null;
+                    }
+                    AbcFile abcFile = AbcFile.parse(abcData);
+                    ArkTSDecompiler decompiler = new ArkTSDecompiler();
+                    int count = 0;
+                    for (AbcClass cls : abcFile.getClasses()) {
+                        try {
+                            String className =
+                                    AbcStructureProvider.formatClassName(cls.getName());
+                            String simpleName = className.contains(".")
+                                    ? className.substring(className.lastIndexOf('.') + 1)
+                                    : className;
+                            if (simpleName.isEmpty() || simpleName.equals("<unnamed>")) {
+                                continue;
+                            }
+                            StringBuilder sb = new StringBuilder();
+                            for (AbcMethod method : cls.getMethods()) {
+                                try {
+                                    AbcCode code = abcFile.getCodeForMethod(method);
+                                    sb.append(decompiler.decompileMethod(
+                                            method, code, abcFile));
+                                    sb.append("\n\n");
+                                } catch (Exception e) {
+                                    // skip failed methods
+                                }
+                            }
+                            File outFile = new File(dir, simpleName + ".ets");
+                            try (BufferedWriter writer = new BufferedWriter(
+                                    new OutputStreamWriter(
+                                            new FileOutputStream(outFile),
+                                            StandardCharsets.UTF_8))) {
+                                writer.write(sb.toString());
+                            }
+                            count++;
+                        } catch (Exception e) {
+                            // skip failed classes
+                        }
+                    }
+                    final int finalCount = count;
+                    javax.swing.SwingUtilities.invokeLater(() ->
+                            Msg.info(OWNER, "Exported " + finalCount
+                                    + " classes to " + dir.getPath()));
+                } catch (Exception e) {
+                    Msg.error(OWNER, "Export all failed: " + e.getMessage(), e);
+                }
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                outputProvider.hideLoading();
+            }
+        }.execute();
     }
 
     private void performGlobalSearch(String query) {
@@ -410,6 +497,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             ArkTSDecompiler decompiler = new ArkTSDecompiler();
             String result = decompiler.decompileMethod(abcMethod, code, abcFile);
             outputProvider.showDecompiledCode(abcMethod.getName(), result);
+            historyProvider.recordNavigation(abcMethod.getName(), result);
             List<String> allMethodNames = getAllMethodNames(abcFile);
             callGraphProvider.showCallGraph(abcMethod.getName(), result, allMethodNames);
             Msg.info(OWNER, "Auto-decompiled on location change: " + abcMethod.getName());
@@ -592,6 +680,9 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             }
             if (bookmarkProvider != null) {
                 pluginTool.removeComponentProvider(bookmarkProvider);
+            }
+            if (historyProvider != null) {
+                pluginTool.removeComponentProvider(historyProvider);
             }
         }
     }

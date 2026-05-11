@@ -168,6 +168,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private Object currentLineHighlight = null;
 
     private Runnable decompileFileCallback;
+    private Runnable exportAllCallback;
     private Consumer<String> symbolHighlightCallback;
     private Consumer<String> jumpToDefinitionCallback;
     private Runnable globalSearchCallback;
@@ -904,6 +905,15 @@ public class ArkTSOutputProvider extends ComponentProvider {
         });
         toolBar.add(decompileFileButton);
 
+        JButton exportAllButton = new JButton("Export All...");
+        exportAllButton.setToolTipText("Export all decompiled classes to a directory");
+        exportAllButton.addActionListener(e -> {
+            if (exportAllCallback != null) {
+                exportAllCallback.run();
+            }
+        });
+        toolBar.add(exportAllButton);
+
         JButton copyButton = new JButton("Copy");
         copyButton.addActionListener(e -> copyToClipboard());
         toolBar.add(copyButton);
@@ -1275,6 +1285,15 @@ public class ArkTSOutputProvider extends ComponentProvider {
      */
     public void setDecompileFileCallback(Runnable callback) {
         this.decompileFileCallback = callback;
+    }
+
+    /**
+     * Sets a callback that is invoked when the "Export All..." toolbar button is clicked.
+     *
+     * @param callback the runnable to invoke, or null to disable the button action
+     */
+    public void setExportAllCallback(Runnable callback) {
+        this.exportAllCallback = callback;
     }
 
     /**
