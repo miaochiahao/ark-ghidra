@@ -123,7 +123,10 @@ class TryCatchProcessor {
                 buildTryCatchRegions(ctx, cfg);
 
         // Build try body from blocks within the try range
+        // Collect non-nested-try blocks, then process with control flow
+        // reconstruction for proper if/else/loop detection.
         List<ArkTSStatement> tryBodyStmts = new ArrayList<>();
+        List<BasicBlock> tryBodyBlocks = new ArrayList<>();
         for (BasicBlock block : cfg.getBlocks()) {
             if (block.getStartOffset() >= tcr.startPc
                     && block.getStartOffset() < tcr.endPc
@@ -135,18 +138,24 @@ class TryCatchProcessor {
                         && !nestedTcr.isProcessed()
                         && nestedTcr.startPc >= tcr.startPc
                         && nestedTcr.endPc <= tcr.endPc) {
+                    // Handle nested try-catch directly
                     nestedTcr.markProcessed();
                     visited.add(block);
-                    tryBodyStmts.addAll(
+                    List<ArkTSStatement> nestedStmts =
                             processTryCatch(nestedTcr, ctx, cfg,
-                                    visited));
+                                    visited);
+                    // Add nested try-catch results as a synthetic block
+                    tryBodyStmts.addAll(nestedStmts);
                 } else {
-                    visited.add(block);
-                    tryBodyStmts.addAll(
-                            reconstructor.processBlockInstructions(
-                                    block, ctx));
+                    tryBodyBlocks.add(block);
                 }
             }
+        }
+        // Process remaining blocks with control flow reconstruction
+        if (!tryBodyBlocks.isEmpty()) {
+            tryBodyStmts.addAll(
+                    reconstructor.reconstructSubGraph(
+                            cfg, tryBodyBlocks, ctx, visited));
         }
         ArkTSStatement tryBody =
                 new ArkTSStatement.BlockStatement(tryBodyStmts);
