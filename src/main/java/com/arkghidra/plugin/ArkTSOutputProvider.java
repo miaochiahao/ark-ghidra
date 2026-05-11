@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.util.List;
 
 import javax.swing.AbstractAction;
+import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
@@ -31,6 +32,8 @@ import javax.swing.JTextField;
 import javax.swing.JTextPane;
 import javax.swing.JToolBar;
 import javax.swing.KeyStroke;
+import javax.swing.event.CaretEvent;
+import javax.swing.event.CaretListener;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.text.BadLocationException;
@@ -86,6 +89,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private final JPanel mainPanel;
     private final JTextPane codePane;
     private final JLabel headerLabel;
+    private final JLabel statusBar;
     private final ArkTSColorizer colorizer;
     private final SymbolHighlighter symbolHighlighter;
 
@@ -111,6 +115,20 @@ public class ArkTSOutputProvider extends ComponentProvider {
         installClickToHighlight();
         installCtrlFBinding();
 
+        statusBar = new JLabel("Ready");
+        statusBar.setFont(statusBar.getFont().deriveFont(11f));
+        statusBar.setForeground(Color.GRAY);
+        statusBar.setBorder(BorderFactory.createEmptyBorder(1, 4, 1, 4));
+        statusBar.setOpaque(true);
+        statusBar.setBackground(new Color(0xF0F0F0));
+
+        codePane.addCaretListener(new CaretListener() {
+            @Override
+            public void caretUpdate(CaretEvent e) {
+                updateStatusBar();
+            }
+        });
+
         JScrollPane scrollPane = new JScrollPane(codePane);
         scrollPane.setRowHeaderView(new LineNumberComponent(codePane));
 
@@ -127,10 +145,14 @@ public class ArkTSOutputProvider extends ComponentProvider {
         centerPanel.add(scrollPane, BorderLayout.CENTER);
         centerPanel.add(searchPanel, BorderLayout.SOUTH);
 
+        JPanel bottomPanel = new JPanel(new BorderLayout());
+        bottomPanel.add(statusBar, BorderLayout.NORTH);
+        bottomPanel.add(toolBar, BorderLayout.CENTER);
+
         mainPanel = new JPanel(new BorderLayout());
         mainPanel.add(headerLabel, BorderLayout.NORTH);
         mainPanel.add(centerPanel, BorderLayout.CENTER);
-        mainPanel.add(toolBar, BorderLayout.SOUTH);
+        mainPanel.add(bottomPanel, BorderLayout.SOUTH);
 
         setDefaultWindowPosition(docking.WindowPosition.BOTTOM);
         setTitle("ArkTS Output");
@@ -184,6 +206,37 @@ public class ArkTSOutputProvider extends ComponentProvider {
      */
     public String getCurrentHighlightedWord() {
         return currentHighlightedWord;
+    }
+
+    // --- Status bar ---
+
+    private void updateStatusBar() {
+        int pos = codePane.getCaretPosition();
+        String text = codePane.getText();
+        if (text == null) {
+            text = "";
+        }
+        int line = 1;
+        for (int i = 0; i < pos && i < text.length(); i++) {
+            if (text.charAt(i) == '\n') {
+                line++;
+            }
+        }
+        int col;
+        if (pos == 0) {
+            col = 1;
+        } else {
+            int lastNewline = text.lastIndexOf('\n', pos - 1);
+            col = pos - lastNewline;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("Ln ").append(line).append(", Col ").append(col);
+        if (currentHighlightedWord != null && !currentHighlightedWord.isEmpty()) {
+            int count = symbolHighlighter.findAllOccurrences(text, currentHighlightedWord).size();
+            sb.append("  |  \"").append(currentHighlightedWord).append("\" \u2014 ")
+                    .append(count).append(" occurrences");
+        }
+        statusBar.setText(sb.toString());
     }
 
     // --- Line number gutter ---
@@ -330,11 +383,13 @@ public class ArkTSOutputProvider extends ComponentProvider {
         if (word.isEmpty()) {
             clearSymbolHighlights();
             currentHighlightedWord = "";
+            updateStatusBar();
             return;
         }
         if (word.equals(currentHighlightedWord)) {
             clearSymbolHighlights();
             currentHighlightedWord = "";
+            updateStatusBar();
             return;
         }
 
@@ -357,10 +412,12 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 Msg.warn(OWNER, "Highlight error: " + ex.getMessage());
             }
         }
+        updateStatusBar();
     }
 
     private void clearSymbolHighlights() {
         codePane.getHighlighter().removeAllHighlights();
+        updateStatusBar();
     }
 
     // --- Ctrl+F search bar ---

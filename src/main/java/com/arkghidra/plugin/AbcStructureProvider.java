@@ -9,7 +9,9 @@ import java.awt.event.MouseEvent;
 import javax.swing.BorderFactory;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
+import javax.swing.JMenuItem;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 import javax.swing.JTree;
@@ -70,6 +72,20 @@ public class AbcStructureProvider extends ComponentProvider {
                     handleDoubleClick();
                 }
             }
+
+            @Override
+            public void mousePressed(MouseEvent e) {
+                if (e.isPopupTrigger()) {
+                    showTreeContextMenu(e);
+                }
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                if (e.isPopupTrigger()) {
+                    showTreeContextMenu(e);
+                }
+            }
         });
 
         filterField = new JTextField();
@@ -114,6 +130,76 @@ public class AbcStructureProvider extends ComponentProvider {
 
         setDefaultWindowPosition(docking.WindowPosition.LEFT);
         setTitle("ABC Structure");
+    }
+
+    private void showTreeContextMenu(MouseEvent e) {
+        TreePath path = structureTree.getPathForLocation(e.getX(), e.getY());
+        if (path == null) {
+            return;
+        }
+        structureTree.setSelectionPath(path);
+        DefaultMutableTreeNode node =
+                (DefaultMutableTreeNode) path.getLastPathComponent();
+        Object userObj = node.getUserObject();
+
+        if (userObj instanceof AbcMethod) {
+            AbcMethod method = (AbcMethod) userObj;
+            JPopupMenu menu = new JPopupMenu();
+
+            JMenuItem decompileItem = new JMenuItem("Decompile");
+            decompileItem.addActionListener(ev -> {
+                if (navigationListener != null) {
+                    navigationListener.onMethodSelected(method);
+                }
+            });
+            menu.add(decompileItem);
+
+            JMenuItem copyNameItem = new JMenuItem("Copy Name");
+            copyNameItem.addActionListener(ev -> copyToClipboard(method.getName()));
+            menu.add(copyNameItem);
+
+            JMenuItem copyOffsetItem = new JMenuItem("Copy Offset");
+            copyOffsetItem.addActionListener(
+                    ev -> copyToClipboard("0x" + Long.toHexString(method.getCodeOff())));
+            menu.add(copyOffsetItem);
+
+            menu.show(structureTree, e.getX(), e.getY());
+        } else if (userObj instanceof String) {
+            String label = (String) userObj;
+            if (isClassNameNode(label)) {
+                JPopupMenu menu = new JPopupMenu();
+
+                JMenuItem copyNameItem = new JMenuItem("Copy Name");
+                copyNameItem.addActionListener(ev -> copyToClipboard(label));
+                menu.add(copyNameItem);
+
+                menu.show(structureTree, e.getX(), e.getY());
+            }
+        }
+    }
+
+    private static boolean isClassNameNode(String label) {
+        if (label == null) {
+            return false;
+        }
+        if (label.equals("Classes")) {
+            return false;
+        }
+        if (label.startsWith("Methods (") && label.endsWith(")")) {
+            return false;
+        }
+        if (label.startsWith("Fields (") && label.endsWith(")")) {
+            return false;
+        }
+        if (label.startsWith("ABC File")) {
+            return false;
+        }
+        return true;
+    }
+
+    private void copyToClipboard(String text) {
+        java.awt.Toolkit.getDefaultToolkit().getSystemClipboard()
+                .setContents(new java.awt.datatransfer.StringSelection(text), null);
     }
 
     private void updateBreadcrumb() {
