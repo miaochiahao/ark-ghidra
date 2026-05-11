@@ -70,6 +70,7 @@ class BranchProcessor {
             }
         }
 
+        // Try STA-based ternary: both branches assign to same variable
         String targetVar = null;
 
         for (ArkInstruction insn : trueBranch.getInstructions()) {
@@ -82,27 +83,39 @@ class BranchProcessor {
             }
         }
 
-        if (targetVar == null) {
-            return null;
-        }
-
-        boolean hasMatchingSta = false;
-        for (ArkInstruction insn : falseBranch.getInstructions()) {
-            if (insn == falseLast
-                    && !ArkOpcodesCompat.isUnconditionalJump(
-                            falseLast.getOpcode())) {
-                break;
-            }
-            if (insn.getOpcode() == ArkOpcodesCompat.STA) {
-                String falseVar = ctx.resolveRegisterName(
-                        (int) insn.getOperands().get(0).getValue());
-                if (falseVar.equals(targetVar)) {
-                    hasMatchingSta = true;
+        if (targetVar != null) {
+            boolean hasMatchingSta = false;
+            for (ArkInstruction insn : falseBranch.getInstructions()) {
+                if (insn == falseLast
+                        && !ArkOpcodesCompat.isUnconditionalJump(
+                                falseLast.getOpcode())) {
+                    break;
+                }
+                if (insn.getOpcode() == ArkOpcodesCompat.STA) {
+                    String falseVar = ctx.resolveRegisterName(
+                            (int) insn.getOperands().get(0).getValue());
+                    if (falseVar.equals(targetVar)) {
+                        hasMatchingSta = true;
+                    }
                 }
             }
+
+            if (!hasMatchingSta) {
+                targetVar = null;
+            }
         }
 
-        if (!hasMatchingSta) {
+        // If no STA-based ternary, try acc-value ternary: both branches
+        // just load a value into acc and jump to merge (no side effects)
+        boolean accValueTernary = false;
+        if (targetVar == null) {
+            if (isAccValueBlock(trueBranch, trueLast)
+                    && isAccValueBlock(falseBranch, falseLast)) {
+                accValueTernary = true;
+            }
+        }
+
+        if (targetVar == null && !accValueTernary) {
             return null;
         }
 
@@ -115,6 +128,39 @@ class BranchProcessor {
         p.mergeBlock = mergeBlock;
         p.ternaryTargetVar = targetVar;
         return p;
+    }
+
+    /**
+     * Checks if a block is a pure "acc-value" block: it contains only
+     * instructions that load a value into the accumulator (LDA_STR, LDAI,
+     * LDA, LDTRUE, LDFALSE, LDUNDEFINED, LDNULL) and no side effects.
+     * Used for detecting return-value ternary expressions.
+     */
+    private boolean isAccValueBlock(BasicBlock block,
+            ArkInstruction lastInsn) {
+        for (ArkInstruction insn : block.getInstructions()) {
+            if (insn == lastInsn) {
+                break;
+            }
+            int op = insn.getOpcode();
+            if (ArkOpcodesCompat.isUnconditionalJump(op)
+                    || ArkOpcodesCompat.isConditionalBranch(op)) {
+                continue;
+            }
+            if (op != ArkOpcodesCompat.LDA_STR
+                    && op != ArkOpcodesCompat.LDAI
+                    && op != ArkOpcodesCompat.FLDAI
+                    && op != ArkOpcodesCompat.LDA
+                    && op != ArkOpcodesCompat.LDTRUE
+                    && op != ArkOpcodesCompat.LDFALSE
+                    && op != ArkOpcodesCompat.LDUNDEFINED
+                    && op != ArkOpcodesCompat.LDNULL
+                    && op != ArkOpcodesCompat.LDNAN
+                    && op != ArkOpcodesCompat.LDINFINITY) {
+                return false;
+            }
+        }
+        return true;
     }
 
     // --- Short-circuit detection ---
@@ -571,10 +617,25 @@ class BranchProcessor {
             ternaryExpr =
                     OperatorHandler.simplifyTernaryToOr(ternaryExpr);
             String targetVar = pattern.ternaryTargetVar;
-            ArkTSStatement decl =
-                    new ArkTSStatement.VariableDeclaration(
-                            "let", targetVar, null, ternaryExpr);
-            stmts.add(decl);
+            if (targetVar != null) {
+                ArkTSStatement decl =
+                        new ArkTSStatement.VariableDeclaration(
+                                "let", targetVar, null, ternaryExpr);
+                stmts.add(decl);
+            } else {
+                // Acc-value ternary: result flows to merge block via accumulator.
+                // Check if merge block is just a return → emit return ternary.
+                boolean mergeIsReturn = pattern.mergeBlock != null
+                        && pattern.mergeBlock.getInstructions().size() == 1
+                        && pattern.mergeBlock.getInstructions().get(0)
+                                .getOpcode() == ArkOpcodesCompat.RETURN;
+                if (mergeIsReturn) {
+                    stmts.add(new ArkTSStatement.ReturnStatement(
+                            ternaryExpr));
+                } else {
+                    ctx.currentAccValue = ternaryExpr;
+                }
+            }
         } else {
             List<ArkTSStatement> thenStmts =
                     reconstructor.processBlockInstructions(
