@@ -166,6 +166,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private int currentFontSize = 13;
     private String currentFontFamily = "Monospaced";
     private int currentLineSpacing = 2;
+    private String currentTheme = "Auto (follow Ghidra)";
     private String lastFunctionName = "";
     private String lastCode = "";
 
@@ -1422,7 +1423,25 @@ public class ArkTSOutputProvider extends ComponentProvider {
         java.util.List<java.util.List<ArkTSColorizer.StyledSegment>>
                 allLines = colorizer.colorizeSource(code);
 
-        ColorScheme cs = new ColorScheme(isDarkBackground());
+        ColorScheme cs;
+        switch (currentTheme) {
+            case "Dark": {
+                cs = new ColorScheme(true);
+                break;
+            }
+            case "Light": {
+                cs = new ColorScheme(false);
+                break;
+            }
+            case "High Contrast": {
+                cs = new ColorScheme(true);
+                break;
+            }
+            default: {
+                cs = new ColorScheme(isDarkBackground());
+                break;
+            }
+        }
         codePane.setBackground(cs.background);
         SimpleAttributeSet plainStyle = createStyle(cs.plain, false);
         SimpleAttributeSet keywordStyle = createStyle(cs.keyword, true);
@@ -1590,6 +1609,21 @@ public class ArkTSOutputProvider extends ComponentProvider {
      */
     public void setLineSpacing(int spacing) {
         currentLineSpacing = Math.max(0, Math.min(8, spacing));
+        if (!lastCode.isEmpty()) {
+            renderHighlightedCode(lastCode);
+        }
+    }
+
+    /**
+     * Updates the syntax highlighting theme and re-renders if content is present.
+     *
+     * @param theme theme name; ignored if null
+     */
+    public void setTheme(String theme) {
+        if (theme == null) {
+            return;
+        }
+        currentTheme = theme;
         if (!lastCode.isEmpty()) {
             renderHighlightedCode(lastCode);
         }

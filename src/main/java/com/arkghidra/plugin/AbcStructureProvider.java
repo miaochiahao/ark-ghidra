@@ -86,6 +86,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private BiConsumer<AbcClass, File> exportClassCallback;
     private java.util.function.Consumer<AbcClass> copyAsArkTSCallback;
     private Consumer<String> showCallersCallback;
+    private Consumer<AbcClass> showImplementationsCallback;
     private Runnable exportReportCallback;
     private Runnable decompileAllAbilitiesCallback;
     private Runnable refreshCallback;
@@ -360,6 +361,15 @@ public class AbcStructureProvider extends ComponentProvider {
     }
 
     /**
+     * Sets the callback invoked when the user chooses "Show Implementations" from the class context menu.
+     *
+     * @param cb the consumer to invoke with the selected class
+     */
+    public void setShowImplementationsCallback(Consumer<AbcClass> cb) {
+        this.showImplementationsCallback = cb;
+    }
+
+    /**
      * Sets the notes provider so the tree can show indicators for methods with notes.
      *
      * @param provider the notes provider
@@ -457,6 +467,14 @@ public class AbcStructureProvider extends ComponentProvider {
             JMenuItem subclassesItem = new JMenuItem("Show Subclasses");
             subclassesItem.addActionListener(ev -> showSubclasses(cls));
             menu.add(subclassesItem);
+
+            JMenuItem implItem = new JMenuItem("Show Implementations");
+            implItem.addActionListener(ev -> {
+                if (showImplementationsCallback != null) {
+                    showImplementationsCallback.accept(cls);
+                }
+            });
+            menu.add(implItem);
 
             menu.show(structureTree, e.getX(), e.getY());
         } else if (userObj instanceof String) {

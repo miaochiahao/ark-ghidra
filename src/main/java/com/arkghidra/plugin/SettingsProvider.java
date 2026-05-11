@@ -41,6 +41,7 @@ public class SettingsProvider extends ComponentProvider {
     private final JCheckBox showComplexityHeaderCheckBox;
     private final JComboBox<String> fontFamilyCombo;
     private final JSlider lineSpacingSlider;
+    private final JComboBox<String> themeCombo;
     private final JLabel timeoutLabel;
 
     private long timeoutMs = DEFAULT_TIMEOUT_MS;
@@ -87,6 +88,11 @@ public class SettingsProvider extends ComponentProvider {
         fontFamilyCombo.setSelectedItem("Monospaced");
         fontFamilyCombo.setToolTipText("Font family for the decompiled code view");
 
+        String[] themes = {"Auto (follow Ghidra)", "Light", "Dark", "High Contrast"};
+        themeCombo = new JComboBox<>(themes);
+        themeCombo.setSelectedItem("Auto (follow Ghidra)");
+        themeCombo.setToolTipText("Syntax highlighting color theme");
+
         JPanel formPanel = new JPanel(new GridBagLayout());
         formPanel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
         GridBagConstraints gbc = new GridBagConstraints();
@@ -122,7 +128,12 @@ public class SettingsProvider extends ComponentProvider {
         gbc.gridx = 1; gbc.gridwidth = 2;
         formPanel.add(lineSpacingSlider, gbc);
 
-        gbc.gridx = 0; gbc.gridy = 7; gbc.gridwidth = 3;
+        gbc.gridx = 0; gbc.gridy = 7; gbc.gridwidth = 1;
+        formPanel.add(new JLabel("Theme:"), gbc);
+        gbc.gridx = 1; gbc.gridwidth = 2;
+        formPanel.add(themeCombo, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 8; gbc.gridwidth = 3;
         JLabel hintLabel = new JLabel(
                 "<html><small>Increase timeout for complex methods that time out.</small></html>");
         formPanel.add(hintLabel, gbc);
@@ -218,11 +229,22 @@ public class SettingsProvider extends ComponentProvider {
     }
 
     /**
+     * Returns the selected syntax highlighting theme name.
+     *
+     * @return theme name, never null
+     */
+    public String getTheme() {
+        Object selected = themeCombo.getSelectedItem();
+        return selected != null ? selected.toString() : "Auto (follow Ghidra)";
+    }
+
+    /**
      * Adds a listener that is notified when the font family selection changes.
      *
      * @param listener the action listener
      */
     public void addFontChangeListener(java.awt.event.ActionListener listener) {
         fontFamilyCombo.addActionListener(listener);
+        themeCombo.addActionListener(listener);
     }
 }

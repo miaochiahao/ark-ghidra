@@ -7,7 +7,9 @@ import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import javax.swing.DefaultListModel;
 import javax.swing.JDialog;
@@ -171,18 +173,72 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         tool.addComponentProvider(statsProvider, false);
         settingsProvider = new SettingsProvider(tool, PLUGIN_NAME);
         tool.addComponentProvider(settingsProvider, false);
-        settingsProvider.addFontChangeListener(e -> outputProvider.setFontFamily(settingsProvider.getFontFamily()));
+        settingsProvider.addFontChangeListener(e -> {
+            outputProvider.setFontFamily(settingsProvider.getFontFamily());
+            outputProvider.setTheme(settingsProvider.getTheme());
+        });
         settingsProvider.addSettingsChangeListener(e ->
                 outputProvider.setLineSpacing(settingsProvider.getLineSpacing()));
         notesProvider = new NotesProvider(tool, PLUGIN_NAME);
         tool.addComponentProvider(notesProvider, false);
         abcStructureProvider.setNotesProvider(notesProvider);
         abcStructureProvider.setShowCallersCallback(this::showAllCallers);
+        abcStructureProvider.setShowImplementationsCallback(this::showImplementations);
     }
 
     private void showAllCallers(String methodName) {
         tool.showComponentProvider(globalSearchProvider, true);
         globalSearchProvider.triggerSearch(methodName + "(");
+    }
+
+    private void showImplementations(AbcClass targetClass) {
+        AbcFile abcFile = getCurrentAbcFile();
+        if (abcFile == null) {
+            return;
+        }
+        Set<String> targetMethods = new HashSet<>();
+        for (AbcMethod method : targetClass.getMethods()) {
+            if (method.getCodeOff() == 0) {
+                targetMethods.add(method.getName());
+            }
+        }
+        if (targetMethods.isEmpty()) {
+            for (AbcMethod method : targetClass.getMethods()) {
+                targetMethods.add(method.getName());
+            }
+        }
+        if (targetMethods.isEmpty()) {
+            outputProvider.showMessage("// No methods to match against");
+            return;
+        }
+        String targetName = AbcStructureProvider.formatClassName(targetClass.getName());
+        List<String> implementations = new ArrayList<>();
+        for (AbcClass cls : abcFile.getClasses()) {
+            if (cls.getName().equals(targetClass.getName())) {
+                continue;
+            }
+            Set<String> clsMethods = new HashSet<>();
+            for (AbcMethod method : cls.getMethods()) {
+                clsMethods.add(method.getName());
+            }
+            long matchCount = targetMethods.stream().filter(clsMethods::contains).count();
+            if (matchCount >= 2 || (targetMethods.size() == 1 && matchCount == 1)) {
+                String clsName = AbcStructureProvider.formatClassName(cls.getName());
+                implementations.add(clsName + " (" + matchCount + "/" + targetMethods.size() + " methods)");
+            }
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("// Implementations of ").append(targetName).append("\n");
+        sb.append("// (classes sharing \u22652 method names)\n\n");
+        if (implementations.isEmpty()) {
+            sb.append("// No implementations found");
+        } else {
+            for (String impl : implementations) {
+                sb.append("// ").append(impl).append("\n");
+            }
+        }
+        outputProvider.showDecompiledCode("Implementations: " + targetName, sb.toString());
+        tool.showComponentProvider(outputProvider, true);
     }
 
     private void refreshHapExplorer() {
