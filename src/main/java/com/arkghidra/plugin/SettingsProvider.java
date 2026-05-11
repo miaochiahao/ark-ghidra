@@ -37,6 +37,7 @@ public class SettingsProvider extends ComponentProvider {
     private final JCheckBox autoDecompileCheckBox;
     private final JCheckBox skipTrivialCheckBox;
     private final JCheckBox showInlineNotesCheckBox;
+    private final JCheckBox showComplexityHeaderCheckBox;
     private final JComboBox<String> fontFamilyCombo;
     private final JLabel timeoutLabel;
 
@@ -68,6 +69,10 @@ public class SettingsProvider extends ComponentProvider {
         showInlineNotesCheckBox = new JCheckBox("Show notes inline in decompiled output", true);
         showInlineNotesCheckBox.setToolTipText(
                 "Prepend method notes as a comment block in the decompiled output");
+
+        showComplexityHeaderCheckBox = new JCheckBox("Show complexity header in method output", true);
+        showComplexityHeaderCheckBox.setToolTipText(
+                "Show bytecode size and complexity label at the top of each decompiled method");
 
         String[] fontFamilies = {"Monospaced", "Consolas", "Courier New", "DejaVu Sans Mono", "Source Code Pro"};
         fontFamilyCombo = new JComboBox<>(fontFamilies);
@@ -102,6 +107,9 @@ public class SettingsProvider extends ComponentProvider {
         formPanel.add(showInlineNotesCheckBox, gbc);
 
         gbc.gridy = 5;
+        formPanel.add(showComplexityHeaderCheckBox, gbc);
+
+        gbc.gridy = 6;
         JLabel hintLabel = new JLabel(
                 "<html><small>Increase timeout for complex methods that time out.</small></html>");
         formPanel.add(hintLabel, gbc);
@@ -155,6 +163,15 @@ public class SettingsProvider extends ComponentProvider {
     }
 
     /**
+     * Returns whether the complexity header should be shown at the top of each decompiled method.
+     *
+     * @return true if the complexity header is enabled
+     */
+    public boolean isShowComplexityHeader() {
+        return showComplexityHeaderCheckBox.isSelected();
+    }
+
+    /**
      * Adds a listener that is notified when any setting changes.
      *
      * @param listener the change listener
@@ -164,6 +181,7 @@ public class SettingsProvider extends ComponentProvider {
         autoDecompileCheckBox.addChangeListener(listener);
         skipTrivialCheckBox.addChangeListener(listener);
         showInlineNotesCheckBox.addChangeListener(listener);
+        showComplexityHeaderCheckBox.addChangeListener(listener);
     }
 
     /**

@@ -17,6 +17,7 @@ import java.util.function.Consumer;
 
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
+import javax.swing.ButtonGroup;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
@@ -24,6 +25,7 @@ import javax.swing.JLabel;
 import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
+import javax.swing.JRadioButton;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 import javax.swing.JToggleButton;
@@ -93,6 +95,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private JToggleButton filterAbstractButton;
     private JToggleButton sortBySizeButton;
     private JTextField minSizeField;
+    private String classTypeFilter = "All";
 
     public AbcStructureProvider(Tool tool, String owner) {
         super(tool, "HAP Explorer", owner);
@@ -252,6 +255,20 @@ public class AbcStructureProvider extends ComponentProvider {
         });
         modifierFilterPanel.add(refreshButton);
 
+        JPanel classTypePanel = new JPanel();
+        String[] classTypes = {"All", "Abilities", "Pages", "Classes"};
+        ButtonGroup classTypeGroup = new ButtonGroup();
+        for (String type : classTypes) {
+            JRadioButton btn = new JRadioButton(type);
+            btn.setSelected("All".equals(type));
+            btn.addActionListener(e -> {
+                classTypeFilter = type;
+                rebuildTree();
+            });
+            classTypeGroup.add(btn);
+            classTypePanel.add(btn);
+        }
+
         structureTree.addTreeSelectionListener(new TreeSelectionListener() {
             @Override
             public void valueChanged(TreeSelectionEvent e) {
@@ -262,9 +279,14 @@ public class AbcStructureProvider extends ComponentProvider {
 
         JScrollPane scrollPane = new JScrollPane(structureTree);
 
+        JPanel filterPanel = new JPanel();
+        filterPanel.setLayout(new javax.swing.BoxLayout(filterPanel, javax.swing.BoxLayout.Y_AXIS));
+        filterPanel.add(filterField);
+        filterPanel.add(modifierFilterPanel);
+        filterPanel.add(classTypePanel);
+
         JPanel topPanel = new JPanel(new BorderLayout());
-        topPanel.add(filterField, BorderLayout.NORTH);
-        topPanel.add(modifierFilterPanel, BorderLayout.CENTER);
+        topPanel.add(filterPanel, BorderLayout.NORTH);
         topPanel.add(breadcrumbLabel, BorderLayout.SOUTH);
 
         mainPanel = new JPanel(new BorderLayout());
@@ -850,8 +872,13 @@ public class AbcStructureProvider extends ComponentProvider {
                 : currentHapName + " (" + currentAbcFile.getClasses().size() + " classes)";
         rootNode.setUserObject(rootLabel);
 
+        boolean showAbilities = "All".equals(classTypeFilter) || "Abilities".equals(classTypeFilter);
+        boolean showPages = "All".equals(classTypeFilter) || "Pages".equals(classTypeFilter);
+        boolean showClasses = "All".equals(classTypeFilter) || "Classes".equals(classTypeFilter);
+        boolean showNative = "All".equals(classTypeFilter) || "Classes".equals(classTypeFilter);
+
         // Abilities section from HapMetadata
-        if (currentHapMetadata != null && !currentHapMetadata.getAbilities().isEmpty()) {
+        if (showAbilities && currentHapMetadata != null && !currentHapMetadata.getAbilities().isEmpty()) {
             DefaultMutableTreeNode abilitiesNode =
                     new DefaultMutableTreeNode("Abilities");
             rootNode.add(abilitiesNode);
@@ -914,7 +941,7 @@ public class AbcStructureProvider extends ComponentProvider {
                 }
             }
         }
-        if (!pageClasses.isEmpty()) {
+        if (showPages && !pageClasses.isEmpty()) {
             DefaultMutableTreeNode pagesNode =
                     new DefaultMutableTreeNode("Pages");
             rootNode.add(pagesNode);
@@ -938,7 +965,9 @@ public class AbcStructureProvider extends ComponentProvider {
 
         DefaultMutableTreeNode classesNode =
                 new DefaultMutableTreeNode("Classes");
-        rootNode.add(classesNode);
+        if (showClasses) {
+            rootNode.add(classesNode);
+        }
 
         // Native Modules section: classes where all methods are abstract/native
         List<AbcClass> nativeClasses = new ArrayList<>();
@@ -961,7 +990,9 @@ public class AbcStructureProvider extends ComponentProvider {
             DefaultMutableTreeNode nativeNode =
                     new DefaultMutableTreeNode(
                             "Native Modules (" + nativeClasses.size() + ")");
-            rootNode.add(nativeNode);
+            if (showNative) {
+                rootNode.add(nativeNode);
+            }
             for (AbcClass nativeCls : nativeClasses) {
                 String nativeLabel = formatClassName(nativeCls.getName());
                 if (nativeLabel.contains(".")) {
@@ -980,102 +1011,104 @@ public class AbcStructureProvider extends ComponentProvider {
             }
         }
 
-        for (AbcClass cls : currentAbcFile.getClasses()) {
-            String className = formatClassName(cls.getName());
-            boolean classNameMatches = matchesFilter(className, filter);
-
-            boolean anyMethodMatches = false;
-            if (!classNameMatches && !filter.isEmpty()) {
+        if (showClasses) {
+            for (AbcClass cls : currentAbcFile.getClasses()) {
+                String className = formatClassName(cls.getName());
+                boolean classNameMatches = matchesFilter(className, filter);
+    
+                boolean anyMethodMatches = false;
+                if (!classNameMatches && !filter.isEmpty()) {
+                    for (AbcMethod method : cls.getMethods()) {
+                        if (matchesFilter(method.getName(), filter) && passesModifierFilter(method)
+                                && passesMinSizeFilter(method)) {
+                            anyMethodMatches = true;
+                            break;
+                        }
+                    }
+                }
+    
+                if (!filter.isEmpty() && !classNameMatches && !anyMethodMatches) {
+                    continue;
+                }
+    
+                boolean anyMethodPassesModifier = false;
                 for (AbcMethod method : cls.getMethods()) {
-                    if (matchesFilter(method.getName(), filter) && passesModifierFilter(method)
-                            && passesMinSizeFilter(method)) {
-                        anyMethodMatches = true;
+                    if (passesModifierFilter(method) && passesMinSizeFilter(method)) {
+                        anyMethodPassesModifier = true;
                         break;
                     }
                 }
-            }
-
-            if (!filter.isEmpty() && !classNameMatches && !anyMethodMatches) {
-                continue;
-            }
-
-            boolean anyMethodPassesModifier = false;
-            for (AbcMethod method : cls.getMethods()) {
-                if (passesModifierFilter(method) && passesMinSizeFilter(method)) {
-                    anyMethodPassesModifier = true;
-                    break;
-                }
-            }
-            boolean modifierFilterActive = (filterPublicButton != null && filterPublicButton.isSelected())
-                    || (filterPrivateButton != null && filterPrivateButton.isSelected())
-                    || (filterStaticButton != null && filterStaticButton.isSelected())
-                    || (filterAbstractButton != null && filterAbstractButton.isSelected());
-            if (modifierFilterActive && !anyMethodPassesModifier) {
-                continue;
-            }
-
-            DefaultMutableTreeNode classNode =
-                    new DefaultMutableTreeNode(cls) {
-                        @Override
-                        public String toString() {
-                            AbcClass c = (AbcClass) getUserObject();
-                            return formatClassName(c.getName());
-                        }
-                    };
-            classesNode.add(classNode);
-
-            DefaultMutableTreeNode methodsNode =
-                    new DefaultMutableTreeNode(
-                            "Methods (" + cls.getMethods().size() + ")");
-            classNode.add(methodsNode);
-
-            // Build sorted/filtered method list
-            List<AbcMethod> methodList = new ArrayList<>(cls.getMethods());
-            if (sortBySizeButton != null && sortBySizeButton.isSelected()
-                    && currentAbcFile != null) {
-                methodList.sort(Comparator.comparingLong((AbcMethod m) -> {
-                    try {
-                        AbcCode c = currentAbcFile.getCodeForMethod(m);
-                        return c != null ? c.getCodeSize() : 0L;
-                    } catch (Exception ex) {
-                        return 0L;
-                    }
-                }).reversed());
-            }
-
-            for (AbcMethod method : methodList) {
-                if (!filter.isEmpty() && !classNameMatches
-                        && !matchesFilter(method.getName(), filter)) {
+                boolean modifierFilterActive = (filterPublicButton != null && filterPublicButton.isSelected())
+                        || (filterPrivateButton != null && filterPrivateButton.isSelected())
+                        || (filterStaticButton != null && filterStaticButton.isSelected())
+                        || (filterAbstractButton != null && filterAbstractButton.isSelected());
+                if (modifierFilterActive && !anyMethodPassesModifier) {
                     continue;
                 }
-                if (!passesModifierFilter(method)) {
-                    continue;
-                }
-                if (!passesMinSizeFilter(method)) {
-                    continue;
-                }
-                DefaultMutableTreeNode methodNode =
-                        new DefaultMutableTreeNode(method) {
+    
+                DefaultMutableTreeNode classNode =
+                        new DefaultMutableTreeNode(cls) {
                             @Override
                             public String toString() {
-                                AbcMethod m = (AbcMethod) getUserObject();
-                                return formatMethodPrefix(m) + m.getName()
-                                        + formatMethodSuffixWithArgs(m, currentAbcFile);
+                                AbcClass c = (AbcClass) getUserObject();
+                                return formatClassName(c.getName());
                             }
                         };
-                methodsNode.add(methodNode);
-            }
-
-            if (!cls.getFields().isEmpty()) {
-                DefaultMutableTreeNode fieldsNode =
+                classesNode.add(classNode);
+    
+                DefaultMutableTreeNode methodsNode =
                         new DefaultMutableTreeNode(
-                                "Fields (" + cls.getFields().size() + ")");
-                classNode.add(fieldsNode);
-
-                for (AbcField field : cls.getFields()) {
-                    DefaultMutableTreeNode fieldNode =
-                            new DefaultMutableTreeNode(field.getName());
-                    fieldsNode.add(fieldNode);
+                                "Methods (" + cls.getMethods().size() + ")");
+                classNode.add(methodsNode);
+    
+                // Build sorted/filtered method list
+                List<AbcMethod> methodList = new ArrayList<>(cls.getMethods());
+                if (sortBySizeButton != null && sortBySizeButton.isSelected()
+                        && currentAbcFile != null) {
+                    methodList.sort(Comparator.comparingLong((AbcMethod m) -> {
+                        try {
+                            AbcCode c = currentAbcFile.getCodeForMethod(m);
+                            return c != null ? c.getCodeSize() : 0L;
+                        } catch (Exception ex) {
+                            return 0L;
+                        }
+                    }).reversed());
+                }
+    
+                for (AbcMethod method : methodList) {
+                    if (!filter.isEmpty() && !classNameMatches
+                            && !matchesFilter(method.getName(), filter)) {
+                        continue;
+                    }
+                    if (!passesModifierFilter(method)) {
+                        continue;
+                    }
+                    if (!passesMinSizeFilter(method)) {
+                        continue;
+                    }
+                    DefaultMutableTreeNode methodNode =
+                            new DefaultMutableTreeNode(method) {
+                                @Override
+                                public String toString() {
+                                    AbcMethod m = (AbcMethod) getUserObject();
+                                    return formatMethodPrefix(m) + m.getName()
+                                            + formatMethodSuffixWithArgs(m, currentAbcFile);
+                                }
+                            };
+                    methodsNode.add(methodNode);
+                }
+    
+                if (!cls.getFields().isEmpty()) {
+                    DefaultMutableTreeNode fieldsNode =
+                            new DefaultMutableTreeNode(
+                                    "Fields (" + cls.getFields().size() + ")");
+                    classNode.add(fieldsNode);
+    
+                    for (AbcField field : cls.getFields()) {
+                        DefaultMutableTreeNode fieldNode =
+                                new DefaultMutableTreeNode(field.getName());
+                        fieldsNode.add(fieldNode);
+                    }
                 }
             }
         }

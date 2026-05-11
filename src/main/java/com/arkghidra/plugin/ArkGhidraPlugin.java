@@ -530,7 +530,9 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             String clsName = findClassForMethod(abcFile, method);
             // Build complexity header
             StringBuilder header = new StringBuilder();
-            if (code != null) {
+            boolean showComplexity = settingsProvider == null
+                    || settingsProvider.isShowComplexityHeader();
+            if (code != null && showComplexity) {
                 long size = code.getCodeSize();
                 String complexity = size > 200 ? "complex" : size > 50 ? "medium" : "simple";
                 header.append("// ").append(method.getName())
