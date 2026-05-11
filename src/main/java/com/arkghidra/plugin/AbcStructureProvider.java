@@ -85,6 +85,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private Consumer<String> showCallersCallback;
     private Runnable exportReportCallback;
     private Runnable decompileAllAbilitiesCallback;
+    private NotesProvider notesProvider;
     private JToggleButton filterPublicButton;
     private JToggleButton filterPrivateButton;
     private JToggleButton filterStaticButton;
@@ -307,6 +308,15 @@ public class AbcStructureProvider extends ComponentProvider {
      */
     public void setDecompileAllAbilitiesCallback(Runnable cb) {
         this.decompileAllAbilitiesCallback = cb;
+    }
+
+    /**
+     * Sets the notes provider so the tree can show indicators for methods with notes.
+     *
+     * @param provider the notes provider
+     */
+    public void setNotesProvider(NotesProvider provider) {
+        this.notesProvider = provider;
     }
 
     private void showTreeContextMenu(MouseEvent e) {
@@ -1185,6 +1195,13 @@ public class AbcStructureProvider extends ComponentProvider {
                         } catch (Exception e) {
                             // ignore
                         }
+                    }
+                    // Notes indicator: bold text if method has notes
+                    if (notesProvider != null && notesProvider.hasNotes(method.getName())) {
+                        setFont(getFont().deriveFont(java.awt.Font.BOLD));
+                        setToolTipText("Has notes");
+                    } else {
+                        setToolTipText(null);
                     }
                 }
             }

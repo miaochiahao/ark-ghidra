@@ -155,6 +155,8 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                 tool.showComponentProvider(historyProvider, true));
         outputProvider.setShowXrefCallback(() ->
                 tool.showComponentProvider(xrefProvider, true));
+        outputProvider.setShowNotesCallback(() ->
+                tool.showComponentProvider(notesProvider, true));
         outputProvider.setPrevClassCallback(() -> navigateClass(-1));
         outputProvider.setNextClassCallback(() -> navigateClass(1));
         historyProvider = new HistoryProvider(tool, PLUGIN_NAME);
@@ -166,6 +168,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         tool.addComponentProvider(settingsProvider, false);
         notesProvider = new NotesProvider(tool, PLUGIN_NAME);
         tool.addComponentProvider(notesProvider, false);
+        abcStructureProvider.setNotesProvider(notesProvider);
         abcStructureProvider.setShowCallersCallback(this::showAllCallers);
     }
 

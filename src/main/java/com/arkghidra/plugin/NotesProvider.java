@@ -2,15 +2,25 @@ package com.arkghidra.plugin;
 
 import java.awt.BorderLayout;
 import java.awt.Font;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.TreeMap;
 
 import javax.swing.BorderFactory;
+import javax.swing.JButton;
 import javax.swing.JComponent;
+import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
+import javax.swing.JToolBar;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
@@ -65,6 +75,14 @@ public class NotesProvider extends ComponentProvider {
         mainPanel = new JPanel(new BorderLayout());
         mainPanel.add(headerLabel, BorderLayout.NORTH);
         mainPanel.add(new JScrollPane(notesArea), BorderLayout.CENTER);
+
+        JToolBar toolBar = new JToolBar();
+        toolBar.setFloatable(false);
+        JButton exportButton = new JButton("Export Notes...");
+        exportButton.setToolTipText("Export all notes to a text file");
+        exportButton.addActionListener(e -> exportNotes());
+        toolBar.add(exportButton);
+        mainPanel.add(toolBar, BorderLayout.SOUTH);
 
         setDefaultWindowPosition(WindowPosition.BOTTOM);
         setTitle("Notes");
@@ -125,6 +143,40 @@ public class NotesProvider extends ComponentProvider {
             notesMap.remove(currentKey);
         } else {
             notesMap.put(currentKey, text);
+        }
+    }
+
+    private void exportNotes() {
+        if (notesMap.isEmpty()) {
+            javax.swing.JOptionPane.showMessageDialog(
+                    mainPanel, "No notes to export.", "Export Notes",
+                    javax.swing.JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Export Notes");
+        chooser.setSelectedFile(new File("method_notes.txt"));
+        if (chooser.showSaveDialog(mainPanel) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        File file = chooser.getSelectedFile();
+        try (BufferedWriter writer = new BufferedWriter(
+                new OutputStreamWriter(
+                        new FileOutputStream(file), StandardCharsets.UTF_8))) {
+            writer.write("Method Notes\n");
+            writer.write("============\n\n");
+            // Sort by key for consistent output
+            for (Map.Entry<String, String> entry : new TreeMap<>(notesMap).entrySet()) {
+                if (!entry.getValue().isEmpty()) {
+                    writer.write("## " + entry.getKey() + "\n");
+                    writer.write(entry.getValue());
+                    writer.write("\n\n");
+                }
+            }
+        } catch (IOException e) {
+            javax.swing.JOptionPane.showMessageDialog(
+                    mainPanel, "Export failed: " + e.getMessage(),
+                    "Export Notes", javax.swing.JOptionPane.ERROR_MESSAGE);
         }
     }
 }
