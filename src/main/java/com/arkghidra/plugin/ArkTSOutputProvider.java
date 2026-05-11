@@ -1277,6 +1277,8 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 + "Ctrl+Shift+F    Global search\n"
                 + "F3              Next occurrence\n"
                 + "Shift+F3        Previous occurrence\n"
+                + "Ctrl+Down       Next method definition\n"
+                + "Ctrl+Up         Previous method definition\n"
                 + "Escape          Close search bar\n"
                 + "Alt+Left        Navigate back\n"
                 + "Alt+Right       Navigate forward\n"
@@ -1655,9 +1657,87 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 navigateOccurrence(-1);
             }
         });
+
+        // Ctrl+Down / Ctrl+Up — jump between method definitions
+        KeyStroke ctrlDown = KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, cmdMask);
+        KeyStroke ctrlUp = KeyStroke.getKeyStroke(KeyEvent.VK_UP, cmdMask);
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(ctrlDown, "nextMethod");
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(ctrlUp, "prevMethod");
+        codePane.getActionMap().put("nextMethod", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                jumpToMethod(1);
+            }
+        });
+        codePane.getActionMap().put("prevMethod", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                jumpToMethod(-1);
+            }
+        });
     }
 
     // --- Go to line / Copy line ---
+
+    /**
+     * Jumps to the next or previous method definition in the current decompiled output.
+     * Looks for lines starting with common ArkTS method patterns.
+     *
+     * @param direction 1 for next, -1 for previous
+     */
+    private void jumpToMethod(int direction) {
+        String text = codePane.getText();
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        int caretPos = codePane.getCaretPosition();
+        String[] lines = text.split("\n", -1);
+        // Build line start offsets
+        int[] lineStarts = new int[lines.length];
+        int off = 0;
+        for (int i = 0; i < lines.length; i++) {
+            lineStarts[i] = off;
+            off += lines[i].length() + 1;
+        }
+        // Find current line index
+        int currentLine = 0;
+        for (int i = 0; i < lineStarts.length; i++) {
+            if (lineStarts[i] <= caretPos) {
+                currentLine = i;
+            }
+        }
+        // Search for method definition lines (lines containing '(' and not starting with //)
+        if (direction > 0) {
+            for (int i = currentLine + 1; i < lines.length; i++) {
+                if (isMethodDefinitionLine(lines[i])) {
+                    codePane.setCaretPosition(lineStarts[i]);
+                    scrollToOffset(lineStarts[i]);
+                    return;
+                }
+            }
+        } else {
+            for (int i = currentLine - 1; i >= 0; i--) {
+                if (isMethodDefinitionLine(lines[i])) {
+                    codePane.setCaretPosition(lineStarts[i]);
+                    scrollToOffset(lineStarts[i]);
+                    return;
+                }
+            }
+        }
+    }
+
+    private static boolean isMethodDefinitionLine(String line) {
+        String trimmed = line.trim();
+        if (trimmed.isEmpty() || trimmed.startsWith("//") || trimmed.startsWith("*")) {
+            return false;
+        }
+        // Match lines that look like method signatures: contain '(' and end with '{' or ')'
+        // and contain access modifiers or function keyword
+        return (trimmed.contains("(") && (trimmed.endsWith("{") || trimmed.endsWith(")"))
+                && (trimmed.contains("function ") || trimmed.contains("public ")
+                        || trimmed.contains("private ") || trimmed.contains("protected ")
+                        || trimmed.contains("static ") || trimmed.contains("async ")));
+    }
 
     private void goToLine() {
         String input = JOptionPane.showInputDialog(
