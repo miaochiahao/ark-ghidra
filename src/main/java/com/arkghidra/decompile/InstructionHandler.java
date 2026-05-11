@@ -480,8 +480,23 @@ class InstructionHandler {
 
         // --- Function calls ---
         if (OperatorHandler.isCallOpcode(opcode)) {
-            return new StatementResult(null,
-                    PropertyAccessHandler.translateCall(insn, accValue, ctx));
+            ArkTSExpression callExpr =
+                    PropertyAccessHandler.translateCall(insn, accValue, ctx);
+            // Method calls on objects (obj.method()) typically have side
+            // effects and should be emitted as statements even when their
+            // return value is unused (e.g., arr.push(val), map.set(k, v))
+            if (callExpr instanceof ArkTSExpression.CallExpression) {
+                ArkTSExpression callee =
+                        ((ArkTSExpression.CallExpression) callExpr)
+                                .getCallee();
+                if (callee instanceof ArkTSExpression.MemberExpression) {
+                    return new StatementResult(
+                            new ArkTSStatement.ExpressionStatement(
+                                    callExpr),
+                            callExpr);
+                }
+            }
+            return new StatementResult(null, callExpr);
         }
 
         // --- Property access (load) ---
