@@ -7,18 +7,20 @@ import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.function.Consumer;
 
 import javax.swing.AbstractAction;
+import javax.swing.DefaultComboBoxModel;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
+import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
-import javax.swing.JTextField;
 import javax.swing.KeyStroke;
 import javax.swing.ListSelectionModel;
 
@@ -35,11 +37,15 @@ import docking.WindowPosition;
  */
 public class GlobalSearchProvider extends ComponentProvider {
 
+    private static final int MAX_HISTORY = 20;
+
     private final JPanel mainPanel;
-    private final JTextField searchField;
+    private final JComboBox<String> searchCombo;
+    private final DefaultComboBoxModel<String> historyModel;
     private final JLabel statusLabel;
     private final DefaultListModel<String> resultsModel;
     private final JList<String> resultsList;
+    private final LinkedList<String> searchHistory = new LinkedList<>();
 
     // Parallel lists storing the class/method for each displayed result entry
     private final List<String> resultMethodNames = new ArrayList<>();
@@ -54,24 +60,31 @@ public class GlobalSearchProvider extends ComponentProvider {
     public GlobalSearchProvider(Tool tool, String owner) {
         super(tool, "Global Search", owner);
 
-        searchField = new JTextField(20);
+        historyModel = new DefaultComboBoxModel<>();
+        searchCombo = new JComboBox<>(historyModel);
+        searchCombo.setEditable(true);
+        searchCombo.setPrototypeDisplayValue("Search query...");
         statusLabel = new JLabel("Enter a search term");
 
         JButton searchButton = new JButton("Search");
         searchButton.addActionListener(e -> triggerSearch());
 
-        searchField.getInputMap(JComponent.WHEN_FOCUSED)
-                .put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "search");
-        searchField.getActionMap().put("search", new AbstractAction() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                triggerSearch();
-            }
-        });
+        // Enter key in the combo box editor triggers search
+        java.awt.Component editor = searchCombo.getEditor().getEditorComponent();
+        if (editor instanceof JComponent) {
+            ((JComponent) editor).getInputMap(JComponent.WHEN_FOCUSED)
+                    .put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "search");
+            ((JComponent) editor).getActionMap().put("search", new AbstractAction() {
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    triggerSearch();
+                }
+            });
+        }
 
         JPanel topPanel = new JPanel(new BorderLayout(4, 0));
         topPanel.add(new JLabel("Search: "), BorderLayout.WEST);
-        topPanel.add(searchField, BorderLayout.CENTER);
+        topPanel.add(searchCombo, BorderLayout.CENTER);
         topPanel.add(searchButton, BorderLayout.EAST);
 
         resultsModel = new DefaultListModel<>();
@@ -167,14 +180,29 @@ public class GlobalSearchProvider extends ComponentProvider {
     }
 
     private void triggerSearch() {
-        String query = searchField.getText().trim();
+        Object selected = searchCombo.getEditor().getItem();
+        String query = selected != null ? selected.toString().trim() : "";
         if (query.isEmpty()) {
             return;
         }
+        addToHistory(query);
         if (searchCallback != null) {
             clearResults();
             searchCallback.accept(query);
         }
+    }
+
+    private void addToHistory(String query) {
+        searchHistory.remove(query);
+        searchHistory.addFirst(query);
+        while (searchHistory.size() > MAX_HISTORY) {
+            searchHistory.removeLast();
+        }
+        historyModel.removeAllElements();
+        for (String h : searchHistory) {
+            historyModel.addElement(h);
+        }
+        searchCombo.getEditor().setItem(query);
     }
 
     /**
@@ -184,10 +212,11 @@ public class GlobalSearchProvider extends ComponentProvider {
      * @param query the search string to pre-fill and execute
      */
     public void triggerSearch(String query) {
-        searchField.setText(query);
+        searchCombo.getEditor().setItem(query);
         if (query.isEmpty()) {
             return;
         }
+        addToHistory(query);
         if (searchCallback != null) {
             clearResults();
             searchCallback.accept(query);

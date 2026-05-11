@@ -1003,7 +1003,23 @@ public class AbcStructureProvider extends ComponentProvider {
 
         treeModel.reload();
 
-        expandTree();
+        // Smart expansion: expand root and top-level sections only
+        // (not individual classes/methods to avoid overwhelming large HAPs)
+        smartExpandTree();
+    }
+
+    private void smartExpandTree() {
+        // Expand root node
+        structureTree.expandRow(0);
+        // Expand all direct children of root (Abilities, Pages, Classes, etc.)
+        // but not their children
+        int rowCount = structureTree.getRowCount();
+        for (int i = 1; i < rowCount; i++) {
+            javax.swing.tree.TreePath path = structureTree.getPathForRow(i);
+            if (path != null && path.getPathCount() == 2) {
+                structureTree.expandRow(i);
+            }
+        }
     }
 
     private void expandTree() {
