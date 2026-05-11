@@ -100,6 +100,12 @@ public class DecompilationContext {
     private final Map<Integer, String> inferredNames = new HashMap<>();
 
     /**
+     * Maps lexical variable keys ("level_slot") to inferred names.
+     * Populated when STLEXVAR stores a value with a known name.
+     */
+    private final Map<String, String> lexVarNames = new HashMap<>();
+
+    /**
      * Maps bytecode offsets to source line numbers from debug info.
      * Populated from {@link com.arkghidra.format.AbcLineNumberEntry} data.
      */
@@ -520,5 +526,42 @@ public class DecompilationContext {
             return line;
         }
         return null;
+    }
+
+    /**
+     * Sets an inferred name for a lexical variable.
+     *
+     * @param level the scope level
+     * @param slot the variable slot
+     * @param name the inferred variable name
+     */
+    public void setLexVarName(int level, int slot, String name) {
+        if (name != null && !name.isEmpty()) {
+            lexVarNames.put(level + "_" + slot, name);
+        }
+    }
+
+    /**
+     * Returns the inferred name for a lexical variable, or null.
+     *
+     * @param level the scope level
+     * @param slot the variable slot
+     * @return the inferred name, or null
+     */
+    public String getLexVarName(int level, int slot) {
+        return lexVarNames.get(level + "_" + slot);
+    }
+
+    /**
+     * Resolves the display name for a lexical variable: inferred name
+     * if available, otherwise "lex_level_slot".
+     *
+     * @param level the scope level
+     * @param slot the variable slot
+     * @return the variable name to use in output
+     */
+    public String resolveLexVarName(int level, int slot) {
+        String name = lexVarNames.get(level + "_" + slot);
+        return name != null ? name : "lex_" + level + "_" + slot;
     }
 }

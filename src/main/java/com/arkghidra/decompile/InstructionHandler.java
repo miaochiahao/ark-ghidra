@@ -506,12 +506,17 @@ class InstructionHandler {
             int slot = (int) operands.get(1).getValue();
             return new StatementResult(null,
                     new ArkTSExpression.VariableExpression(
-                            "lex_" + level + "_" + slot));
+                            ctx.resolveLexVarName(level, slot)));
         }
         if (opcode == ArkOpcodesCompat.STLEXVAR) {
             int level = (int) operands.get(0).getValue();
             int slot = (int) operands.get(1).getValue();
             if (accValue != null) {
+                // Infer name from the stored value
+                String inferredName = inferLexVarName(accValue, ctx);
+                if (inferredName != null) {
+                    ctx.setLexVarName(level, slot, inferredName);
+                }
                 String accType = OperatorHandler.getAccType(
                         accValue, typeInf);
                 typeInf.setLexicalVarType(level, slot, accType);
@@ -519,7 +524,8 @@ class InstructionHandler {
                         new ArkTSStatement.ExpressionStatement(
                                 new ArkTSExpression.AssignExpression(
                                         new ArkTSExpression.VariableExpression(
-                                                "lex_" + level + "_" + slot),
+                                                ctx.resolveLexVarName(
+                                                        level, slot)),
                                         accValue)),
                         accValue);
             }
@@ -1337,6 +1343,60 @@ class InstructionHandler {
             return null;
         }
         return ctx.abcFile.getMethodByFlatIndex(methodIdx);
+    }
+
+    /**
+     * Infers a lexical variable name from the stored expression.
+     * Uses function names, property names, and variable names
+     * to give lexical variables meaningful identifiers.
+     */
+    private static String inferLexVarName(ArkTSExpression value,
+            DecompilationContext ctx) {
+        if (value instanceof ArkTSExpression.VariableExpression) {
+            String name = ((ArkTSExpression.VariableExpression) value)
+                    .getName();
+            // Skip generic register names and acc
+            if (name != null && !name.equals("acc")
+                    && !name.startsWith("v") && name.length() > 1) {
+                try {
+                    Integer.parseInt(name.substring(1));
+                    return null; // register name like v0, v1
+                } catch (NumberFormatException e) {
+                    return name; // actual named variable
+                }
+            }
+        }
+        // Property access: obj.prop → prop
+        if (value instanceof ArkTSExpression.MemberExpression) {
+            ArkTSExpression.MemberExpression member =
+                    (ArkTSExpression.MemberExpression) value;
+            if (!member.isComputed()) {
+                ArkTSExpression prop = member.getProperty();
+                if (prop instanceof ArkTSExpression.VariableExpression) {
+                    return ((ArkTSExpression.VariableExpression) prop)
+                            .getName();
+                }
+            }
+        }
+        // Call expression: use callee name
+        if (value instanceof ArkTSExpression.CallExpression) {
+            ArkTSExpression callee =
+                    ((ArkTSExpression.CallExpression) value).getCallee();
+            if (callee instanceof ArkTSExpression.MemberExpression) {
+                ArkTSExpression prop =
+                        ((ArkTSExpression.MemberExpression) callee)
+                                .getProperty();
+                if (prop instanceof ArkTSExpression.VariableExpression) {
+                    return ((ArkTSExpression.VariableExpression) prop)
+                            .getName();
+                }
+            }
+            if (callee instanceof ArkTSExpression.VariableExpression) {
+                return ((ArkTSExpression.VariableExpression) callee)
+                        .getName();
+            }
+        }
+        return null;
     }
 
     /**
