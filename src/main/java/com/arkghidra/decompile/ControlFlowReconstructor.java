@@ -802,19 +802,38 @@ class ControlFlowReconstructor {
 
     private boolean hasBackEdgeTo(BasicBlock from, BasicBlock target,
             ControlFlowGraph cfg) {
+        int targetOffset = target.getStartOffset();
+        // Direct edge check
         for (CFGEdge edge : from.getSuccessors()) {
-            if (edge.getToOffset() == target.getStartOffset()) {
+            if (edge.getToOffset() == targetOffset) {
                 return true;
             }
         }
+        // BFS with depth limit to find indirect back edges
+        // through loop body blocks
+        Set<BasicBlock> visited = new HashSet<>();
+        List<BasicBlock> worklist = new ArrayList<>();
+        visited.add(from);
         for (CFGEdge edge : from.getSuccessors()) {
             BasicBlock succ = cfg.getBlockAt(edge.getToOffset());
-            if (succ != null && succ != from) {
-                for (CFGEdge inner : succ.getSuccessors()) {
-                    if (inner.getToOffset()
-                            == target.getStartOffset()) {
-                        return true;
-                    }
+            if (succ != null && succ != from
+                    && succ.getStartOffset() > targetOffset) {
+                worklist.add(succ);
+                visited.add(succ);
+            }
+        }
+        int maxDepth = 20;
+        while (!worklist.isEmpty() && maxDepth-- > 0) {
+            BasicBlock current = worklist.remove(worklist.size() - 1);
+            for (CFGEdge edge : current.getSuccessors()) {
+                if (edge.getToOffset() == targetOffset) {
+                    return true;
+                }
+                BasicBlock succ = cfg.getBlockAt(edge.getToOffset());
+                if (succ != null && !visited.contains(succ)
+                        && succ.getStartOffset() > targetOffset) {
+                    visited.add(succ);
+                    worklist.add(succ);
                 }
             }
         }
