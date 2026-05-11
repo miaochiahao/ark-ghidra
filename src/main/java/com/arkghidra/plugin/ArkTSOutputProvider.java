@@ -16,6 +16,8 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -74,6 +76,21 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private static final String OWNER =
             ArkTSOutputProvider.class.getSimpleName();
 
+    private static final int MAX_HISTORY = 20;
+
+    private static class HistoryEntry {
+        final String functionName;
+        final String code;
+
+        HistoryEntry(String functionName, String code) {
+            this.functionName = functionName;
+            this.code = code;
+        }
+    }
+
+    private final Deque<HistoryEntry> backStack = new ArrayDeque<>();
+    private final Deque<HistoryEntry> forwardStack = new ArrayDeque<>();
+
     // Syntax highlighting colors
     private static final Color COLOR_KEYWORD = new Color(0x0000CC);
     private static final Color COLOR_TYPE = new Color(0x008080);
@@ -115,6 +132,9 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private Consumer<String> symbolHighlightCallback;
     private Consumer<String> jumpToDefinitionCallback;
 
+    private JButton backButton;
+    private JButton forwardButton;
+
     public ArkTSOutputProvider(Tool tool, String owner) {
         super(tool, "ArkTS Output", owner);
 
@@ -134,6 +154,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
         installClickToHighlight();
         installCtrlFBinding();
         installZoomBindings();
+        installNavBindings();
 
         statusBar = new JLabel("Ready");
         statusBar.setFont(statusBar.getFont().deriveFont(11f));
@@ -193,6 +214,13 @@ public class ArkTSOutputProvider extends ComponentProvider {
      * @param code the decompiled source code
      */
     public void showDecompiledCode(String functionName, String code) {
+        if (!lastCode.isEmpty() && !lastCode.equals(code)) {
+            if (backStack.size() >= MAX_HISTORY) {
+                backStack.pollLast();
+            }
+            backStack.push(new HistoryEntry(lastFunctionName, lastCode));
+            forwardStack.clear();
+        }
         headerLabel.setText("Decompiled: " + functionName);
         lastFunctionName = functionName;
         lastCode = code;
@@ -200,6 +228,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
         searchMatchPositions = java.util.Collections.emptyList();
         searchMatchIndex = -1;
         renderHighlightedCode(code);
+        updateNavButtons();
     }
 
     /**
@@ -734,6 +763,19 @@ public class ArkTSOutputProvider extends ComponentProvider {
     // --- Toolbar ---
 
     private void addToolbarButtons(JToolBar toolBar) {
+        backButton = new JButton("\u25C4");
+        backButton.setToolTipText("Navigate back (Alt+Left)");
+        backButton.setEnabled(false);
+        backButton.addActionListener(e -> navigateBack());
+        toolBar.add(backButton);
+
+        forwardButton = new JButton("\u25BA");
+        forwardButton.setToolTipText("Navigate forward (Alt+Right)");
+        forwardButton.setEnabled(false);
+        forwardButton.addActionListener(e -> navigateForward());
+        toolBar.add(forwardButton);
+        toolBar.addSeparator();
+
         JButton decompileFileButton = new JButton("Decompile File");
         decompileFileButton.setToolTipText("Decompile the entire ABC file");
         decompileFileButton.addActionListener(e -> {
@@ -977,6 +1019,80 @@ public class ArkTSOutputProvider extends ComponentProvider {
         headerLabel.setText("No decompiled code");
         currentHighlightedWord = "";
         closeSearchBar();
+        updateNavButtons();
+    }
+
+    // --- Navigation history ---
+
+    /**
+     * Navigates back to the previously viewed decompiled code.
+     */
+    public void navigateBack() {
+        if (backStack.isEmpty()) {
+            return;
+        }
+        HistoryEntry prev = backStack.pop();
+        if (!lastCode.isEmpty()) {
+            forwardStack.push(new HistoryEntry(lastFunctionName, lastCode));
+        }
+        headerLabel.setText("Decompiled: " + prev.functionName);
+        lastFunctionName = prev.functionName;
+        lastCode = prev.code;
+        currentHighlightedWord = "";
+        searchMatchPositions = java.util.Collections.emptyList();
+        searchMatchIndex = -1;
+        renderHighlightedCode(prev.code);
+        updateNavButtons();
+    }
+
+    /**
+     * Navigates forward to the next viewed decompiled code.
+     */
+    public void navigateForward() {
+        if (forwardStack.isEmpty()) {
+            return;
+        }
+        HistoryEntry next = forwardStack.pop();
+        if (!lastCode.isEmpty()) {
+            backStack.push(new HistoryEntry(lastFunctionName, lastCode));
+        }
+        headerLabel.setText("Decompiled: " + next.functionName);
+        lastFunctionName = next.functionName;
+        lastCode = next.code;
+        currentHighlightedWord = "";
+        searchMatchPositions = java.util.Collections.emptyList();
+        searchMatchIndex = -1;
+        renderHighlightedCode(next.code);
+        updateNavButtons();
+    }
+
+    private void updateNavButtons() {
+        if (backButton != null) {
+            backButton.setEnabled(!backStack.isEmpty());
+        }
+        if (forwardButton != null) {
+            forwardButton.setEnabled(!forwardStack.isEmpty());
+        }
+    }
+
+    private void installNavBindings() {
+        int altMask = java.awt.event.InputEvent.ALT_DOWN_MASK;
+        KeyStroke altLeft = KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, altMask);
+        KeyStroke altRight = KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, altMask);
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(altLeft, "navBack");
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(altRight, "navForward");
+        codePane.getActionMap().put("navBack", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                navigateBack();
+            }
+        });
+        codePane.getActionMap().put("navForward", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                navigateForward();
+            }
+        });
     }
 
     // --- Tooltip ---

@@ -1,14 +1,21 @@
 package com.arkghidra.plugin;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import docking.ActionContext;
 import docking.action.DockingAction;
 import docking.action.MenuData;
+import ghidra.program.model.listing.CodeUnit;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.Memory;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.util.Msg;
 
+import com.arkghidra.format.AbcClass;
 import com.arkghidra.format.AbcFile;
+import com.arkghidra.loader.HapMetadata;
+import com.arkghidra.loader.HapMetadataParser;
 
 /**
  * Action that parses the ABC file loaded in the current program and
@@ -57,11 +64,88 @@ public class ShowAbcStructureAction extends DockingAction {
                     plugin.getAbcStructureProvider(), true);
             Msg.info(OWNER, "ABC structure displayed: "
                     + abcFile.getClasses().size() + " classes");
+
+            loadHapMetadata(program, abcFile);
         } catch (Exception e) {
             Msg.error(OWNER, "Failed to parse ABC structure", e);
             plugin.getAbcStructureProvider().showError(
                     "Failed to parse ABC file: " + e.getMessage());
         }
+    }
+
+    private void loadHapMetadata(Program program, AbcFile abcFile) {
+        try {
+            HapMetadata metadata = tryReadModuleJsonBlock(program);
+            if (metadata == null) {
+                metadata = buildSyntheticMetadata(program, abcFile);
+            }
+            plugin.showHapMetadata(metadata);
+        } catch (Exception e) {
+            Msg.warn(OWNER, "Failed to load HAP metadata: " + e.getMessage());
+        }
+    }
+
+    private HapMetadata tryReadModuleJsonBlock(Program program) {
+        Memory memory = program.getMemory();
+        MemoryBlock block = memory.getBlock("module_json");
+        if (block == null) {
+            block = memory.getBlock("module.json");
+        }
+        if (block == null) {
+            block = memory.getBlock("module.json5");
+        }
+        if (block != null) {
+            try {
+                byte[] bytes = new byte[(int) block.getSize()];
+                block.getBytes(block.getStart(), bytes);
+                HapMetadata parsed = HapMetadataParser.parse(bytes);
+                if (parsed != null) {
+                    return parsed;
+                }
+            } catch (Exception e) {
+                Msg.warn(OWNER, "Failed to read module_json block: " + e.getMessage());
+            }
+        }
+        return null;
+    }
+
+    private HapMetadata buildSyntheticMetadata(Program program, AbcFile abcFile) {
+        List<HapMetadata.AbilityInfo> abilities = new ArrayList<>();
+        for (AbcClass cls : abcFile.getClasses()) {
+            String shortName = AbcStructureProvider.formatClassName(cls.getName());
+            String simpleName = shortName.contains(".")
+                    ? shortName.substring(shortName.lastIndexOf('.') + 1)
+                    : shortName;
+            if (simpleName.endsWith("Ability") || simpleName.endsWith("Page")
+                    || simpleName.endsWith("Activity")) {
+                abilities.add(new HapMetadata.AbilityInfo(simpleName, "", "page"));
+            }
+        }
+        String moduleName = program.getName().replace(".hap", "").replace(".abc", "");
+        String moduleNameFromComment = extractModuleNameFromComment(program);
+        if (moduleNameFromComment != null && !moduleNameFromComment.isEmpty()) {
+            moduleName = moduleNameFromComment;
+        }
+        return new HapMetadata(moduleName, "entry", "", 1, moduleName, "", abilities);
+    }
+
+    private String extractModuleNameFromComment(Program program) {
+        try {
+            String comment = program.getListing().getComment(
+                    CodeUnit.PLATE_COMMENT,
+                    program.getAddressFactory().getDefaultAddressSpace().getAddress(0));
+            if (comment == null) {
+                return null;
+            }
+            for (String line : comment.split("\n")) {
+                if (line.startsWith("HAP Module: ")) {
+                    return line.substring("HAP Module: ".length()).trim();
+                }
+            }
+        } catch (Exception e) {
+            Msg.warn(OWNER, "Failed to read plate comment: " + e.getMessage());
+        }
+        return null;
     }
 
     private byte[] readAbcData(Program program) {
