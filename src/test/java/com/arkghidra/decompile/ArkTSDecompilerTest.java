@@ -108,25 +108,24 @@ class ArkTSDecompilerTest {
 
     @Test
     void testDecompile_addTwoRegisters() {
-        // isa.yaml: acc = ecma_op(acc, operand_0) => acc + v
-        // lda v1; add2 0, v0 => v1 + v0 (commutative)
+        // register(v0) OP acc(v1) => v0 + v1
         byte[] code = concat(
-            bytes(0x60, 0x01),       // lda v1
-            bytes(0x0A, 0x00, 0x00), // add2 0, v0
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x0A, 0x00, 0x00), // add2 0, v0 (register=v0) => v0 + v1
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("v1 + v0"));
+        assertTrue(result.contains("v0 + v1"));
     }
 
     @Test
     void testDecompile_subtract() {
         // To get v0 -= v1 (v0 = v0 - v1):
-        // acc=v0, reg=v1. sub2 v1 => acc - v1 = v0 - v1
+        // register(v0) - acc(v1). lda v1; sub2 v0 => v0 - v1
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x0B, 0x00, 0x01), // sub2 0, v1 => acc(v0) - v1
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x0B, 0x00, 0x00), // sub2 0, v0 (register=v0) => v0 - v1
             bytes(0x61, 0x00)        // sta v0 => v0 = v0 - v1
         );
         List<ArkInstruction> insns = dis(code);
@@ -136,69 +135,66 @@ class ArkTSDecompilerTest {
 
     @Test
     void testDecompile_multiply() {
-        // isa.yaml: acc = ecma_op(acc, operand_0) => acc * v
-        // lda v1; mul2 0, v0 => v1 * v0 (commutative)
+        // register(v0) OP acc(v1) => v0 * v1
         byte[] code = concat(
-            bytes(0x60, 0x01),       // lda v1
-            bytes(0x0C, 0x00, 0x00), // mul2 0, v0
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x0C, 0x00, 0x00), // mul2 0, v0 (register=v0) => v0 * v1
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("v1 * v0"));
+        assertTrue(result.contains("v0 * v1"));
     }
 
     @Test
     void testDecompile_division_operandOrder() {
-        // Per isa.yaml: div2 sematics are acc = acc / v
-        // lda v1 loads v1 into acc. div2 0, v0 means acc = acc / v0 = v1 / v0
-        // So the correct decompilation is "v1 / v0" (acc / reg), NOT "v0 / v1"
+        // register(v0) / acc(v1) => v0 / v1
+        // lda v1 loads v1 into acc. div2 0, v0 => register(v0) / acc(v1)
         byte[] code = concat(
-            bytes(0x60, 0x01),       // lda v1
-            bytes(0x0D, 0x00, 0x00), // div2 0, v0
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x0D, 0x00, 0x00), // div2 0, v0 (register=v0) => v0 / v1
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        // isa.yaml: acc = ecma_op(acc, operand_0) => acc / v0 = v1 / v0
-        assertTrue(result.contains("v1 / v0"),
-                "DIV2 should produce acc/reg (v1/v0), got: " + result);
+        assertTrue(result.contains("v0 / v1"),
+                "DIV2 should produce register/acc (v0/v1), got: " + result);
     }
 
     @Test
     void testDecompile_division_literalBothLiterals() {
         // Test: both operands are literals, constant folding should work
         // ldai 5; sta v0; ldai 10; div2 0, v0
-        // acc=10, div2 v0 => acc / v0 = 10 / v0 (v0=5)
+        // acc=10, div2 v0 => register(v0) / acc(10) = v0 / 10
         // Since v0 is a variable, no folding. Verify correct operand order.
         byte[] code = concat(
             bytes(0x62), le32(5),     // ldai 5
             bytes(0x61, 0x00),        // sta v0
             bytes(0x62), le32(10),    // ldai 10
-            bytes(0x0D, 0x00, 0x00),  // div2 0, v0 => acc(10) / v0(5)
+            bytes(0x0D, 0x00, 0x00),  // div2 0, v0 => register(v0) / acc(10)
             bytes(0x64)               // return
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        // Operand order: acc(10) is left, v0 is right => "10 / v0"
-        assertTrue(result.contains("10 / v0"),
-                "10 / v0 expected, got: " + result);
-        // Must NOT produce the swapped order "v0 / 10"
-        assertFalse(result.contains("v0 / 10"),
-                "Should NOT have swapped operands v0 / 10, got: " + result);
+        // Operand order: register(v0) is left, acc(10) is right => "v0 / 10"
+        assertTrue(result.contains("v0 / 10"),
+                "v0 / 10 expected, got: " + result);
+        // Must NOT produce the swapped order "10 / v0"
+        assertFalse(result.contains("10 / v0"),
+                "Should NOT have swapped operands 10 / v0, got: " + result);
     }
 
     @Test
     void testDecompile_comparisonLess() {
-        // isa.yaml: less => acc = acc < v. lda v1; less v0 => v1 < v0
+        // register(v0) < acc(v1) => v0 < v1
         byte[] code = concat(
-            bytes(0x60, 0x01),       // lda v1
-            bytes(0x11, 0x00, 0x00), // less 0, v0
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x11, 0x00, 0x00), // less 0, v0 (register=v0) => v0 < v1
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("v1 < v0"));
+        assertTrue(result.contains("v0 < v1"));
     }
 
     // --- Variable declaration tests ---
@@ -1117,14 +1113,14 @@ class ArkTSDecompilerTest {
     @Test
     void testDecompile_complexExpression() {
         // ldai 2; sta v0; ldai 3; sta v1; lda v1; add2 0, v0; sta v2; return v2
-        // add2: acc + v = v1 + v0 (commutative)
+        // add2: register(v0) + acc(v1) = v0 + v1
         byte[] code = concat(
             bytes(0x62), le32(2),     // ldai 2
             bytes(0x61, 0x00),        // sta v0
             bytes(0x62), le32(3),     // ldai 3
             bytes(0x61, 0x01),        // sta v1
-            bytes(0x60, 0x01),        // lda v1
-            bytes(0x0A, 0x00, 0x00),  // add2 0, v0
+            bytes(0x60, 0x01),        // lda v1 (acc = v1)
+            bytes(0x0A, 0x00, 0x00),  // add2 0, v0 (register=v0) => v0 + v1
             bytes(0x61, 0x02),        // sta v2
             bytes(0x60, 0x02),        // lda v2
             bytes(0x64)               // return
@@ -1133,8 +1129,8 @@ class ArkTSDecompilerTest {
         String result = decompiler.decompileInstructions(insns);
         assertTrue(result.contains("const v0 = 2"));
         assertTrue(result.contains("const v1 = 3"));
-        assertTrue(result.contains("v1 + v0"));
-        assertTrue(result.contains("return v1 + v0"));
+        assertTrue(result.contains("v0 + v1"));
+        assertTrue(result.contains("return v0 + v1"));
     }
 
     // --- String escape test ---
@@ -1590,16 +1586,16 @@ class ArkTSDecompilerTest {
 
     @Test
     void testDecompile_typeAnnotation_comparisonResult() {
-        // lda v1; less v0 => v1 < v0; sta v2; return
+        // register(v0) < acc(v1) => v0 < v1; sta v2; return
         byte[] code = concat(
-            bytes(0x60, 0x01),       // lda v1
-            bytes(0x11, 0x00, 0x00), // less 0, v0
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x11, 0x00, 0x00), // less 0, v0 (register=v0) => v0 < v1
             bytes(0x61, 0x02),       // sta v2
             bytes(0x64)              // return
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("v1 < v0"));
+        assertTrue(result.contains("v0 < v1"));
     }
 
     // --- Async/await pattern tests ---
@@ -6405,16 +6401,16 @@ class ArkTSDecompilerTest {
 
     @Test
     void testTypeAnnotationPreserved_forComputedValue() {
-        // lda v1; add2 v0 => v1 + v0 (commutative); sta v2; return
+        // register(v0) + acc(v1) => v0 + v1; sta v2; return
         byte[] code = concat(
-            bytes(0x60, 0x01),
-            bytes(0x0A, 0x00, 0x00),
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x0A, 0x00, 0x00), // add2 0, v0 (register=v0) => v0 + v1
             bytes(0x61, 0x02),
             bytes(0x64)
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("v1 + v0"),
+        assertTrue(result.contains("v0 + v1"),
                 "Computed value should contain addition: " + result);
     }
 
@@ -6462,15 +6458,15 @@ class ArkTSDecompilerTest {
 
     @Test
     void testFormatting_multipleStatements() {
-        // ldai 10; sta v0; ldai 20; sta v1; lda v1; add2 v0 => v1 + v0; sta v2;
-        // return v2
+        // ldai 10; sta v0; ldai 20; sta v1; register(v0) + acc(v1) => v0 + v1;
+        // sta v2; return v2
         byte[] code = concat(
             bytes(0x62), le32(10),       // ldai 10
             bytes(0x61, 0x00),           // sta v0
             bytes(0x62), le32(20),       // ldai 20
             bytes(0x61, 0x01),           // sta v1
-            bytes(0x60, 0x01),           // lda v1
-            bytes(0x0A, 0x00, 0x00),     // add2 0, v0
+            bytes(0x60, 0x01),           // lda v1 (acc = v1)
+            bytes(0x0A, 0x00, 0x00),     // add2 0, v0 (register=v0) => v0 + v1
             bytes(0x61, 0x02),           // sta v2
             bytes(0x60, 0x02),           // lda v2
             bytes(0x64)                  // return
@@ -6483,7 +6479,7 @@ class ArkTSDecompilerTest {
         assertTrue(result.contains("const v1 = 20;"),
                 "Second declaration should have no type annotation: "
                         + result);
-        assertTrue(result.contains("return v1 + v0"),
+        assertTrue(result.contains("return v0 + v1"),
                 "Return should inline single-use variable: " + result);
     }
 
@@ -7839,15 +7835,15 @@ class ArkTSDecompilerTest {
 
     @Test
     void testBitwiseAnd() {
-        // lda v1; and2 v0 => v1 & v0 (commutative)
+        // register(v0) & acc(v1) => v0 & v1
         byte[] code = concat(
-            bytes(0x60, 0x01),       // lda v1
-            bytes(0x18, 0x00, 0x00), // and2 0, v0
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x18, 0x00, 0x00), // and2 0, v0 (register=v0) => v0 & v1
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("v1 & v0"),
+        assertTrue(result.contains("v0 & v1"),
                 "Should contain bitwise AND: " + result);
         assertTrue(result.contains("const v2: number"),
                 "Bitwise AND result should be typed as number: " + result);
@@ -7855,15 +7851,15 @@ class ArkTSDecompilerTest {
 
     @Test
     void testBitwiseOr() {
-        // lda v1; or2 v0 => v1 | v0 (commutative)
+        // register(v0) | acc(v1) => v0 | v1
         byte[] code = concat(
-            bytes(0x60, 0x01),       // lda v1
-            bytes(0x19, 0x00, 0x00), // or2 0, v0
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x19, 0x00, 0x00), // or2 0, v0 (register=v0) => v0 | v1
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("v1 | v0"),
+        assertTrue(result.contains("v0 | v1"),
                 "Should contain bitwise OR: " + result);
         assertTrue(result.contains("const v2: number"),
                 "Bitwise OR result should be typed as number: " + result);
@@ -7871,15 +7867,15 @@ class ArkTSDecompilerTest {
 
     @Test
     void testBitwiseXor() {
-        // lda v1; xor2 v0 => v1 ^ v0 (commutative)
+        // register(v0) ^ acc(v1) => v0 ^ v1
         byte[] code = concat(
-            bytes(0x60, 0x01),       // lda v1
-            bytes(0x1A, 0x00, 0x00), // xor2 0, v0
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x1A, 0x00, 0x00), // xor2 0, v0 (register=v0) => v0 ^ v1
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("v1 ^ v0"),
+        assertTrue(result.contains("v0 ^ v1"),
                 "Should contain bitwise XOR: " + result);
         assertTrue(result.contains("const v2: number"),
                 "Bitwise XOR result should be typed as number: " + result);
@@ -7906,10 +7902,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testLeftShift() {
-        // To get v0 << v1: acc=v0, reg=v1 => shl2 v1 => acc << v1
+        // register(v0) << acc(v1) => v0 << v1
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x15, 0x00, 0x01), // shl2 0, v1 => acc(v0) << v1
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x15, 0x00, 0x00), // shl2 0, v0 (register=v0) => v0 << v1
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -7922,10 +7918,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testRightShift() {
-        // To get v0 >> v1: acc=v0, reg=v1 => ashr2 v1 => acc >> v1
+        // register(v0) >> acc(v1) => v0 >> v1
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x17, 0x00, 0x01), // ashr2 0, v1 => acc(v0) >> v1
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x17, 0x00, 0x00), // ashr2 0, v0 (register=v0) => v0 >> v1
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -7938,10 +7934,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testUnsignedRightShift() {
-        // To get v0 >>> v1: acc=v0, reg=v1 => shr2 v1 => acc >>> v1
+        // register(v0) >>> acc(v1) => v0 >>> v1
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x16, 0x00, 0x01), // shr2 0, v1 => acc(v0) >>> v1
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x16, 0x00, 0x00), // shr2 0, v0 (register=v0) => v0 >>> v1
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -7955,16 +7951,15 @@ class ArkTSDecompilerTest {
 
     @Test
     void testStrictEquality() {
-        // isa.yaml: acc = ecma_op(acc, operand_0) => acc === v
-        // lda v1; stricteq v0 => v1 === v0 (commutative)
+        // register(v0) === acc(v1) => v0 === v1
         byte[] code = concat(
-            bytes(0x60, 0x01),       // lda v1
-            bytes(0x28, 0x00, 0x00), // stricteq 0, v0
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x28, 0x00, 0x00), // stricteq 0, v0 (register=v0) => v0 === v1
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("v1 === v0"),
+        assertTrue(result.contains("v0 === v1"),
                 "Should contain strict equality: " + result);
         assertTrue(result.contains("const v2: boolean"),
                 "Strict equality result should be typed as boolean: "
@@ -7973,15 +7968,15 @@ class ArkTSDecompilerTest {
 
     @Test
     void testStrictInequality() {
-        // lda v1; strictnoteq v0 => v1 !== v0 (commutative)
+        // register(v0) !== acc(v1) => v0 !== v1
         byte[] code = concat(
-            bytes(0x60, 0x01),       // lda v1
-            bytes(0x27, 0x00, 0x00), // strictnoteq 0, v0
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x27, 0x00, 0x00), // strictnoteq 0, v0 (register=v0) => v0 !== v1
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("v1 !== v0"),
+        assertTrue(result.contains("v0 !== v1"),
                 "Should contain strict inequality: " + result);
         assertTrue(result.contains("const v2: boolean"),
                 "Strict inequality result should be typed as boolean: "
@@ -7990,15 +7985,15 @@ class ArkTSDecompilerTest {
 
     @Test
     void testInstanceOf() {
-        // lda v1; instanceof v0 => v1 instanceof v0
+        // register(v0) instanceof acc(v1) => v0 instanceof v1
         byte[] code = concat(
-            bytes(0x60, 0x01),       // lda v1
-            bytes(0x26, 0x00, 0x00), // instanceof 0, v0
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x26, 0x00, 0x00), // instanceof 0, v0 (register=v0) => v0 instanceof v1
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("v1 instanceof v0"),
+        assertTrue(result.contains("v0 instanceof v1"),
                 "Should contain instanceof: " + result);
         assertTrue(result.contains("const v2: boolean"),
                 "instanceof result should be typed as boolean: " + result);
@@ -8025,15 +8020,15 @@ class ArkTSDecompilerTest {
 
     @Test
     void testLooseEquality() {
-        // lda v1; eq v0 => v1 == v0 (commutative)
+        // register(v0) == acc(v1) => v0 == v1
         byte[] code = concat(
-            bytes(0x60, 0x01),       // lda v1
-            bytes(0x0F, 0x00, 0x00), // eq 0, v0
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x0F, 0x00, 0x00), // eq 0, v0 (register=v0) => v0 == v1
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("v1 == v0"),
+        assertTrue(result.contains("v0 == v1"),
                 "Should contain loose equality: " + result);
         assertTrue(result.contains("const v2: boolean"),
                 "Loose equality result should be typed as boolean: "
@@ -8042,15 +8037,15 @@ class ArkTSDecompilerTest {
 
     @Test
     void testLooseInequality() {
-        // lda v1; noteq v0 => v1 != v0 (commutative)
+        // register(v0) != acc(v1) => v0 != v1
         byte[] code = concat(
-            bytes(0x60, 0x01),       // lda v1
-            bytes(0x10, 0x00, 0x00), // noteq 0, v0
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x10, 0x00, 0x00), // noteq 0, v0 (register=v0) => v0 != v1
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("v1 != v0"),
+        assertTrue(result.contains("v0 != v1"),
                 "Should contain loose inequality: " + result);
         assertTrue(result.contains("const v2: boolean"),
                 "Loose inequality result should be typed as boolean: "
@@ -8061,10 +8056,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testLessThanEqual() {
-        // To get v0 <= v1: acc=v0, reg=v1 => lesseq v1 => acc <= v1
+        // register(v0) <= acc(v1) => v0 <= v1
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x12, 0x00, 0x01), // lesseq 0, v1 => acc(v0) <= v1
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x12, 0x00, 0x00), // lesseq 0, v0 (register=v0) => v0 <= v1
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -8078,10 +8073,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testGreaterThan() {
-        // To get v0 > v1: acc=v0, reg=v1 => greater v1 => acc > v1
+        // register(v0) > acc(v1) => v0 > v1
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x13, 0x00, 0x01), // greater 0, v1 => acc(v0) > v1
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x13, 0x00, 0x00), // greater 0, v0 (register=v0) => v0 > v1
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -8095,10 +8090,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testGreaterThanEqual() {
-        // To get v0 >= v1: acc=v0, reg=v1 => greatereq v1 => acc >= v1
+        // register(v0) >= acc(v1) => v0 >= v1
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x14, 0x00, 0x01), // greatereq 0, v1 => acc(v0) >= v1
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x14, 0x00, 0x00), // greatereq 0, v0 (register=v0) => v0 >= v1
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -8114,10 +8109,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testExponentiation() {
-        // To get v0 ** v1: acc=v0, reg=v1 => exp v1 => acc ** v1
+        // register(v0) ** acc(v1) => v0 ** v1
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x1B, 0x00, 0x01), // exp 0, v1 => acc(v0) ** v1
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x1B, 0x00, 0x00), // exp 0, v0 (register=v0) => v0 ** v1
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -9954,14 +9949,14 @@ class ArkTSDecompilerTest {
     @Test
     void testTypeAnnotation_comparisonKeepsBoolean() {
         byte[] code = concat(
-                bytes(0x60, 0x01),       // lda v1
-                bytes(0x11, 0x00, 0x00), // less 0, v0 => v1 < v0
+                bytes(0x60, 0x01),       // lda v1 (acc = v1)
+                bytes(0x11, 0x00, 0x00), // less 0, v0 (register=v0) => v0 < v1
                 bytes(0x61, 0x02),       // sta v2
                 bytes(0x64)              // return
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("v1 < v0"),
+        assertTrue(result.contains("v0 < v1"),
                 "Comparison result should contain comparison, got: "
                         + result);
     }
@@ -11861,12 +11856,12 @@ class ArkTSDecompilerTest {
 
     @Test
     void testCompoundAssignment_add() {
-        // To get v0 += v1: acc=v0, reg=v1 => add2 v1 => v0 + v1, sta v0
+        // To get v0 += v1: register(v0) + acc(v1) => v0 + v1, sta v0
         byte[] code = concat(
             bytes(0x62), le32(10),   // ldai 10
             bytes(0x61, 0x00),       // sta v0 (declares v0)
-            bytes(0x60, 0x00),       // lda v0 (acc = v0)
-            bytes(0x0A, 0x00, 0x01), // add2 0, v1 => acc(v0) + v1
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x0A, 0x00, 0x00), // add2 0, v0 (register=v0) => v0 + v1
             bytes(0x61, 0x00)        // sta v0 (already declared -> compound)
         );
         List<ArkInstruction> insns = dis(code);
@@ -11879,12 +11874,12 @@ class ArkTSDecompilerTest {
 
     @Test
     void testCompoundAssignment_subtract() {
-        // To get v0 -= v1: acc=v0, reg=v1 => sub2 v1 => v0 - v1, sta v0
+        // To get v0 -= v1: register(v0) - acc(v1) => v0 - v1, sta v0
         byte[] code = concat(
             bytes(0x62), le32(10),   // ldai 10
             bytes(0x61, 0x00),       // sta v0 (declares v0)
-            bytes(0x60, 0x00),       // lda v0 (acc = v0)
-            bytes(0x0B, 0x00, 0x01), // sub2 0, v1 => acc(v0) - v1
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x0B, 0x00, 0x00), // sub2 0, v0 (register=v0) => v0 - v1
             bytes(0x61, 0x00)        // sta v0
         );
         List<ArkInstruction> insns = dis(code);
@@ -11895,12 +11890,12 @@ class ArkTSDecompilerTest {
 
     @Test
     void testCompoundAssignment_multiply() {
-        // To get v0 *= v1: acc=v0, reg=v1 => mul2 v1 => v0 * v1, sta v0
+        // To get v0 *= v1: register(v0) * acc(v1) => v0 * v1, sta v0
         byte[] code = concat(
             bytes(0x62), le32(10),   // ldai 10
             bytes(0x61, 0x00),       // sta v0 (declares v0)
-            bytes(0x60, 0x00),       // lda v0 (acc = v0)
-            bytes(0x0C, 0x00, 0x01), // mul2 0, v1 => acc(v0) * v1
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x0C, 0x00, 0x00), // mul2 0, v0 (register=v0) => v0 * v1
             bytes(0x61, 0x00)        // sta v0
         );
         List<ArkInstruction> insns = dis(code);
@@ -11911,12 +11906,12 @@ class ArkTSDecompilerTest {
 
     @Test
     void testCompoundAssignment_divide() {
-        // To get v0 /= v1: acc=v0, reg=v1 => div2 v1 => v0 / v1, sta v0
+        // To get v0 /= v1: register(v0) / acc(v1) => v0 / v1, sta v0
         byte[] code = concat(
             bytes(0x62), le32(10),   // ldai 10
             bytes(0x61, 0x00),       // sta v0 (declares v0)
-            bytes(0x60, 0x00),       // lda v0 (acc = v0)
-            bytes(0x0D, 0x00, 0x01), // div2 0, v1 => acc(v0) / v1
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x0D, 0x00, 0x00), // div2 0, v0 (register=v0) => v0 / v1
             bytes(0x61, 0x00)        // sta v0
         );
         List<ArkInstruction> insns = dis(code);
@@ -11927,12 +11922,12 @@ class ArkTSDecompilerTest {
 
     @Test
     void testCompoundAssignment_modulo() {
-        // To get v0 %= v1: acc=v0, reg=v1 => mod2 v1 => v0 % v1, sta v0
+        // To get v0 %= v1: register(v0) % acc(v1) => v0 % v1, sta v0
         byte[] code = concat(
             bytes(0x62), le32(10),   // ldai 10
             bytes(0x61, 0x00),       // sta v0 (declares v0)
-            bytes(0x60, 0x00),       // lda v0 (acc = v0)
-            bytes(0x0E, 0x00, 0x01), // mod2 0, v1 => acc(v0) % v1
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x0E, 0x00, 0x00), // mod2 0, v0 (register=v0) => v0 % v1
             bytes(0x61, 0x00)        // sta v0
         );
         List<ArkInstruction> insns = dis(code);
@@ -11943,12 +11938,12 @@ class ArkTSDecompilerTest {
 
     @Test
     void testCompoundAssignment_bitwiseAnd() {
-        // To get v0 &= v1: acc=v0, reg=v1 => and2 v1 => v0 & v1, sta v0
+        // To get v0 &= v1: register(v0) & acc(v1) => v0 & v1, sta v0
         byte[] code = concat(
             bytes(0x62), le32(10),   // ldai 10
             bytes(0x61, 0x00),       // sta v0 (declares v0)
-            bytes(0x60, 0x00),       // lda v0 (acc = v0)
-            bytes(0x18, 0x00, 0x01), // and2 0, v1 => acc(v0) & v1
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x18, 0x00, 0x00), // and2 0, v0 (register=v0) => v0 & v1
             bytes(0x61, 0x00)        // sta v0
         );
         List<ArkInstruction> insns = dis(code);
@@ -11959,12 +11954,12 @@ class ArkTSDecompilerTest {
 
     @Test
     void testCompoundAssignment_shiftLeft() {
-        // To get v0 <<= v1: acc=v0, reg=v1 => shl2 v1 => v0 << v1, sta v0
+        // To get v0 <<= v1: register(v0) << acc(v1) => v0 << v1, sta v0
         byte[] code = concat(
             bytes(0x62), le32(10),   // ldai 10
             bytes(0x61, 0x00),       // sta v0 (declares v0)
-            bytes(0x60, 0x00),       // lda v0 (acc = v0)
-            bytes(0x15, 0x00, 0x01), // shl2 0, v1 => acc(v0) << v1
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x15, 0x00, 0x00), // shl2 0, v0 (register=v0) => v0 << v1
             bytes(0x61, 0x00)        // sta v0
         );
         List<ArkInstruction> insns = dis(code);
@@ -11975,15 +11970,15 @@ class ArkTSDecompilerTest {
 
     @Test
     void testCompoundAssignment_noMatch_differentRegister() {
-        // lda v1; add2 v0 => v1 + v0, sta v2 -> let v2 = v1 + v0 (no compound)
+        // register(v0) + acc(v1) => v0 + v1, sta v2 -> let v2 = v0 + v1 (no compound)
         byte[] code = concat(
-            bytes(0x60, 0x01),       // lda v1
-            bytes(0x0A, 0x00, 0x00), // add2 0, v0
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x0A, 0x00, 0x00), // add2 0, v0 (register=v0) => v0 + v1
             bytes(0x61, 0x02)        // sta v2 (different register)
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("v1 + v0"),
+        assertTrue(result.contains("v0 + v1"),
                 "Should have regular binary expression, got: " + result);
         assertFalse(result.contains("+= "),
                 "Should not have compound assignment: " + result);
@@ -12094,15 +12089,15 @@ class ArkTSDecompilerTest {
     @Test
     void testCompoundAssignment_noMatch_comparisonOp() {
         // Comparison operators should not produce compound assignments
-        // lda v1; less v0 => v1 < v0, sta v0 -> no compound (left=v1 != v0)
+        // register(v0) < acc(v1) => v0 < v1, sta v0 -> no compound (left=v0 == v0, but comparison op)
         byte[] code = concat(
-            bytes(0x60, 0x01),       // lda v1
-            bytes(0x11, 0x00, 0x00), // less 0, v0 => v1 < v0
+            bytes(0x60, 0x01),       // lda v1 (acc = v1)
+            bytes(0x11, 0x00, 0x00), // less 0, v0 (register=v0) => v0 < v1
             bytes(0x61, 0x00)        // sta v0
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("v1 < v0"),
+        assertTrue(result.contains("v0 < v1"),
                 "Comparison should remain as regular assignment, got: "
                         + result);
     }
@@ -12128,38 +12123,38 @@ class ArkTSDecompilerTest {
 
     @Test
     void testDoubleNegation_notNotEquals() {
-        // !(a == b): lda v1; eq v0 => acc = (v1 == v0); not => !(v1 == v0)
-        // Should simplify to v1 != v0
+        // !(a == b): register(v0) == acc(v1) => v0 == v1; not => !(v0 == v1)
+        // Should simplify to v0 != v1
         byte[] code = concat(
-                bytes(0x60, 0x01),       // lda v1
-                bytes(0x0F, 0x00, 0x00), // eq 0, v0 -> acc = (v1 == v0)
-                bytes(0x20, 0x00),       // not 0 -> !(v1 == v0)
+                bytes(0x60, 0x01),       // lda v1 (acc = v1)
+                bytes(0x0F, 0x00, 0x00), // eq 0, v0 (register=v0) => v0 == v1
+                bytes(0x20, 0x00),       // not 0 -> !(v0 == v1)
                 bytes(0x61, 0x02),       // sta v2
                 bytes(0x64)              // return
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("v1 != v0"),
-                "!(v1 == v0) should simplify to v1 != v0, got: " + result);
+        assertTrue(result.contains("v0 != v1"),
+                "!(v0 == v1) should simplify to v0 != v1, got: " + result);
         assertFalse(result.contains("!("),
                 "Should not contain negation, got: " + result);
     }
 
     @Test
     void testDoubleNegation_notStrictEqual() {
-        // !(a === b): lda v1; stricteq v0 => acc = (v1 === v0); not
-        // Should simplify to v1 !== v0
+        // !(a === b): register(v0) === acc(v1) => v0 === v1; not
+        // Should simplify to v0 !== v1
         byte[] code = concat(
-                bytes(0x60, 0x01),       // lda v1
-                bytes(0x28, 0x00, 0x00), // stricteq 0, v0 => v1 === v0
+                bytes(0x60, 0x01),       // lda v1 (acc = v1)
+                bytes(0x28, 0x00, 0x00), // stricteq 0, v0 (register=v0) => v0 === v1
                 bytes(0x20, 0x00),       // not 0
                 bytes(0x61, 0x02),       // sta v2
                 bytes(0x64)              // return
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);
-        assertTrue(result.contains("v1 !== v0"),
-                "!(v1 === v0) should simplify to v1 !== v0, got: "
+        assertTrue(result.contains("v0 !== v1"),
+                "!(v0 === v1) should simplify to v0 !== v1, got: "
                         + result);
     }
 

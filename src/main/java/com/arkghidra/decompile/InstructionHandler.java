@@ -394,19 +394,21 @@ class InstructionHandler {
             return handleMov(operands, ctx, declaredVars, typeInf);
         }
 
-        // --- Binary operations: acc = acc OP v[operand] ---
-        // isa.yaml pseudo: acc = ecma_op(acc, operand_0)
-        // So acc is the LEFT operand, register is the RIGHT operand.
+        // --- Binary operations: register OP acc ---
+        // The Ark compiler loads the left source operand into a register
+        // and the right operand into acc. The VM computes register OP acc.
+        // Verified via ark_disasm: for `a.length - b.length`, acc=b.length,
+        // register=a.length; for `s >= 90`, acc=90, register=s.
         if (OperatorHandler.isBinaryOp(opcode)) {
             String op = OperatorHandler.getBinaryOperator(opcode);
             int reg = (int) operands.get(
                     operands.size() - 1).getValue();
-            ArkTSExpression left = accValue != null
-                    ? accValue
-                    : new ArkTSExpression.VariableExpression(ACC);
-            ArkTSExpression right =
+            ArkTSExpression left =
                     new ArkTSExpression.VariableExpression(
                             ctx.resolveRegisterName(reg));
+            ArkTSExpression right = accValue != null
+                    ? accValue
+                    : new ArkTSExpression.VariableExpression(ACC);
             ArkTSExpression result =
                     OperatorHandler.tryFoldConstants(left, op, right);
             // Try merging string literals for "+" (only if folding didn't
