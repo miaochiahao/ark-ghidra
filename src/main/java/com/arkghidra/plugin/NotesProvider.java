@@ -10,6 +10,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -119,6 +120,10 @@ public class NotesProvider extends ComponentProvider {
         showAllButton.setToolTipText("Show all notes across all methods");
         showAllButton.addActionListener(e -> showAllNotes());
         toolBar.add(showAllButton);
+        JButton loadButton = new JButton("Load Notes...");
+        loadButton.setToolTipText("Load notes from a previously exported file");
+        loadButton.addActionListener(e -> loadNotesFromFile());
+        toolBar.add(loadButton);
 
         mainPanel = new JPanel(new BorderLayout());
         mainPanel.add(headerLabel, BorderLayout.NORTH);
@@ -206,6 +211,52 @@ public class NotesProvider extends ComponentProvider {
                 annotatedModel.addElement(key);
             }
         }
+    }
+
+    private void loadNotesFromFile() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Load Notes");
+        if (chooser.showOpenDialog(mainPanel) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        File file = chooser.getSelectedFile();
+        try {
+            String content = new String(
+                    Files.readAllBytes(file.toPath()),
+                    StandardCharsets.UTF_8);
+            int loaded = parseAndLoadNotes(content);
+            updateAnnotatedList();
+            JOptionPane.showMessageDialog(
+                    mainPanel,
+                    "Loaded " + loaded + " note" + (loaded == 1 ? "" : "s") + " from " + file.getName(),
+                    "Load Notes",
+                    JOptionPane.INFORMATION_MESSAGE);
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(
+                    mainPanel, "Load failed: " + e.getMessage(),
+                    "Load Notes", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private int parseAndLoadNotes(String content) {
+        int count = 0;
+        String[] sections = content.split("\n## ");
+        for (String section : sections) {
+            if (section.startsWith("## ")) {
+                section = section.substring(3);
+            }
+            int newline = section.indexOf('\n');
+            if (newline < 0) {
+                continue;
+            }
+            String key = section.substring(0, newline).trim();
+            String notes = section.substring(newline + 1).trim();
+            if (!key.isEmpty() && !notes.isEmpty()) {
+                notesMap.put(key, notes);
+                count++;
+            }
+        }
+        return count;
     }
 
     private void exportNotes() {

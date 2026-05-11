@@ -8,10 +8,13 @@ import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.font.TextAttribute;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
@@ -1321,10 +1324,22 @@ public class AbcStructureProvider extends ComponentProvider {
                     }
                     // Notes indicator: bold text if method has notes
                     if (notesProvider != null && notesProvider.hasNotes(method.getName())) {
-                        setFont(getFont().deriveFont(java.awt.Font.BOLD));
+                        setFont(getFont().deriveFont(Font.BOLD));
                         setToolTipText("Has notes");
                     } else {
                         setToolTipText(null);
+                    }
+                    // Strikethrough for likely-generated/internal private methods
+                    long flags = method.getAccessFlags();
+                    boolean isPrivate = (flags & AbcAccessFlags.ACC_PRIVATE) != 0;
+                    String name = method.getName();
+                    boolean isGenerated = name.startsWith("_") || name.contains("$")
+                            || name.contains("#") || name.startsWith("lambda");
+                    if (isPrivate && isGenerated) {
+                        Font f = getFont();
+                        Map<TextAttribute, Object> attrs = new HashMap<>(f.getAttributes());
+                        attrs.put(TextAttribute.STRIKETHROUGH, TextAttribute.STRIKETHROUGH_ON);
+                        setFont(f.deriveFont(attrs));
                     }
                 }
             }
