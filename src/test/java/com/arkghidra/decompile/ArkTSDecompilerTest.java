@@ -11727,16 +11727,16 @@ class ArkTSDecompilerTest {
 
     @Test
     void testConditionalBranch_ifElse_producesIfElse() {
-        // ldai 0; jeqz +9; ldai 1; sta v0; jmp +7; ldai 2; sta v0; return
+        // lda v0; jeqz +9; ldai 1; sta v1; jmp +7; ldai 2; sta v1; return
         byte[] code = concat(
-            bytes(0x62), le32(0),       // offset 0: ldai 0      (5 bytes)
-            bytes(0x4F, 0x09),          // offset 5: jeqz +9     (2 bytes) -> 16
-            bytes(0x62), le32(1),       // offset 7: ldai 1      (5 bytes)
-            bytes(0x61, 0x00),          // offset 12: sta v0     (2 bytes)
-            bytes(0x4D, 0x07),          // offset 14: jmp +7     (2 bytes) -> 23
-            bytes(0x62), le32(2),       // offset 16: ldai 2     (5 bytes)
-            bytes(0x61, 0x00),          // offset 21: sta v0     (2 bytes)
-            bytes(0x64)                 // offset 23: return     (1 byte)
+            bytes(0x60, 0x00),          // offset 0: lda v0      (2 bytes)
+            bytes(0x4F, 0x09),          // offset 2: jeqz +9     (2 bytes) -> 13
+            bytes(0x62), le32(1),       // offset 4: ldai 1      (5 bytes)
+            bytes(0x61, 0x01),          // offset 9: sta v1      (2 bytes)
+            bytes(0x4D, 0x07),          // offset 11: jmp +7     (2 bytes) -> 20
+            bytes(0x62), le32(2),       // offset 13: ldai 2     (5 bytes)
+            bytes(0x61, 0x01),          // offset 18: sta v1     (2 bytes)
+            bytes(0x64)                 // offset 20: return     (1 byte)
         );
         List<ArkInstruction> insns = dis(code);
         String result = decompiler.decompileInstructions(insns);

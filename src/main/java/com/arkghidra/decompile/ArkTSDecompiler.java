@@ -239,6 +239,8 @@ public class ArkTSDecompiler {
             stmts = detectSwitchExpressions(stmts);
             stmts = simplifyReturnIfTernary(stmts);
             stmts = convertIfElseChainToSwitch(stmts);
+            stmts = removeUnreachableCode(stmts);
+            stmts = removeAlwaysFalseConditions(stmts);
             stmts = removeUnusedVariables(stmts);
             stmts = eliminateDeadPropertyLoads(stmts);
             stmts = simplifyIncrementDecrement(stmts);
