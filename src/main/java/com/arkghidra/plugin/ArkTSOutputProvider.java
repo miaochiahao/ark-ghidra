@@ -184,6 +184,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private Runnable addBookmarkCallback;
     private Runnable decompileClassCallback;
     private Runnable quickOpenCallback;
+    private Runnable pinCallback;
 
     private String lastClassName = "";
 
@@ -1277,6 +1278,15 @@ public class ArkTSOutputProvider extends ComponentProvider {
             codePane.repaint();
         });
         toolBar.add(indentGuideButton);
+
+        JButton pinButton = new JButton("\uD83D\uDCCC");
+        pinButton.setToolTipText("Pin current view in a new panel");
+        pinButton.addActionListener(e -> {
+            if (pinCallback != null) {
+                pinCallback.run();
+            }
+        });
+        toolBar.add(pinButton);
         toolBar.addSeparator();
         JButton helpButton = new JButton("?");
         helpButton.setToolTipText("Keyboard shortcuts");
@@ -1987,6 +1997,15 @@ public class ArkTSOutputProvider extends ComponentProvider {
      */
     public void setQuickOpenCallback(Runnable callback) {
         this.quickOpenCallback = callback;
+    }
+
+    /**
+     * Sets the callback invoked when the user clicks the Pin button.
+     *
+     * @param callback the runnable to invoke
+     */
+    public void setPinCallback(Runnable callback) {
+        this.pinCallback = callback;
     }
 
     /**

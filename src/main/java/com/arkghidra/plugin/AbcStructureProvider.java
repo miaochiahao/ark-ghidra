@@ -832,7 +832,7 @@ public class AbcStructureProvider extends ComponentProvider {
         return " @0x" + Long.toHexString(method.getCodeOff());
     }
 
-    private static String formatMethodPrefix(AbcMethod method) {
+    static String formatMethodPrefix(AbcMethod method) {
         long flags = method.getAccessFlags();
         String prefix;
         if ((flags & AbcAccessFlags.ACC_PUBLIC) != 0) {

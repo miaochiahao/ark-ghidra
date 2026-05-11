@@ -143,6 +143,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         tool.addComponentProvider(bookmarkProvider, false);
         outputProvider.setAddBookmarkCallback(this::addCurrentBookmark);
         outputProvider.setQuickOpenCallback(this::showQuickOpen);
+        outputProvider.setPinCallback(this::pinCurrentView);
         historyProvider = new HistoryProvider(tool, PLUGIN_NAME);
         historyProvider.setRestoreCallback((name, code) -> outputProvider.showDecompiledCode(name, code));
         tool.addComponentProvider(historyProvider, false);
@@ -166,12 +167,25 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         return decompiler;
     }
 
+    private void pinCurrentView() {
+        String funcName = outputProvider.getLastFunctionName();
+        String code = outputProvider.getLastCode();
+        if (funcName == null || funcName.isEmpty() || code == null || code.isEmpty()) {
+            return;
+        }
+        // Create a new read-only output panel with the pinned content
+        ArkTSOutputProvider pinnedPanel = new ArkTSOutputProvider(tool, PLUGIN_NAME);
+        pinnedPanel.showDecompiledCode("📌 " + funcName, code);
+        tool.addComponentProvider(pinnedPanel, true);
+        Msg.info(OWNER, "Pinned view: " + funcName);
+    }
+
     private void showQuickOpen() {
         AbcFile abcFile = getCurrentAbcFile();
         if (abcFile == null) {
             return;
         }
-        // Build flat list: "ClassName" and "ClassName.methodName"
+        // Build flat list: "ClassName" and "ClassName.methodName (N args)"
         List<String> allItems = new ArrayList<>();
         List<Object[]> itemData = new ArrayList<>(); // [type, AbcClass/AbcMethod, AbcClass]
         for (AbcClass cls : abcFile.getClasses()) {
@@ -179,7 +193,9 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             allItems.add(clsName);
             itemData.add(new Object[]{"class", cls, null});
             for (AbcMethod method : cls.getMethods()) {
-                allItems.add(clsName + "." + method.getName());
+                String prefix = AbcStructureProvider.formatMethodPrefix(method);
+                String suffix = buildQuickOpenMethodSuffix(method, abcFile);
+                allItems.add(clsName + "." + prefix + method.getName() + suffix);
                 itemData.add(new Object[]{"method", method, cls});
             }
         }
@@ -296,6 +312,22 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         });
 
         dialog.setVisible(true);
+    }
+
+    private String buildQuickOpenMethodSuffix(AbcMethod method, AbcFile abcFile) {
+        if (method.getCodeOff() == 0) {
+            return " (abstract)";
+        }
+        try {
+            com.arkghidra.format.AbcCode code = abcFile.getCodeForMethod(method);
+            if (code != null) {
+                long numArgs = code.getNumArgs();
+                return " (" + numArgs + " arg" + (numArgs == 1 ? "" : "s") + ")";
+            }
+        } catch (Exception e) {
+            // fall through
+        }
+        return "";
     }
 
     private void navigateToQuickOpenSelection(JList<String> resultList,
