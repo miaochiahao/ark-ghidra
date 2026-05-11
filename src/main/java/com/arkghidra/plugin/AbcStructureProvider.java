@@ -75,6 +75,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private AbcFile currentAbcFile;
     private HapMetadata currentHapMetadata;
     private String currentHapName = "";
+    private String moduleJsonContent = "";
     private MethodNavigationListener navigationListener;
     private ClassNavigationListener classNavigationListener;
     private BiConsumer<AbcClass, File> exportClassCallback;
@@ -529,9 +530,6 @@ public class AbcStructureProvider extends ComponentProvider {
     }
 
     private void handleDoubleClick() {
-        if (navigationListener == null) {
-            return;
-        }
         TreePath path = structureTree.getSelectionPath();
         if (path == null) {
             return;
@@ -539,8 +537,25 @@ public class AbcStructureProvider extends ComponentProvider {
         DefaultMutableTreeNode node =
                 (DefaultMutableTreeNode) path.getLastPathComponent();
         Object userObj = node.getUserObject();
-        if (userObj instanceof AbcMethod) {
+
+        // module.json5 node: show raw content
+        if ("module.json5".equals(userObj) && !moduleJsonContent.isEmpty()) {
+            javax.swing.JTextArea textArea = new javax.swing.JTextArea(moduleJsonContent);
+            textArea.setEditable(false);
+            textArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
+            textArea.setCaretPosition(0);
+            javax.swing.JOptionPane.showMessageDialog(
+                    mainPanel,
+                    new javax.swing.JScrollPane(textArea),
+                    "module.json5",
+                    javax.swing.JOptionPane.PLAIN_MESSAGE);
+            return;
+        }
+
+        if (userObj instanceof AbcMethod && navigationListener != null) {
             navigationListener.onMethodSelected((AbcMethod) userObj);
+        } else if (userObj instanceof AbcClass && classNavigationListener != null) {
+            classNavigationListener.onClassSelected((AbcClass) userObj);
         }
     }
 
@@ -568,6 +583,16 @@ public class AbcStructureProvider extends ComponentProvider {
     public void setHapMetadata(HapMetadata metadata, String hapName) {
         this.currentHapMetadata = metadata;
         this.currentHapName = hapName != null ? hapName : "";
+        rebuildTree();
+    }
+
+    /**
+     * Sets the raw module.json5 content for display in the tree.
+     *
+     * @param content the raw JSON content, or empty string to clear
+     */
+    public void setModuleJsonContent(String content) {
+        this.moduleJsonContent = content != null ? content : "";
         rebuildTree();
     }
 
@@ -764,6 +789,51 @@ public class AbcStructureProvider extends ComponentProvider {
                 } else {
                     abilitiesNode.add(new DefaultMutableTreeNode(abilityLabel));
                 }
+            }
+        }
+
+        // module.json5 node
+        if (!moduleJsonContent.isEmpty()) {
+            final String jsonContent = moduleJsonContent;
+            DefaultMutableTreeNode moduleJsonNode =
+                    new DefaultMutableTreeNode("module.json5") {
+                        @Override
+                        public boolean isLeaf() {
+                            return true;
+                        }
+                    };
+            rootNode.add(moduleJsonNode);
+        }
+
+        // Pages section: ArkUI classes with build() method
+        List<AbcClass> pageClasses = new ArrayList<>();
+        for (AbcClass cls : currentAbcFile.getClasses()) {
+            for (AbcMethod method : cls.getMethods()) {
+                if ("build".equals(method.getName())) {
+                    pageClasses.add(cls);
+                    break;
+                }
+            }
+        }
+        if (!pageClasses.isEmpty()) {
+            DefaultMutableTreeNode pagesNode =
+                    new DefaultMutableTreeNode("Pages");
+            rootNode.add(pagesNode);
+            for (AbcClass pageCls : pageClasses) {
+                String pageLabel = formatClassName(pageCls.getName());
+                if (pageLabel.contains(".")) {
+                    pageLabel = pageLabel.substring(pageLabel.lastIndexOf('.') + 1);
+                }
+                final AbcClass finalPageCls = pageCls;
+                final String finalPageLabel = pageLabel;
+                DefaultMutableTreeNode pageNode =
+                        new DefaultMutableTreeNode(finalPageCls) {
+                            @Override
+                            public String toString() {
+                                return finalPageLabel;
+                            }
+                        };
+                pagesNode.add(pageNode);
             }
         }
 

@@ -77,16 +77,41 @@ public class ShowAbcStructureAction extends DockingAction {
     private void loadHapMetadata(Program program, AbcFile abcFile) {
         try {
             HapMetadata metadata = tryReadModuleJsonBlock(program);
+            String rawJson = tryReadModuleJsonRaw(program);
             if (metadata == null) {
                 metadata = buildSyntheticMetadata(program, abcFile);
             }
             plugin.showHapMetadata(metadata);
-            // Also update the HAP Explorer tree with abilities
+            // Also update the HAP Explorer tree with abilities and raw JSON
             String hapName = program.getName();
             plugin.getAbcStructureProvider().setHapMetadata(metadata, hapName);
+            if (rawJson != null && !rawJson.isEmpty()) {
+                plugin.getAbcStructureProvider().setModuleJsonContent(rawJson);
+            }
         } catch (Exception e) {
             Msg.warn(OWNER, "Failed to load HAP metadata: " + e.getMessage());
         }
+    }
+
+    private String tryReadModuleJsonRaw(Program program) {
+        Memory memory = program.getMemory();
+        MemoryBlock block = memory.getBlock("module_json");
+        if (block == null) {
+            block = memory.getBlock("module.json");
+        }
+        if (block == null) {
+            block = memory.getBlock("module.json5");
+        }
+        if (block != null) {
+            try {
+                byte[] bytes = new byte[(int) block.getSize()];
+                block.getBytes(block.getStart(), bytes);
+                return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+            } catch (Exception e) {
+                Msg.warn(OWNER, "Failed to read module_json raw: " + e.getMessage());
+            }
+        }
+        return null;
     }
 
     private HapMetadata tryReadModuleJsonBlock(Program program) {
