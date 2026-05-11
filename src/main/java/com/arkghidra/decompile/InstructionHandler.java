@@ -1455,6 +1455,23 @@ class InstructionHandler {
                 return "length";
             }
         }
+        // DefineFuncExpression: resolve function name from method table
+        if (value instanceof DefineFuncExpression) {
+            int methodIdx = ((DefineFuncExpression) value).getMethodIdx();
+            if (ctx != null && ctx.abcFile != null && methodIdx >= 0) {
+                AbcMethod method =
+                        ctx.abcFile.getMethodByFlatIndex(methodIdx);
+                if (method != null) {
+                    String name = DeclarationBuilder.sanitizeMethodName(
+                            method.getName());
+                    if (name != null && !name.isEmpty()
+                            && !name.startsWith("anonymous_method")
+                            && !name.startsWith("func_")) {
+                        return name;
+                    }
+                }
+            }
+        }
         return null;
     }
 
