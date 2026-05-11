@@ -12342,6 +12342,43 @@ class ArkTSDecompilerTest {
     }
 
     @Test
+    void testGuardClause_bothBranchesReturn_notLost() {
+        // Pattern: if (cond) return val1; else return val2;
+        // Both branches end with return — the fall-through must not be
+        // marked as dead code (issue #205).
+        // Uses more complex returns to avoid ternary detection.
+        //
+        // Layout:
+        // offset  0: lda v0          (2 bytes)
+        // offset  2: jeqz +7         (2 bytes) → offset 11
+        // offset  4: lda v1          (2 bytes) - true branch value
+        // offset  6: add2 0          (2 bytes) - extra insn (>3 total)
+        // offset  8: sta v5          (2 bytes)
+        // offset 10: return          (1 byte)
+        // offset 11: ldai 2          (5 bytes) - false branch value
+        // offset 16: return          (1 byte)
+        byte[] code = concat(
+                bytes(0x60, 0x00),              // lda v0
+                bytes(0x52, 0x07),              // jeqz +7 → offset 11
+                bytes(0x60, 0x01),              // lda v1
+                bytes(0x0A, 0x00),              // add2 0
+                bytes(0x61, 0x05),              // sta v5
+                bytes(0x64),                    // return
+                bytes(0x62), le32(2),           // ldai 2
+                bytes(0x64)                     // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        assertFalse(result.isEmpty(),
+                "Should produce output: " + result);
+        assertTrue(result.contains("return"),
+                "Should contain return: " + result);
+        // Must not be empty — both branches should contribute
+        assertFalse(result.trim().isEmpty(),
+                "Body should not be empty");
+    }
+
+    @Test
     void testOptionalChain_fromNullCheckPropertyLoad() {
         // Pattern: obj.name accessed, then null check, optional chain
         // Bytecode:

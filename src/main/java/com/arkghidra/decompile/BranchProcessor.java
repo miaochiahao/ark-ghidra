@@ -466,6 +466,12 @@ class BranchProcessor {
 
         visited.add(branchBlock);
 
+        // Mark the other block as a live continuation so isDeadCode
+        // does not skip it when both branches are guard returns.
+        if (otherBlock != null) {
+            reconstructor.addLiveContinuation(otherBlock);
+        }
+
         List<ArkTSStatement> guardStmts =
                 reconstructor.processBlockInstructions(
                         branchBlock, ctx);
