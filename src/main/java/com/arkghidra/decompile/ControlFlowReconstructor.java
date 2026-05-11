@@ -94,6 +94,7 @@ class ControlFlowReconstructor {
         BasicBlock switchDefaultBlock;
         BasicBlock switchEndBlock;
         String forLoopCounterVar;
+        boolean loopBodyIsJumpTarget;
 
         String logicalAssignOp;
         String logicalAssignTargetVar;
@@ -421,6 +422,7 @@ class ControlFlowReconstructor {
                         : (trueBranch.getStartOffset() > block
                                 .getStartOffset() ? trueBranch
                                 : falseBranch);
+                boolean bodyIsJumpTarget = loopBody == trueBranch;
                 ControlFlowPattern forOfP =
                         loopProcessor.detectForOfPattern(
                                 block, loopBody, cfg, ctx);
@@ -443,6 +445,7 @@ class ControlFlowReconstructor {
                         loopProcessor.detectClassicForLoopPattern(
                                 block, loopBody, cfg, ctx);
                 if (forP != null) {
+                    forP.loopBodyIsJumpTarget = bodyIsJumpTarget;
                     return forP;
                 }
                 // Do-while: the loop body starts BEFORE the condition
@@ -460,6 +463,7 @@ class ControlFlowReconstructor {
                         PatternType.WHILE_LOOP);
                 p.conditionBlock = block;
                 p.trueBlock = loopBody;
+                p.loopBodyIsJumpTarget = bodyIsJumpTarget;
                 return p;
             }
 

@@ -661,7 +661,9 @@ class LoopProcessor {
         int lastOpcode =
                 condBlock.getLastInstruction().getOpcode();
         ArkTSExpression effectiveCondition = condition;
-        if (reconstructor.isBranchOnFalse(lastOpcode)) {
+        boolean needNegate = reconstructor.isBranchOnFalse(lastOpcode)
+                ^ pattern.loopBodyIsJumpTarget;
+        if (needNegate) {
             effectiveCondition =
                     new ArkTSExpression.UnaryExpression(
                             "!", condition, true);
@@ -730,10 +732,12 @@ class LoopProcessor {
                     ControlFlowReconstructor.ACC);
         }
 
-        // Negate condition if branch-on-false
+        // Negate condition if loop body is the "false" branch direction
         int lastOpcode = condBlock.getLastInstruction().getOpcode();
         ArkTSExpression effectiveCondition = condition;
-        if (reconstructor.isBranchOnFalse(lastOpcode)) {
+        boolean needNegate = reconstructor.isBranchOnFalse(lastOpcode)
+                ^ pattern.loopBodyIsJumpTarget;
+        if (needNegate) {
             effectiveCondition =
                     new ArkTSExpression.UnaryExpression("!", condition, true);
         }

@@ -13327,6 +13327,38 @@ class ArkTSDecompilerTest {
                 "Expected labeled break, got: " + result);
     }
 
+    @Test
+    void testWhileLoopConditionNotInverted() {
+        // while (i < 10): less i, 10 -> acc; jeqz exit; body; jmp cond
+        // The while condition should be "i < 10", NOT "i >= 10"
+        byte[] code = concat(
+                bytes(0x62), le32(0),        // ldai 0 -> i
+                bytes(0x61, 0x00),           // sta v0 (i)
+                // condition block:
+                bytes(0x60, 0x00),           // lda v0 (i)
+                bytes(0x62), le32(10),       // ldai 10
+                // less: acc = i < 10
+                bytes(0x49),                 // less (v0, acc -> acc)
+                bytes(0x61, 0x01),           // sta v1 (save result)
+                bytes(0x60, 0x01),           // lda v1 (condition)
+                bytes(0x34, 0x0E),           // jeqz offset_14 (exit)
+                // body:
+                bytes(0x60, 0x00),           // lda v0 (i)
+                bytes(0x62), le32(1),        // ldai 1
+                bytes(0x47),                 // add (v0 + 1)
+                bytes(0x61, 0x00),           // sta v0 (i = i + 1)
+                bytes(0x27, 0xF1),           // jmp offset_-15 (back to condition)
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        // Condition should NOT be inverted
+        assertFalse(result.contains(">="),
+                "while condition should not be inverted to >=: " + result);
+        assertFalse(result.contains("!(i < 10)"),
+                "while condition should not be negated: " + result);
+    }
+
     // --- Type inference tests (#89) ---
 
     @Test
