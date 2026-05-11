@@ -108,10 +108,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testDecompile_addTwoRegisters() {
-        // lda v0; add2 0, v1; sta v2
+        // lda v1; add2 0, v0; sta v2  (real convention: left=v0 in reg, right=v1 in acc)
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x0A, 0x00, 0x01), // add2 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x0A, 0x00, 0x00), // add2 0, v0
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -121,10 +121,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testDecompile_subtract() {
-        // lda v0; sub2 0, v1; sta v0
+        // lda v1; sub2 0, v0; sta v0  (left=v0 in reg, right=v1 in acc → v0-=v1)
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x0B, 0x00, 0x01), // sub2 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x0B, 0x00, 0x00), // sub2 0, v0
             bytes(0x61, 0x00)        // sta v0
         );
         List<ArkInstruction> insns = dis(code);
@@ -134,10 +134,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testDecompile_multiply() {
-        // lda v0; mul2 0, v1; sta v2
+        // lda v1; mul2 0, v0; sta v2  (left=v0 in reg, right=v1 in acc)
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x0C, 0x00, 0x01), // mul2 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x0C, 0x00, 0x00), // mul2 0, v0
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -147,10 +147,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testDecompile_comparisonLess() {
-        // lda v0; less 0, v1; sta v2
+        // lda v1; less 0, v0; sta v2  (left=v0 in reg, right=v1 in acc)
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x11, 0x00, 0x01), // less 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x11, 0x00, 0x00), // less 0, v0
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -1073,14 +1073,14 @@ class ArkTSDecompilerTest {
 
     @Test
     void testDecompile_complexExpression() {
-        // ldai 2; sta v0; ldai 3; sta v1; lda v0; add2 0, v1; sta v2; return v2
+        // ldai 2; sta v0; ldai 3; sta v1; lda v1; add2 0, v0; sta v2; return v2
         byte[] code = concat(
             bytes(0x62), le32(2),     // ldai 2
             bytes(0x61, 0x00),        // sta v0
             bytes(0x62), le32(3),     // ldai 3
             bytes(0x61, 0x01),        // sta v1
-            bytes(0x60, 0x00),        // lda v0
-            bytes(0x0A, 0x00, 0x01),  // add2 0, v1
+            bytes(0x60, 0x01),        // lda v1
+            bytes(0x0A, 0x00, 0x00),  // add2 0, v0
             bytes(0x61, 0x02),        // sta v2
             bytes(0x60, 0x02),        // lda v2
             bytes(0x64)               // return
@@ -1546,10 +1546,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testDecompile_typeAnnotation_comparisonResult() {
-        // lda v0; less 0, v1; sta v2; return
+        // lda v1; less 0, v0; sta v2; return
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x11, 0x00, 0x01), // less 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x11, 0x00, 0x00), // less 0, v0
             bytes(0x61, 0x02),       // sta v2
             bytes(0x64)              // return
         );
@@ -6361,10 +6361,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testTypeAnnotationPreserved_forComputedValue() {
-        // lda v0; add2 0, v1; sta v2; return
+        // lda v1; add2 0, v0; sta v2; return
         byte[] code = concat(
-            bytes(0x60, 0x00),
-            bytes(0x0A, 0x00, 0x01),
+            bytes(0x60, 0x01),
+            bytes(0x0A, 0x00, 0x00),
             bytes(0x61, 0x02),
             bytes(0x64)
         );
@@ -6418,15 +6418,15 @@ class ArkTSDecompilerTest {
 
     @Test
     void testFormatting_multipleStatements() {
-        // ldai 10; sta v0; ldai 20; sta v1; lda v0; add2 0, v1; sta v2;
+        // ldai 10; sta v0; ldai 20; sta v1; lda v1; add2 0, v0; sta v2;
         // return v2
         byte[] code = concat(
             bytes(0x62), le32(10),       // ldai 10
             bytes(0x61, 0x00),           // sta v0
             bytes(0x62), le32(20),       // ldai 20
             bytes(0x61, 0x01),           // sta v1
-            bytes(0x60, 0x00),           // lda v0
-            bytes(0x0A, 0x00, 0x01),     // add2 0, v1
+            bytes(0x60, 0x01),           // lda v1
+            bytes(0x0A, 0x00, 0x00),     // add2 0, v0
             bytes(0x61, 0x02),           // sta v2
             bytes(0x60, 0x02),           // lda v2
             bytes(0x64)                  // return
@@ -7795,10 +7795,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testBitwiseAnd() {
-        // lda v0; and2 0, v1; sta v2
+        // lda v1; and2 0, v0; sta v2  (left=v0 in reg, right=v1 in acc)
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x18, 0x00, 0x01), // and2 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x18, 0x00, 0x00), // and2 0, v0
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -7811,10 +7811,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testBitwiseOr() {
-        // lda v0; or2 0, v1; sta v2
+        // lda v1; or2 0, v0; sta v2  (left=v0 in reg, right=v1 in acc)
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x19, 0x00, 0x01), // or2 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x19, 0x00, 0x00), // or2 0, v0
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -7827,10 +7827,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testBitwiseXor() {
-        // lda v0; xor2 0, v1; sta v2
+        // lda v1; xor2 0, v0; sta v2  (left=v0 in reg, right=v1 in acc)
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x1A, 0x00, 0x01), // xor2 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x1A, 0x00, 0x00), // xor2 0, v0
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -7862,10 +7862,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testLeftShift() {
-        // lda v0; shl2 0, v1; sta v2
+        // lda v1; shl2 0, v0; sta v2  (left=v0 in reg, right=v1 in acc)
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x15, 0x00, 0x01), // shl2 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x15, 0x00, 0x00), // shl2 0, v0
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -7878,10 +7878,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testRightShift() {
-        // lda v0; ashr2 0, v1; sta v2
+        // lda v1; ashr2 0, v0; sta v2  (left=v0 in reg, right=v1 in acc)
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x17, 0x00, 0x01), // ashr2 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x17, 0x00, 0x00), // ashr2 0, v0
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -7894,10 +7894,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testUnsignedRightShift() {
-        // lda v0; shr2 0, v1; sta v2
+        // lda v1; shr2 0, v0; sta v2  (left=v0 in reg, right=v1 in acc)
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x16, 0x00, 0x01), // shr2 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x16, 0x00, 0x00), // shr2 0, v0
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -7911,10 +7911,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testStrictEquality() {
-        // lda v0; stricteq 0, v1; sta v2
+        // lda v1; stricteq 0, v0; sta v2  (left=v0 in reg, right=v1 in acc)
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x28, 0x00, 0x01), // stricteq 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x28, 0x00, 0x00), // stricteq 0, v0
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -7928,10 +7928,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testStrictInequality() {
-        // lda v0; strictnoteq 0, v1; sta v2
+        // lda v1; strictnoteq 0, v0; sta v2  (left=v0 in reg, right=v1 in acc)
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x27, 0x00, 0x01), // strictnoteq 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x27, 0x00, 0x00), // strictnoteq 0, v0
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -7945,10 +7945,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testInstanceOf() {
-        // lda v0; instanceof 0, v1; sta v2
+        // lda v1; instanceof 0, v0; sta v2  (left=v0 in reg, right=v1 in acc)
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x26, 0x00, 0x01), // instanceof 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x26, 0x00, 0x00), // instanceof 0, v0
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -7980,10 +7980,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testLooseEquality() {
-        // lda v0; eq 0, v1; sta v2
+        // lda v1; eq 0, v0; sta v2  (left=v0 in reg, right=v1 in acc)
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x0F, 0x00, 0x01), // eq 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x0F, 0x00, 0x00), // eq 0, v0
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -7997,10 +7997,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testLooseInequality() {
-        // lda v0; noteq 0, v1; sta v2
+        // lda v1; noteq 0, v0; sta v2  (left=v0 in reg, right=v1 in acc)
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x10, 0x00, 0x01), // noteq 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x10, 0x00, 0x00), // noteq 0, v0
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -8016,10 +8016,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testLessThanEqual() {
-        // lda v0; lesseq 0, v1; sta v2
+        // lda v1; lesseq 0, v0; sta v2  (left=v0 in reg, right=v1 in acc)
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x12, 0x00, 0x01), // lesseq 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x12, 0x00, 0x00), // lesseq 0, v0
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -8033,10 +8033,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testGreaterThan() {
-        // lda v0; greater 0, v1; sta v2
+        // lda v1; greater 0, v0; sta v2  (left=v0 in reg, right=v1 in acc)
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x13, 0x00, 0x01), // greater 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x13, 0x00, 0x00), // greater 0, v0
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -8050,10 +8050,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testGreaterThanEqual() {
-        // lda v0; greatereq 0, v1; sta v2
+        // lda v1; greatereq 0, v0; sta v2  (left=v0 in reg, right=v1 in acc)
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x14, 0x00, 0x01), // greatereq 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x14, 0x00, 0x00), // greatereq 0, v0
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -8069,10 +8069,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testExponentiation() {
-        // lda v0; exp 0, v1; sta v2
+        // lda v1; exp 0, v0; sta v2  (left=v0 in reg, right=v1 in acc)
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x1B, 0x00, 0x01), // exp 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x1B, 0x00, 0x00), // exp 0, v0
             bytes(0x61, 0x02)        // sta v2
         );
         List<ArkInstruction> insns = dis(code);
@@ -9909,8 +9909,8 @@ class ArkTSDecompilerTest {
     @Test
     void testTypeAnnotation_comparisonKeepsBoolean() {
         byte[] code = concat(
-                bytes(0x60, 0x00),       // lda v0
-                bytes(0x11, 0x00, 0x01), // less 0, v1
+                bytes(0x60, 0x01),       // lda v1
+                bytes(0x11, 0x00, 0x00), // less 0, v0
                 bytes(0x61, 0x02),       // sta v2
                 bytes(0x64)              // return
         );
@@ -11816,12 +11816,12 @@ class ArkTSDecompilerTest {
 
     @Test
     void testCompoundAssignment_add() {
-        // ldai 10; sta v0; lda v0; add2 0, v1; sta v0 -> v0 += v1
+        // ldai 10; sta v0; lda v1; add2 0, v0; sta v0 -> v0 += v1
         byte[] code = concat(
             bytes(0x62), le32(10),   // ldai 10
             bytes(0x61, 0x00),       // sta v0 (declares v0)
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x0A, 0x00, 0x01), // add2 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x0A, 0x00, 0x00), // add2 0, v0
             bytes(0x61, 0x00)        // sta v0 (already declared -> compound)
         );
         List<ArkInstruction> insns = dis(code);
@@ -11834,12 +11834,12 @@ class ArkTSDecompilerTest {
 
     @Test
     void testCompoundAssignment_subtract() {
-        // ldai 10; sta v0; lda v0; sub2 0, v1; sta v0 -> v0 -= v1
+        // ldai 10; sta v0; lda v1; sub2 0, v0; sta v0 -> v0 -= v1
         byte[] code = concat(
             bytes(0x62), le32(10),   // ldai 10
             bytes(0x61, 0x00),       // sta v0 (declares v0)
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x0B, 0x00, 0x01), // sub2 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x0B, 0x00, 0x00), // sub2 0, v0
             bytes(0x61, 0x00)        // sta v0
         );
         List<ArkInstruction> insns = dis(code);
@@ -11850,12 +11850,12 @@ class ArkTSDecompilerTest {
 
     @Test
     void testCompoundAssignment_multiply() {
-        // ldai 10; sta v0; lda v0; mul2 0, v1; sta v0 -> v0 *= v1
+        // ldai 10; sta v0; lda v1; mul2 0, v0; sta v0 -> v0 *= v1
         byte[] code = concat(
             bytes(0x62), le32(10),   // ldai 10
             bytes(0x61, 0x00),       // sta v0 (declares v0)
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x0C, 0x00, 0x01), // mul2 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x0C, 0x00, 0x00), // mul2 0, v0
             bytes(0x61, 0x00)        // sta v0
         );
         List<ArkInstruction> insns = dis(code);
@@ -11866,12 +11866,12 @@ class ArkTSDecompilerTest {
 
     @Test
     void testCompoundAssignment_divide() {
-        // ldai 10; sta v0; lda v0; div2 0, v1; sta v0 -> v0 /= v1
+        // ldai 10; sta v0; lda v1; div2 0, v0; sta v0 -> v0 /= v1
         byte[] code = concat(
             bytes(0x62), le32(10),   // ldai 10
             bytes(0x61, 0x00),       // sta v0 (declares v0)
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x0D, 0x00, 0x01), // div2 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x0D, 0x00, 0x00), // div2 0, v0
             bytes(0x61, 0x00)        // sta v0
         );
         List<ArkInstruction> insns = dis(code);
@@ -11882,12 +11882,12 @@ class ArkTSDecompilerTest {
 
     @Test
     void testCompoundAssignment_modulo() {
-        // ldai 10; sta v0; lda v0; mod2 0, v1; sta v0 -> v0 %= v1
+        // ldai 10; sta v0; lda v1; mod2 0, v0; sta v0 -> v0 %= v1
         byte[] code = concat(
             bytes(0x62), le32(10),   // ldai 10
             bytes(0x61, 0x00),       // sta v0 (declares v0)
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x0E, 0x00, 0x01), // mod2 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x0E, 0x00, 0x00), // mod2 0, v0
             bytes(0x61, 0x00)        // sta v0
         );
         List<ArkInstruction> insns = dis(code);
@@ -11898,12 +11898,12 @@ class ArkTSDecompilerTest {
 
     @Test
     void testCompoundAssignment_bitwiseAnd() {
-        // ldai 10; sta v0; lda v0; and2 0, v1; sta v0 -> v0 &= v1
+        // ldai 10; sta v0; lda v1; and2 0, v0; sta v0 -> v0 &= v1
         byte[] code = concat(
             bytes(0x62), le32(10),   // ldai 10
             bytes(0x61, 0x00),       // sta v0 (declares v0)
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x18, 0x00, 0x01), // and2 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x18, 0x00, 0x00), // and2 0, v0
             bytes(0x61, 0x00)        // sta v0
         );
         List<ArkInstruction> insns = dis(code);
@@ -11914,12 +11914,12 @@ class ArkTSDecompilerTest {
 
     @Test
     void testCompoundAssignment_shiftLeft() {
-        // ldai 10; sta v0; lda v0; shl2 0, v1; sta v0 -> v0 <<= v1
+        // ldai 10; sta v0; lda v1; shl2 0, v0; sta v0 -> v0 <<= v1
         byte[] code = concat(
             bytes(0x62), le32(10),   // ldai 10
             bytes(0x61, 0x00),       // sta v0 (declares v0)
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x15, 0x00, 0x01), // shl2 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x15, 0x00, 0x00), // shl2 0, v0
             bytes(0x61, 0x00)        // sta v0
         );
         List<ArkInstruction> insns = dis(code);
@@ -11930,10 +11930,10 @@ class ArkTSDecompilerTest {
 
     @Test
     void testCompoundAssignment_noMatch_differentRegister() {
-        // lda v0; add2 0, v1; sta v2 -> let v2 = v0 + v1 (no compound)
+        // lda v1; add2 0, v0; sta v2 -> let v2 = v0 + v1 (no compound)
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x0A, 0x00, 0x01), // add2 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x0A, 0x00, 0x00), // add2 0, v0
             bytes(0x61, 0x02)        // sta v2 (different register)
         );
         List<ArkInstruction> insns = dis(code);
@@ -12049,10 +12049,10 @@ class ArkTSDecompilerTest {
     @Test
     void testCompoundAssignment_noMatch_comparisonOp() {
         // Comparison operators should not produce compound assignments
-        // lda v0; less 0, v1; sta v0 -> v0 = v0 < v1 (no compound)
+        // lda v1; less 0, v0; sta v0 -> v0 = v0 < v1 (no compound)
         byte[] code = concat(
-            bytes(0x60, 0x00),       // lda v0
-            bytes(0x11, 0x00, 0x01), // less 0, v1
+            bytes(0x60, 0x01),       // lda v1
+            bytes(0x11, 0x00, 0x00), // less 0, v0
             bytes(0x61, 0x00)        // sta v0
         );
         List<ArkInstruction> insns = dis(code);
@@ -12086,8 +12086,8 @@ class ArkTSDecompilerTest {
         // !(a == b): lda v0; eq 0, v1 -> acc = (v0 == v1); not 0 -> acc = !(v0 == v1)
         // Should simplify to v0 != v1
         byte[] code = concat(
-                bytes(0x60, 0x00),       // lda v0
-                bytes(0x0F, 0x00, 0x01), // eq 0, v1 -> acc = (v0 == v1)
+                bytes(0x60, 0x01),       // lda v1
+                bytes(0x0F, 0x00, 0x00), // eq 0, v0 -> acc = (v0 == v1)
                 bytes(0x20, 0x00),       // not 0 -> !(v0 == v1)
                 bytes(0x61, 0x02),       // sta v2
                 bytes(0x64)              // return
@@ -12105,8 +12105,8 @@ class ArkTSDecompilerTest {
         // !(a === b): lda v0; stricteq 0, v1 -> acc = (v0 === v1); not 0
         // Should simplify to v0 !== v1
         byte[] code = concat(
-                bytes(0x60, 0x00),       // lda v0
-                bytes(0x28, 0x00, 0x01), // stricteq 0, v1
+                bytes(0x60, 0x01),       // lda v1
+                bytes(0x28, 0x00, 0x00), // stricteq 0, v0
                 bytes(0x20, 0x00),       // not 0
                 bytes(0x61, 0x02),       // sta v2
                 bytes(0x64)              // return
