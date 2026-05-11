@@ -13359,6 +13359,26 @@ class ArkTSDecompilerTest {
                 "while condition should not be negated: " + result);
     }
 
+    @Test
+    void testInlineSingleUseVariable_acrossMultipleStatements() {
+        // Verify that single-use variables are inlined even when not adjacent
+        // Pattern: const v0 = 42; const v1 = 10; return v0;
+        // v1 is dead, v0 should be inlined into return
+        byte[] code = concat(
+                bytes(0x62), le32(42),       // ldai 42
+                bytes(0x61, 0x00),           // sta v0
+                bytes(0x62), le32(10),       // ldai 10
+                bytes(0x61, 0x01),           // sta v1
+                bytes(0x60, 0x00),           // lda v0
+                bytes(0x64)                  // return
+        );
+        List<ArkInstruction> insns = dis(code);
+        String result = decompiler.decompileInstructions(insns);
+        // v0 (42) should be inlined into the return statement
+        assertTrue(result.contains("42"),
+                "Should contain literal 42: " + result);
+    }
+
     // --- Type inference tests (#89) ---
 
     @Test

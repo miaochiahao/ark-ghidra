@@ -32,7 +32,7 @@ class ExpressionVisitor {
         List<ArkTSStatement> result = new ArrayList<>(stmts);
         boolean changed = true;
         int passes = 0;
-        while (changed && passes < 3) {
+        while (changed && passes < 5) {
             changed = false;
             passes++;
             for (int i = result.size() - 2; i >= 0; i--) {
@@ -50,14 +50,29 @@ class ExpressionVisitor {
                 if (countVariableUsage(init, varName) > 0) {
                     continue;
                 }
-                if (isUsedInEarlierStatements(result, i, varName)) {
+                // Find the single usage across all subsequent statements
+                int useCount = 0;
+                int useIdx = -1;
+                for (int j = i + 1; j < result.size(); j++) {
+                    int c = countVariableUsageInStmt(result.get(j),
+                            varName);
+                    if (c > 0) {
+                        useCount += c;
+                        if (useCount == 1 && c == 1) {
+                            useIdx = j;
+                        }
+                    }
+                    if (useCount > 1) {
+                        break;
+                    }
+                }
+                if (useCount != 1 || useIdx < 0) {
                     continue;
                 }
-                ArkTSStatement next = result.get(i + 1);
                 ArkTSStatement inlined =
-                        tryInlineInto(varName, init, next);
+                        tryInlineInto(varName, init, result.get(useIdx));
                 if (inlined != null) {
-                    result.set(i + 1, inlined);
+                    result.set(useIdx, inlined);
                     result.remove(i);
                     changed = true;
                 }
@@ -1137,6 +1152,41 @@ class ExpressionVisitor {
             }
         }
         return false;
+    }
+
+    private static int countVariableUsageInStmt(ArkTSStatement stmt,
+            String varName) {
+        if (stmt instanceof ArkTSStatement.ExpressionStatement) {
+            return countVariableUsage(
+                    ((ArkTSStatement.ExpressionStatement) stmt)
+                            .getExpression(), varName);
+        }
+        if (stmt instanceof ArkTSStatement.VariableDeclaration) {
+            ArkTSStatement.VariableDeclaration vd =
+                    (ArkTSStatement.VariableDeclaration) stmt;
+            int count = 0;
+            if (varName.equals(vd.getName())) {
+                count++;
+            }
+            if (vd.getInitializer() != null) {
+                count += countVariableUsage(
+                        vd.getInitializer(), varName);
+            }
+            return count;
+        }
+        if (stmt instanceof ArkTSStatement.ReturnStatement) {
+            ArkTSExpression val =
+                    ((ArkTSStatement.ReturnStatement) stmt).getValue();
+            return val != null
+                    ? countVariableUsage(val, varName) : 0;
+        }
+        if (stmt instanceof ArkTSStatement.ThrowStatement) {
+            ArkTSExpression val =
+                    ((ArkTSStatement.ThrowStatement) stmt).getValue();
+            return val != null
+                    ? countVariableUsage(val, varName) : 0;
+        }
+        return 0;
     }
 
     static int countVariableReadUsage(ArkTSExpression expr,
