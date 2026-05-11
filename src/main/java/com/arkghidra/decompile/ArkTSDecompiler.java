@@ -1587,16 +1587,49 @@ public class ArkTSDecompiler {
         if (expr instanceof ArkTSExpression.UnaryExpression) {
             ArkTSExpression.UnaryExpression unary =
                     (ArkTSExpression.UnaryExpression) expr;
-            if ("!".equals(unary.getOperator())
-                    && unary.getOperand()
-                            instanceof ArkTSExpression.BinaryExpression) {
-                ArkTSExpression.BinaryExpression bin =
-                        (ArkTSExpression.BinaryExpression) unary.getOperand();
-                String negatedOp =
-                        NEGATED_COMPARISON_OPS.get(bin.getOperator());
-                if (negatedOp != null) {
-                    return new ArkTSExpression.BinaryExpression(
-                            bin.getLeft(), negatedOp, bin.getRight());
+            if ("!".equals(unary.getOperator())) {
+                ArkTSExpression operand = unary.getOperand();
+                // Fold !true → false, !false → true, !undefined → true
+                if (operand instanceof ArkTSExpression.LiteralExpression) {
+                    ArkTSExpression.LiteralExpression lit =
+                            (ArkTSExpression.LiteralExpression) operand;
+                    if ("true".equals(lit.getValue())) {
+                        return new ArkTSExpression.LiteralExpression(
+                                "false",
+                                ArkTSExpression.LiteralExpression
+                                        .LiteralKind.BOOLEAN);
+                    }
+                    if ("false".equals(lit.getValue())) {
+                        return new ArkTSExpression.LiteralExpression(
+                                "true",
+                                ArkTSExpression.LiteralExpression
+                                        .LiteralKind.BOOLEAN);
+                    }
+                    if ("undefined".equals(lit.getValue())) {
+                        return new ArkTSExpression.LiteralExpression(
+                                "true",
+                                ArkTSExpression.LiteralExpression
+                                        .LiteralKind.BOOLEAN);
+                    }
+                }
+                // Simplify !!(expr) → expr (double negation)
+                if (operand instanceof ArkTSExpression.UnaryExpression) {
+                    ArkTSExpression.UnaryExpression inner =
+                            (ArkTSExpression.UnaryExpression) operand;
+                    if ("!".equals(inner.getOperator())) {
+                        return inner.getOperand();
+                    }
+                }
+                // Simplify !(a === b) → a !== b, !(a < b) → a >= b
+                if (operand instanceof ArkTSExpression.BinaryExpression) {
+                    ArkTSExpression.BinaryExpression bin =
+                            (ArkTSExpression.BinaryExpression) operand;
+                    String negatedOp =
+                            NEGATED_COMPARISON_OPS.get(bin.getOperator());
+                    if (negatedOp != null) {
+                        return new ArkTSExpression.BinaryExpression(
+                                bin.getLeft(), negatedOp, bin.getRight());
+                    }
                 }
             }
         }
