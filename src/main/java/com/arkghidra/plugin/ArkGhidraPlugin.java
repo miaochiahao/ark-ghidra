@@ -172,6 +172,8 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         settingsProvider = new SettingsProvider(tool, PLUGIN_NAME);
         tool.addComponentProvider(settingsProvider, false);
         settingsProvider.addFontChangeListener(e -> outputProvider.setFontFamily(settingsProvider.getFontFamily()));
+        settingsProvider.addSettingsChangeListener(e ->
+                outputProvider.setLineSpacing(settingsProvider.getLineSpacing()));
         notesProvider = new NotesProvider(tool, PLUGIN_NAME);
         tool.addComponentProvider(notesProvider, false);
         abcStructureProvider.setNotesProvider(notesProvider);

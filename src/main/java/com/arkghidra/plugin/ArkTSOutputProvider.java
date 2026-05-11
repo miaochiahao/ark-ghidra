@@ -165,6 +165,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
     // Font size state
     private int currentFontSize = 13;
     private String currentFontFamily = "Monospaced";
+    private int currentLineSpacing = 2;
     private String lastFunctionName = "";
     private String lastCode = "";
 
@@ -1462,6 +1463,14 @@ public class ArkTSOutputProvider extends ComponentProvider {
             }
         }
 
+        // Apply line spacing to all paragraphs
+        if (currentLineSpacing > 0) {
+            SimpleAttributeSet paraStyle = new SimpleAttributeSet();
+            StyleConstants.setSpaceAbove(paraStyle, currentLineSpacing);
+            StyleConstants.setSpaceBelow(paraStyle, currentLineSpacing);
+            doc.setParagraphAttributes(0, doc.getLength(), paraStyle, false);
+        }
+
         codePane.setCaretPosition(0);
     }
 
@@ -1568,6 +1577,19 @@ public class ArkTSOutputProvider extends ComponentProvider {
         }
         currentFontFamily = family;
         codePane.setFont(new Font(currentFontFamily, Font.PLAIN, currentFontSize));
+        if (!lastCode.isEmpty()) {
+            renderHighlightedCode(lastCode);
+        }
+    }
+
+    /**
+     * Updates the line spacing applied to all paragraphs in the code view.
+     * Re-renders the current content if any is present.
+     *
+     * @param spacing spacing value in the range [0, 8]; clamped if out of range
+     */
+    public void setLineSpacing(int spacing) {
+        currentLineSpacing = Math.max(0, Math.min(8, spacing));
         if (!lastCode.isEmpty()) {
             renderHighlightedCode(lastCode);
         }

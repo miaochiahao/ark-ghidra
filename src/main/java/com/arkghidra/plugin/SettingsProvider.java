@@ -12,6 +12,7 @@ import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JSlider;
 import javax.swing.JSpinner;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.event.ChangeListener;
@@ -39,6 +40,7 @@ public class SettingsProvider extends ComponentProvider {
     private final JCheckBox showInlineNotesCheckBox;
     private final JCheckBox showComplexityHeaderCheckBox;
     private final JComboBox<String> fontFamilyCombo;
+    private final JSlider lineSpacingSlider;
     private final JLabel timeoutLabel;
 
     private long timeoutMs = DEFAULT_TIMEOUT_MS;
@@ -73,6 +75,12 @@ public class SettingsProvider extends ComponentProvider {
         showComplexityHeaderCheckBox = new JCheckBox("Show complexity header in method output", true);
         showComplexityHeaderCheckBox.setToolTipText(
                 "Show bytecode size and complexity label at the top of each decompiled method");
+
+        lineSpacingSlider = new JSlider(0, 8, 2);
+        lineSpacingSlider.setMajorTickSpacing(2);
+        lineSpacingSlider.setMinorTickSpacing(1);
+        lineSpacingSlider.setPaintTicks(true);
+        lineSpacingSlider.setToolTipText("Line spacing (0=compact, 8=spacious)");
 
         String[] fontFamilies = {"Monospaced", "Consolas", "Courier New", "DejaVu Sans Mono", "Source Code Pro"};
         fontFamilyCombo = new JComboBox<>(fontFamilies);
@@ -109,7 +117,12 @@ public class SettingsProvider extends ComponentProvider {
         gbc.gridy = 5;
         formPanel.add(showComplexityHeaderCheckBox, gbc);
 
-        gbc.gridy = 6;
+        gbc.gridx = 0; gbc.gridy = 6; gbc.gridwidth = 1;
+        formPanel.add(new JLabel("Spacing:"), gbc);
+        gbc.gridx = 1; gbc.gridwidth = 2;
+        formPanel.add(lineSpacingSlider, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 7; gbc.gridwidth = 3;
         JLabel hintLabel = new JLabel(
                 "<html><small>Increase timeout for complex methods that time out.</small></html>");
         formPanel.add(hintLabel, gbc);
@@ -172,6 +185,15 @@ public class SettingsProvider extends ComponentProvider {
     }
 
     /**
+     * Returns the current line spacing value (0=compact, 8=spacious).
+     *
+     * @return line spacing value in the range [0, 8]
+     */
+    public int getLineSpacing() {
+        return lineSpacingSlider.getValue();
+    }
+
+    /**
      * Adds a listener that is notified when any setting changes.
      *
      * @param listener the change listener
@@ -182,6 +204,7 @@ public class SettingsProvider extends ComponentProvider {
         skipTrivialCheckBox.addChangeListener(listener);
         showInlineNotesCheckBox.addChangeListener(listener);
         showComplexityHeaderCheckBox.addChangeListener(listener);
+        lineSpacingSlider.addChangeListener(listener);
     }
 
     /**

@@ -75,6 +75,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private final DefaultTreeModel treeModel;
     private final DefaultMutableTreeNode rootNode;
     private final JTextField filterField;
+    private final JLabel filterCountLabel;
     private final JLabel breadcrumbLabel;
     private AbcFile currentAbcFile;
     private HapMetadata currentHapMetadata;
@@ -175,6 +176,10 @@ public class AbcStructureProvider extends ComponentProvider {
                 rebuildTree();
             }
         });
+
+        filterCountLabel = new JLabel("");
+        filterCountLabel.setForeground(Color.GRAY);
+        filterCountLabel.setFont(filterCountLabel.getFont().deriveFont(11f));
 
         breadcrumbLabel = new JLabel("");
         breadcrumbLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 11));
@@ -281,7 +286,10 @@ public class AbcStructureProvider extends ComponentProvider {
 
         JPanel filterPanel = new JPanel();
         filterPanel.setLayout(new javax.swing.BoxLayout(filterPanel, javax.swing.BoxLayout.Y_AXIS));
-        filterPanel.add(filterField);
+        JPanel filterRow = new JPanel(new BorderLayout(4, 0));
+        filterRow.add(filterField, BorderLayout.CENTER);
+        filterRow.add(filterCountLabel, BorderLayout.EAST);
+        filterPanel.add(filterRow);
         filterPanel.add(modifierFilterPanel);
         filterPanel.add(classTypePanel);
 
@@ -1113,11 +1121,45 @@ public class AbcStructureProvider extends ComponentProvider {
             }
         }
 
+        updateFilterCount();
         treeModel.reload();
 
         // Smart expansion: expand root and top-level sections only
         // (not individual classes/methods to avoid overwhelming large HAPs)
         smartExpandTree();
+    }
+
+    private void updateFilterCount() {
+        String filter = filterField.getText();
+        if (FILTER_PLACEHOLDER.equals(filter) || filter.isEmpty()) {
+            if (currentAbcFile != null) {
+                filterCountLabel.setText(currentAbcFile.getClasses().size() + " classes");
+            } else {
+                filterCountLabel.setText("");
+            }
+            return;
+        }
+        int classCount = 0;
+        int methodCount = 0;
+        if (currentAbcFile != null) {
+            for (AbcClass cls : currentAbcFile.getClasses()) {
+                String className = formatClassName(cls.getName());
+                boolean classMatches = matchesFilter(className, filter);
+                if (classMatches) {
+                    classCount++;
+                }
+                for (AbcMethod method : cls.getMethods()) {
+                    if (matchesFilter(method.getName(), filter)) {
+                        methodCount++;
+                    }
+                }
+            }
+        }
+        if (classCount > 0 || methodCount > 0) {
+            filterCountLabel.setText(classCount + "c " + methodCount + "m");
+        } else {
+            filterCountLabel.setText("no match");
+        }
     }
 
     private void smartExpandTree() {
