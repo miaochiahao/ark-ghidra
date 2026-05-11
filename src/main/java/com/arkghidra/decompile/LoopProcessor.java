@@ -2,6 +2,7 @@ package com.arkghidra.decompile;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -673,10 +674,11 @@ class LoopProcessor {
         String whileLabel = pushLabeledLoopContext(ctx,
                 loopHeaderOffset, loopEndOffset);
 
-        visited.add(pattern.trueBlock);
+        List<BasicBlock> bodyBlocks = collectLoopBodyBlocks(
+                pattern.trueBlock, condBlock, cfg, visited);
         List<ArkTSStatement> bodyStmts =
-                reconstructor.processBlockInstructions(
-                        pattern.trueBlock, ctx);
+                reconstructor.reconstructControlFlow(
+                        cfg, bodyBlocks, ctx, visited);
         ArkTSStatement bodyBlock =
                 new ArkTSStatement.BlockStatement(bodyStmts);
 
@@ -855,22 +857,26 @@ class LoopProcessor {
         String doWhileLabel = pushLabeledLoopContext(ctx,
                 loopHeaderOffset, loopEndOffset);
 
+        BasicBlock condBlockRef = pattern.conditionBlock;
+        List<BasicBlock> bodyBlocks = collectLoopBodyBlocks(
+                block, condBlockRef, cfg, visited);
         List<ArkTSStatement> bodyStmts =
-                reconstructor.processBlockInstructions(block, ctx);
+                reconstructor.reconstructControlFlow(
+                        cfg, bodyBlocks, ctx, visited);
 
         ArkTSExpression condition =
                 new ArkTSExpression.VariableExpression(
                         ControlFlowReconstructor.ACC);
-        if (pattern.conditionBlock != null) {
-            visited.add(pattern.conditionBlock);
+        if (condBlockRef != null) {
+            visited.add(condBlockRef);
             List<ArkTSStatement> condStmts =
                     reconstructor.processBlockInstructionsExcluding(
-                            pattern.conditionBlock, ctx,
-                            pattern.conditionBlock.getLastInstruction());
+                            condBlockRef, ctx,
+                            condBlockRef.getLastInstruction());
             bodyStmts.addAll(condStmts);
             condition =
                     reconstructor.getConditionExpression(
-                            pattern.conditionBlock.getLastInstruction(),
+                            condBlockRef.getLastInstruction(),
                             ctx);
             if (condition == null) {
                 condition = new ArkTSExpression.VariableExpression(
@@ -903,10 +909,11 @@ class LoopProcessor {
                 condBlock, pattern, cfg);
         String forOfLabel = pushLabeledLoopContext(ctx,
                 loopHeaderOffset, loopEndOffset);
-        visited.add(pattern.trueBlock);
+        List<BasicBlock> bodyBlocks = collectLoopBodyBlocks(
+                pattern.trueBlock, condBlock, cfg, visited);
         List<ArkTSStatement> bodyStmts =
-                reconstructor.processBlockInstructions(
-                        pattern.trueBlock, ctx);
+                reconstructor.reconstructControlFlow(
+                        cfg, bodyBlocks, ctx, visited);
         ArkTSStatement bodyBlock =
                 new ArkTSStatement.BlockStatement(bodyStmts);
         ctx.popLoopContext();
@@ -932,10 +939,11 @@ class LoopProcessor {
                 condBlock, pattern, cfg);
         String forInLabel = pushLabeledLoopContext(ctx,
                 loopHeaderOffset, loopEndOffset);
-        visited.add(pattern.trueBlock);
+        List<BasicBlock> bodyBlocks = collectLoopBodyBlocks(
+                pattern.trueBlock, condBlock, cfg, visited);
         List<ArkTSStatement> bodyStmts =
-                reconstructor.processBlockInstructions(
-                        pattern.trueBlock, ctx);
+                reconstructor.reconstructControlFlow(
+                        cfg, bodyBlocks, ctx, visited);
         ArkTSStatement bodyBlock =
                 new ArkTSStatement.BlockStatement(bodyStmts);
         ctx.popLoopContext();
@@ -1120,10 +1128,11 @@ class LoopProcessor {
                 condBlock, pattern, cfg);
         String forAwaitOfLabel = pushLabeledLoopContext(ctx,
                 loopHeaderOffset, loopEndOffset);
-        visited.add(pattern.trueBlock);
+        List<BasicBlock> bodyBlocks = collectLoopBodyBlocks(
+                pattern.trueBlock, condBlock, cfg, visited);
         List<ArkTSStatement> bodyStmts =
-                reconstructor.processBlockInstructions(
-                        pattern.trueBlock, ctx);
+                reconstructor.reconstructControlFlow(
+                        cfg, bodyBlocks, ctx, visited);
         ArkTSStatement bodyBlock =
                 new ArkTSStatement.BlockStatement(bodyStmts);
         ctx.popLoopContext();
@@ -1133,6 +1142,58 @@ class LoopProcessor {
                         pattern.iterableExpr, bodyBlock);
         stmts.add(wrapLabel(forAwaitOfStmt, forAwaitOfLabel));
         return stmts;
+    }
+
+    // --- Loop body collection ---
+
+    /**
+     * Collects all blocks that form the loop body, starting from
+     * {@code firstBodyBlock} and following successors within the
+     * loop range (before the header back-edge). Blocks already
+     * visited or outside the loop range are excluded. The header
+     * block itself is excluded to prevent re-processing the loop
+     * condition as part of the body.
+     *
+     * @param firstBodyBlock the first block of the loop body
+     * @param headerBlock the loop header/condition block
+     * @param cfg the control flow graph
+     * @param visited the visited set (blocks in it are skipped)
+     * @return list of body blocks in offset order
+     */
+    private List<BasicBlock> collectLoopBodyBlocks(
+            BasicBlock firstBodyBlock, BasicBlock headerBlock,
+            ControlFlowGraph cfg, Set<BasicBlock> visited) {
+        Set<BasicBlock> bodyBlocks = new LinkedHashSet<>();
+        int headerOffset = headerBlock != null
+                ? headerBlock.getStartOffset() : Integer.MAX_VALUE;
+        collectBodyBlocksRecursive(firstBodyBlock, headerOffset,
+                cfg, visited, bodyBlocks, new HashSet<>());
+        List<BasicBlock> sorted = new ArrayList<>(bodyBlocks);
+        sorted.sort((a, b) ->
+                Integer.compare(a.getStartOffset(), b.getStartOffset()));
+        return sorted;
+    }
+
+    private void collectBodyBlocksRecursive(BasicBlock block,
+            int headerOffset, ControlFlowGraph cfg,
+            Set<BasicBlock> visited, Set<BasicBlock> result,
+            Set<BasicBlock> recursionGuard) {
+        if (block == null || visited.contains(block)
+                || recursionGuard.contains(block)
+                || block.getStartOffset() == headerOffset) {
+            return;
+        }
+        recursionGuard.add(block);
+        result.add(block);
+        for (CFGEdge edge : block.getSuccessors()) {
+            BasicBlock succ = cfg.getBlockAt(edge.getToOffset());
+            if (succ != null && succ.getStartOffset() >= headerOffset
+                    && succ.getStartOffset() != headerOffset
+                    && !visited.contains(succ)) {
+                collectBodyBlocksRecursive(succ, headerOffset, cfg,
+                        visited, result, recursionGuard);
+            }
+        }
     }
 
     // --- Loop offset helpers ---
