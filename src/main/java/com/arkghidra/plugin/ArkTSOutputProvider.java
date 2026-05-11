@@ -186,6 +186,9 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private Runnable quickOpenCallback;
     private Runnable pinCallback;
     private Runnable showHapExplorerCallback;
+    private Runnable showBookmarksCallback;
+    private Runnable showHistoryCallback;
+    private Runnable showXrefCallback;
     private Runnable prevClassCallback;
     private Runnable nextClassCallback;
 
@@ -1344,6 +1347,9 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 + "Ctrl+Shift+C    Copy current line\n"
                 + "Ctrl+Shift+F    Global search\n"
                 + "Ctrl+Shift+E    Show HAP Explorer\n"
+                + "Ctrl+Shift+B    Show Bookmarks\n"
+                + "Ctrl+Shift+H    Show History\n"
+                + "Ctrl+Shift+X    Show Xref\n"
                 + "F3              Next occurrence\n"
                 + "Shift+F3        Previous occurrence\n"
                 + "Ctrl+Down       Next method definition\n"
@@ -1805,6 +1811,45 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 }
             }
         });
+
+        // Ctrl+Shift+B — Show Bookmarks
+        KeyStroke ctrlShiftB = KeyStroke.getKeyStroke(KeyEvent.VK_B,
+                cmdMask | java.awt.event.InputEvent.SHIFT_DOWN_MASK);
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(ctrlShiftB, "showBookmarks");
+        codePane.getActionMap().put("showBookmarks", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (showBookmarksCallback != null) {
+                    showBookmarksCallback.run();
+                }
+            }
+        });
+
+        // Ctrl+Shift+H — Show History
+        KeyStroke ctrlShiftH = KeyStroke.getKeyStroke(KeyEvent.VK_H,
+                cmdMask | java.awt.event.InputEvent.SHIFT_DOWN_MASK);
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(ctrlShiftH, "showHistory");
+        codePane.getActionMap().put("showHistory", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (showHistoryCallback != null) {
+                    showHistoryCallback.run();
+                }
+            }
+        });
+
+        // Ctrl+Shift+X — Show Xref
+        KeyStroke ctrlShiftX = KeyStroke.getKeyStroke(KeyEvent.VK_X,
+                cmdMask | java.awt.event.InputEvent.SHIFT_DOWN_MASK);
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(ctrlShiftX, "showXref");
+        codePane.getActionMap().put("showXref", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (showXrefCallback != null) {
+                    showXrefCallback.run();
+                }
+            }
+        });
     }
 
     // --- Go to line / Copy line ---
@@ -2069,6 +2114,21 @@ public class ArkTSOutputProvider extends ComponentProvider {
      */
     public void setShowHapExplorerCallback(Runnable callback) {
         this.showHapExplorerCallback = callback;
+    }
+
+    /** Sets the callback for Ctrl+Shift+B (Show Bookmarks). */
+    public void setShowBookmarksCallback(Runnable callback) {
+        this.showBookmarksCallback = callback;
+    }
+
+    /** Sets the callback for Ctrl+Shift+H (Show History). */
+    public void setShowHistoryCallback(Runnable callback) {
+        this.showHistoryCallback = callback;
+    }
+
+    /** Sets the callback for Ctrl+Shift+X (Show Xref). */
+    public void setShowXrefCallback(Runnable callback) {
+        this.showXrefCallback = callback;
     }
 
     /**

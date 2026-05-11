@@ -72,6 +72,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
     private HistoryProvider historyProvider;
     private StatsProvider statsProvider;
     private SettingsProvider settingsProvider;
+    private NotesProvider notesProvider;
 
     public ArkGhidraPlugin(PluginTool tool) {
         super(tool);
@@ -148,6 +149,12 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         outputProvider.setPinCallback(this::pinCurrentView);
         outputProvider.setShowHapExplorerCallback(() ->
                 tool.showComponentProvider(abcStructureProvider, true));
+        outputProvider.setShowBookmarksCallback(() ->
+                tool.showComponentProvider(bookmarkProvider, true));
+        outputProvider.setShowHistoryCallback(() ->
+                tool.showComponentProvider(historyProvider, true));
+        outputProvider.setShowXrefCallback(() ->
+                tool.showComponentProvider(xrefProvider, true));
         outputProvider.setPrevClassCallback(() -> navigateClass(-1));
         outputProvider.setNextClassCallback(() -> navigateClass(1));
         historyProvider = new HistoryProvider(tool, PLUGIN_NAME);
@@ -157,6 +164,8 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         tool.addComponentProvider(statsProvider, false);
         settingsProvider = new SettingsProvider(tool, PLUGIN_NAME);
         tool.addComponentProvider(settingsProvider, false);
+        notesProvider = new NotesProvider(tool, PLUGIN_NAME);
+        tool.addComponentProvider(notesProvider, false);
         abcStructureProvider.setShowCallersCallback(this::showAllCallers);
     }
 
@@ -493,6 +502,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             String clsName = findClassForMethod(abcFile, method);
             outputProvider.showDecompiledCode(method.getName(), result, clsName);
             historyProvider.recordNavigation(method.getName(), result);
+            notesProvider.setCurrentKey(method.getName());
             tool.showComponentProvider(outputProvider, true);
             List<String> allMethodNames = getAllMethodNames(abcFile);
             callGraphProvider.showCallGraph(method.getName(), result, allMethodNames);
@@ -552,6 +562,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             }
             outputProvider.showDecompiledCode("Class: " + className, sb.toString());
             historyProvider.recordNavigation("Class: " + className, sb.toString());
+            notesProvider.setCurrentKey("Class: " + className);
             tool.showComponentProvider(outputProvider, true);
             Msg.info(OWNER, "Decompiled class via tree: " + className);
         } catch (Exception e) {
@@ -1167,6 +1178,9 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             }
             if (settingsProvider != null) {
                 pluginTool.removeComponentProvider(settingsProvider);
+            }
+            if (notesProvider != null) {
+                pluginTool.removeComponentProvider(notesProvider);
             }
         }
     }
