@@ -848,11 +848,6 @@ class ControlFlowReconstructor {
         if (liveContinuations.contains(block)) {
             return false;
         }
-        for (CFGEdge pred : block.getPredecessors()) {
-            if (pred.getType() == EdgeType.EXCEPTION_HANDLER) {
-                return false;
-            }
-        }
         List<CFGEdge> preds = block.getPredecessors();
         if (preds.isEmpty()) {
             return true;
@@ -867,6 +862,12 @@ class ControlFlowReconstructor {
                 continue;
             }
             if (!visited.contains(predBlock)) {
+                return false;
+            }
+            // A visited predecessor that falls through to this block
+            // means this block is a natural continuation, not dead code.
+            if (pred.getType() == EdgeType.FALL_THROUGH
+                    || pred.getType() == EdgeType.CONDITIONAL_FALSE) {
                 return false;
             }
         }
