@@ -170,12 +170,35 @@ class ControlFlowReconstructor {
 
     // --- Main reconstruction ---
 
+    /**
+     * Reconstructs control flow for a sub-set of blocks (e.g., loop body
+     * or if/else branch). Skips dead code checking since the caller
+     * explicitly selected these blocks for processing.
+     */
+    List<ArkTSStatement> reconstructSubGraph(
+            ControlFlowGraph cfg,
+            List<BasicBlock> blocks, DecompilationContext ctx,
+            Set<BasicBlock> visited) {
+        return reconstructControlFlowInternal(
+                cfg, blocks, ctx, visited, false);
+    }
+
     List<ArkTSStatement> reconstructControlFlow(ControlFlowGraph cfg,
             List<BasicBlock> blocks, DecompilationContext ctx,
             Set<BasicBlock> visited) {
+        return reconstructControlFlowInternal(
+                cfg, blocks, ctx, visited, true);
+    }
 
-        mergeBlockCache.clear();
-        liveContinuations.clear();
+    private List<ArkTSStatement> reconstructControlFlowInternal(
+            ControlFlowGraph cfg,
+            List<BasicBlock> blocks, DecompilationContext ctx,
+            Set<BasicBlock> visited, boolean checkDeadCode) {
+
+        if (checkDeadCode) {
+            mergeBlockCache.clear();
+            liveContinuations.clear();
+        }
 
         List<ArkTSStatement> stmts = new ArrayList<>();
 
@@ -187,7 +210,8 @@ class ControlFlowReconstructor {
                 continue;
             }
 
-            if (isDeadCode(block, cfg, visited)) {
+            if (checkDeadCode
+                    && isDeadCode(block, cfg, visited)) {
                 visited.add(block);
                 continue;
             }

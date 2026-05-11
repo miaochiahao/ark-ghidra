@@ -677,7 +677,7 @@ class LoopProcessor {
         List<BasicBlock> bodyBlocks = collectLoopBodyBlocks(
                 pattern.trueBlock, condBlock, cfg, visited);
         List<ArkTSStatement> bodyStmts =
-                reconstructor.reconstructControlFlow(
+                reconstructor.reconstructSubGraph(
                         cfg, bodyBlocks, ctx, visited);
         ArkTSStatement bodyBlock =
                 new ArkTSStatement.BlockStatement(bodyStmts);
@@ -861,7 +861,7 @@ class LoopProcessor {
         List<BasicBlock> bodyBlocks = collectLoopBodyBlocks(
                 block, condBlockRef, cfg, visited);
         List<ArkTSStatement> bodyStmts =
-                reconstructor.reconstructControlFlow(
+                reconstructor.reconstructSubGraph(
                         cfg, bodyBlocks, ctx, visited);
 
         ArkTSExpression condition =
@@ -912,7 +912,7 @@ class LoopProcessor {
         List<BasicBlock> bodyBlocks = collectLoopBodyBlocks(
                 pattern.trueBlock, condBlock, cfg, visited);
         List<ArkTSStatement> bodyStmts =
-                reconstructor.reconstructControlFlow(
+                reconstructor.reconstructSubGraph(
                         cfg, bodyBlocks, ctx, visited);
         ArkTSStatement bodyBlock =
                 new ArkTSStatement.BlockStatement(bodyStmts);
@@ -942,7 +942,7 @@ class LoopProcessor {
         List<BasicBlock> bodyBlocks = collectLoopBodyBlocks(
                 pattern.trueBlock, condBlock, cfg, visited);
         List<ArkTSStatement> bodyStmts =
-                reconstructor.reconstructControlFlow(
+                reconstructor.reconstructSubGraph(
                         cfg, bodyBlocks, ctx, visited);
         ArkTSStatement bodyBlock =
                 new ArkTSStatement.BlockStatement(bodyStmts);
@@ -1131,7 +1131,7 @@ class LoopProcessor {
         List<BasicBlock> bodyBlocks = collectLoopBodyBlocks(
                 pattern.trueBlock, condBlock, cfg, visited);
         List<ArkTSStatement> bodyStmts =
-                reconstructor.reconstructControlFlow(
+                reconstructor.reconstructSubGraph(
                         cfg, bodyBlocks, ctx, visited);
         ArkTSStatement bodyBlock =
                 new ArkTSStatement.BlockStatement(bodyStmts);

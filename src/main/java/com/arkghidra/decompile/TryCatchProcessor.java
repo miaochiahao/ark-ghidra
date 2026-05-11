@@ -374,7 +374,7 @@ class TryCatchProcessor {
             }
         }
         if (!innerBlocks.isEmpty()) {
-            stmts.addAll(reconstructor.reconstructControlFlow(
+            stmts.addAll(reconstructor.reconstructSubGraph(
                     cfg, innerBlocks, ctx, visited));
         }
         return stmts;

@@ -239,8 +239,8 @@ class BranchProcessor {
             elseBlock = pattern.falseBlock;
         }
 
-        visited.add(pattern.trueBlock);
-        visited.add(pattern.falseBlock);
+        // Mark merge block as visited early to prevent it from being
+        // collected into branch sub-graphs
         if (pattern.mergeBlock != null) {
             visited.add(pattern.mergeBlock);
         }
@@ -249,9 +249,17 @@ class BranchProcessor {
         // branches start from the same state
         ArkTSExpression savedAccValue = ctx.currentAccValue;
 
+        // Collect all then-branch blocks and process recursively
+        // for multi-block then bodies (e.g., then-block with
+        // nested conditionals, assignments, returns)
+        BasicBlock thenStopBlock = pattern.mergeBlock != null
+                ? pattern.mergeBlock : elseBlock;
+        List<BasicBlock> thenBlocks = collectIfBranchBlocks(
+                thenBlock, thenStopBlock, cfg, visited);
+        thenBlocks.forEach(visited::remove);
         List<ArkTSStatement> thenStmts =
-                reconstructor.processBlockInstructions(
-                        thenBlock, ctx);
+                reconstructor.reconstructSubGraph(
+                        cfg, thenBlocks, ctx, visited);
         ArkTSStatement thenStmt =
                 new ArkTSStatement.BlockStatement(thenStmts);
 
@@ -259,26 +267,16 @@ class BranchProcessor {
         // from the condition block's state
         ctx.currentAccValue = savedAccValue;
 
-        // Process else-block recursively if it contains conditional
-        // branches (e.g., else-if chains). Otherwise process inline.
-        List<ArkTSStatement> elseStmts;
-        if (hasConditionalSuccessor(elseBlock, cfg)) {
-            // Remove elseBlock from visited so reconstructControlFlow
-            // can process it and its successors
-            visited.remove(elseBlock);
-            if (pattern.mergeBlock != null) {
-                visited.remove(pattern.mergeBlock);
-            }
-            List<BasicBlock> elseSubGraph =
-                    collectBlocksBetween(elseBlock,
-                            pattern.mergeBlock, cfg, visited);
-            elseStmts = reconstructor.reconstructControlFlow(
-                    cfg, elseSubGraph, ctx, visited);
-        } else {
-            elseStmts =
-                    reconstructor.processBlockInstructions(
-                            elseBlock, ctx);
-        }
+        // Process else-block recursively using collectIfBranchBlocks
+        // to handle multi-block else bodies and else-if chains.
+        BasicBlock elseStopBlock = pattern.mergeBlock != null
+                ? pattern.mergeBlock : thenBlock;
+        List<BasicBlock> elseBlocks = collectIfBranchBlocks(
+                elseBlock, elseStopBlock, cfg, visited);
+        elseBlocks.forEach(visited::remove);
+        List<ArkTSStatement> elseStmts =
+                reconstructor.reconstructSubGraph(
+                        cfg, elseBlocks, ctx, visited);
         ArkTSStatement elseStmt =
                 new ArkTSStatement.BlockStatement(elseStmts);
 
@@ -346,12 +344,14 @@ class BranchProcessor {
         }
 
         // --- Standard if-only processing ---
-        visited.add(branchBlock);
         // Mark the fall-through as live so isDeadCode doesn't skip it
         reconstructor.addLiveContinuation(otherBlock);
 
+        List<BasicBlock> thenBlocks = collectIfBranchBlocks(
+                branchBlock, otherBlock, cfg, visited);
         List<ArkTSStatement> thenStmts =
-                reconstructor.processBlockInstructions(branchBlock, ctx);
+                reconstructor.reconstructSubGraph(
+                        cfg, thenBlocks, ctx, visited);
         ArkTSStatement thenBlock =
                 new ArkTSStatement.BlockStatement(thenStmts);
 
@@ -1364,6 +1364,40 @@ class BranchProcessor {
             return false;
         }
         return ArkOpcodesCompat.isConditionalBranch(last.getOpcode());
+    }
+
+    /**
+     * Collects all blocks reachable from startBlock up to (excluding)
+     * the stopBlock, sorted by offset. Used to build a sub-CFG for
+     * recursive processing of if/else branch bodies.
+     */
+    private static List<BasicBlock> collectIfBranchBlocks(
+            BasicBlock startBlock, BasicBlock stopBlock,
+            ControlFlowGraph cfg, Set<BasicBlock> visited) {
+        List<BasicBlock> result = new ArrayList<>();
+        Set<BasicBlock> seen = new HashSet<>();
+        List<BasicBlock> worklist = new ArrayList<>();
+        worklist.add(startBlock);
+        while (!worklist.isEmpty()) {
+            BasicBlock current = worklist.remove(worklist.size() - 1);
+            if (seen.contains(current) || visited.contains(current)) {
+                continue;
+            }
+            seen.add(current);
+            if (current == stopBlock) {
+                continue;
+            }
+            result.add(current);
+            for (CFGEdge succ : current.getSuccessors()) {
+                BasicBlock succBlock = cfg.getBlockAt(succ.getToOffset());
+                if (succBlock != null && !seen.contains(succBlock)) {
+                    worklist.add(succBlock);
+                }
+            }
+        }
+        result.sort((a, b) ->
+                Integer.compare(a.getStartOffset(), b.getStartOffset()));
+        return result;
     }
 
     /**
