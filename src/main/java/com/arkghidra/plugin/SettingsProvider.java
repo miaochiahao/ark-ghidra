@@ -7,6 +7,7 @@ import java.awt.GridBagLayout;
 import java.awt.Insets;
 
 import javax.swing.BorderFactory;
+import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
@@ -150,6 +151,12 @@ public class SettingsProvider extends ComponentProvider {
                 "<html><small>Increase timeout for complex methods that time out.</small></html>");
         formPanel.add(hintLabel, gbc);
 
+        gbc.gridy = 10;
+        JButton resetButton = new JButton("Reset to Defaults");
+        resetButton.setToolTipText("Restore all settings to their default values");
+        resetButton.addActionListener(e -> resetToDefaults());
+        formPanel.add(resetButton, gbc);
+
         mainPanel = new JPanel(new BorderLayout());
         mainPanel.add(formPanel, BorderLayout.NORTH);
 
@@ -268,5 +275,18 @@ public class SettingsProvider extends ComponentProvider {
     public void addFontChangeListener(java.awt.event.ActionListener listener) {
         fontFamilyCombo.addActionListener(listener);
         themeCombo.addActionListener(listener);
+    }
+
+    private void resetToDefaults() {
+        timeoutSpinner.setValue((int) (DEFAULT_TIMEOUT_MS / 1000));
+        timeoutMs = DEFAULT_TIMEOUT_MS;
+        autoDecompileCheckBox.setSelected(true);
+        skipTrivialCheckBox.setSelected(false);
+        showInlineNotesCheckBox.setSelected(true);
+        showComplexityHeaderCheckBox.setSelected(true);
+        fontFamilyCombo.setSelectedItem("Monospaced");
+        lineSpacingSlider.setValue(2);
+        themeCombo.setSelectedItem("Auto (follow Ghidra)");
+        tabSizeSpinner.setValue(4);
     }
 }

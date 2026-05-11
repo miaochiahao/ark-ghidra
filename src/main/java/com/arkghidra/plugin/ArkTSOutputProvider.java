@@ -204,6 +204,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private JToggleButton autoDecompileButton;
     private final JLabel loadingLabel;
     private final JLabel classLabel;
+    private final JLabel methodInfoLabel;
 
     public ArkTSOutputProvider(Tool tool, String owner) {
         super(tool, "ArkTS Output", owner);
@@ -214,6 +215,10 @@ public class ArkTSOutputProvider extends ComponentProvider {
         loadingLabel = new JLabel("  ");
         loadingLabel.setForeground(Color.GRAY);
         loadingLabel.setFont(loadingLabel.getFont().deriveFont(11f));
+
+        methodInfoLabel = new JLabel("  ");
+        methodInfoLabel.setForeground(Color.GRAY);
+        methodInfoLabel.setFont(methodInfoLabel.getFont().deriveFont(11f));
 
         classLabel = new JLabel("");
         classLabel.setForeground(new Color(0x0066CC));
@@ -286,7 +291,10 @@ public class ArkTSOutputProvider extends ComponentProvider {
         centerPanel.add(searchPanel, BorderLayout.SOUTH);
 
         JPanel bottomPanel = new JPanel(new BorderLayout());
-        bottomPanel.add(statusBar, BorderLayout.NORTH);
+        JPanel statusRow = new JPanel(new BorderLayout());
+        statusRow.add(statusBar, BorderLayout.CENTER);
+        statusRow.add(methodInfoLabel, BorderLayout.EAST);
+        bottomPanel.add(statusRow, BorderLayout.NORTH);
         bottomPanel.add(toolBar, BorderLayout.CENTER);
 
         mainPanel = new JPanel(new BorderLayout());
@@ -2300,6 +2308,16 @@ public class ArkTSOutputProvider extends ComponentProvider {
      */
     public void hideLoading() {
         loadingLabel.setText("  ");
+    }
+
+    /**
+     * Sets the method info label shown in the status bar area.
+     * Pass null or empty string to clear.
+     *
+     * @param info the info text to display (e.g. "48b · simple · 3 callers")
+     */
+    public void setMethodInfo(String info) {
+        methodInfoLabel.setText(info != null && !info.isEmpty() ? info + "  " : "  ");
     }
 
     /**

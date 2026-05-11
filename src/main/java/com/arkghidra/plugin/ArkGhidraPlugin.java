@@ -608,6 +608,14 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             outputProvider.showDecompiledCode(method.getName(), displayResult, clsName);
             historyProvider.recordNavigation(method.getName(), result);
             notesProvider.setCurrentKey(method.getName());
+            // Update method info in status bar
+            if (code != null) {
+                long size = code.getCodeSize();
+                String complexity = size > 200 ? "complex" : size > 50 ? "medium" : "simple";
+                outputProvider.setMethodInfo(size + "b · " + complexity);
+            } else {
+                outputProvider.setMethodInfo("abstract/native");
+            }
             tool.showComponentProvider(outputProvider, true);
             List<String> allMethodNames = getAllMethodNames(abcFile);
             callGraphProvider.showCallGraph(method.getName(), result, allMethodNames);
@@ -704,6 +712,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             outputProvider.showDecompiledCode("Class: " + className, sb.toString());
             historyProvider.recordNavigation("Class: " + className, sb.toString());
             notesProvider.setCurrentKey("Class: " + className);
+            outputProvider.setMethodInfo(abcClass.getMethods().size() + " methods");
             tool.showComponentProvider(outputProvider, true);
             Msg.info(OWNER, "Decompiled class via tree: " + className);
         } catch (Exception e) {
