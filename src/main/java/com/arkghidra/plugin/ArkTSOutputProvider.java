@@ -181,11 +181,15 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private Runnable globalSearchCallback;
     private Consumer<String> globalSearchWordCallback;
     private Runnable addBookmarkCallback;
+    private Runnable decompileClassCallback;
+
+    private String lastClassName = "";
 
     private JButton backButton;
     private JButton forwardButton;
     private JToggleButton autoDecompileButton;
     private final JLabel loadingLabel;
+    private final JLabel classLabel;
 
     public ArkTSOutputProvider(Tool tool, String owner) {
         super(tool, "ArkTS Output", owner);
@@ -196,6 +200,18 @@ public class ArkTSOutputProvider extends ComponentProvider {
         loadingLabel = new JLabel("  ");
         loadingLabel.setForeground(Color.GRAY);
         loadingLabel.setFont(loadingLabel.getFont().deriveFont(11f));
+
+        classLabel = new JLabel("");
+        classLabel.setForeground(new Color(0x0066CC));
+        classLabel.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+        classLabel.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                if (decompileClassCallback != null && !lastClassName.isEmpty()) {
+                    decompileClassCallback.run();
+                }
+            }
+        });
 
         codePane = new JTextPane() {
             @Override
@@ -253,6 +269,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
 
         mainPanel = new JPanel(new BorderLayout());
         JPanel headerPanel = new JPanel(new BorderLayout());
+        headerPanel.add(classLabel, BorderLayout.WEST);
         headerPanel.add(headerLabel, BorderLayout.CENTER);
         headerPanel.add(loadingLabel, BorderLayout.EAST);
         mainPanel.add(headerPanel, BorderLayout.NORTH);
@@ -278,6 +295,25 @@ public class ArkTSOutputProvider extends ComponentProvider {
      * @param code the decompiled source code
      */
     public void showDecompiledCode(String functionName, String code) {
+        lastClassName = "";
+        classLabel.setText("");
+        showDecompiledCodeInternal(functionName, code);
+    }
+
+    /**
+     * Displays decompiled ArkTS source code with a clickable class breadcrumb in the header.
+     *
+     * @param functionName the name of the decompiled function
+     * @param code the decompiled source code
+     * @param className the class that owns this method, shown as a clickable breadcrumb
+     */
+    public void showDecompiledCode(String functionName, String code, String className) {
+        lastClassName = className != null ? className : "";
+        classLabel.setText(lastClassName.isEmpty() ? "" : lastClassName + " > ");
+        showDecompiledCodeInternal(functionName, code);
+    }
+
+    private void showDecompiledCodeInternal(String functionName, String code) {
         if (!lastCode.isEmpty() && !lastCode.equals(code)) {
             if (backStack.size() >= MAX_HISTORY) {
                 backStack.pollLast();
@@ -1778,6 +1814,24 @@ public class ArkTSOutputProvider extends ComponentProvider {
      */
     public String getLastFunctionName() {
         return lastFunctionName;
+    }
+
+    /**
+     * Returns the class name shown in the breadcrumb header.
+     *
+     * @return the class name, or empty string if none
+     */
+    public String getLastClassName() {
+        return lastClassName;
+    }
+
+    /**
+     * Sets a callback invoked when the user clicks the class breadcrumb label.
+     *
+     * @param callback the runnable to invoke, or null to disable
+     */
+    public void setDecompileClassCallback(Runnable callback) {
+        this.decompileClassCallback = callback;
     }
 
     /**

@@ -79,6 +79,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private JToggleButton filterPrivateButton;
     private JToggleButton filterStaticButton;
     private JToggleButton sortBySizeButton;
+    private JTextField minSizeField;
 
     public AbcStructureProvider(Tool tool, String owner) {
         super(tool, "ABC Structure", owner);
@@ -184,6 +185,27 @@ public class AbcStructureProvider extends ComponentProvider {
         sortBySizeButton.setToolTipText("Sort methods by bytecode size (largest first)");
         sortBySizeButton.addActionListener(e -> rebuildTree());
         modifierFilterPanel.add(sortBySizeButton);
+
+        minSizeField = new JTextField("0", 4);
+        minSizeField.setToolTipText("Hide methods with fewer bytes than this (0 = show all)");
+        minSizeField.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                rebuildTree();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                rebuildTree();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                rebuildTree();
+            }
+        });
+        modifierFilterPanel.add(new JLabel("\u2265"));
+        modifierFilterPanel.add(minSizeField);
 
         JButton expandAllButton = new JButton("⊞");
         expandAllButton.setToolTipText("Expand all");
@@ -510,6 +532,31 @@ public class AbcStructureProvider extends ComponentProvider {
         return false;
     }
 
+    private long getMinSizeFilter() {
+        if (minSizeField == null) {
+            return 0;
+        }
+        try {
+            long val = Long.parseLong(minSizeField.getText().trim());
+            return Math.max(0, val);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    private boolean passesMinSizeFilter(AbcMethod method) {
+        long minSize = getMinSizeFilter();
+        if (minSize <= 0 || currentAbcFile == null) {
+            return true;
+        }
+        try {
+            AbcCode code = currentAbcFile.getCodeForMethod(method);
+            return code != null && code.getCodeSize() >= minSize;
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
     private void rebuildTree() {
         rootNode.removeAllChildren();
 
@@ -538,7 +585,8 @@ public class AbcStructureProvider extends ComponentProvider {
             boolean anyMethodMatches = false;
             if (!classNameMatches && !filter.isEmpty()) {
                 for (AbcMethod method : cls.getMethods()) {
-                    if (matchesFilter(method.getName(), filter) && passesModifierFilter(method)) {
+                    if (matchesFilter(method.getName(), filter) && passesModifierFilter(method)
+                            && passesMinSizeFilter(method)) {
                         anyMethodMatches = true;
                         break;
                     }
@@ -551,7 +599,7 @@ public class AbcStructureProvider extends ComponentProvider {
 
             boolean anyMethodPassesModifier = false;
             for (AbcMethod method : cls.getMethods()) {
-                if (passesModifierFilter(method)) {
+                if (passesModifierFilter(method) && passesMinSizeFilter(method)) {
                     anyMethodPassesModifier = true;
                     break;
                 }
@@ -598,6 +646,9 @@ public class AbcStructureProvider extends ComponentProvider {
                     continue;
                 }
                 if (!passesModifierFilter(method)) {
+                    continue;
+                }
+                if (!passesMinSizeFilter(method)) {
                     continue;
                 }
                 DefaultMutableTreeNode methodNode =

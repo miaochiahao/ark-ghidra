@@ -80,6 +80,23 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         outputProvider.setDecompileFileCallback(this::decompileWholeFile);
         outputProvider.setExportAllCallback(this::exportAllClasses);
         outputProvider.setJumpToDefinitionCallback(this::jumpToDefinition);
+        outputProvider.setDecompileClassCallback(() -> {
+            String clsName = outputProvider.getLastClassName();
+            if (clsName.isEmpty()) {
+                return;
+            }
+            AbcFile abcFile = getCurrentAbcFile();
+            if (abcFile == null) {
+                return;
+            }
+            for (AbcClass cls : abcFile.getClasses()) {
+                String formatted = AbcStructureProvider.formatClassName(cls.getName());
+                if (formatted.equals(clsName) || formatted.endsWith("." + clsName)) {
+                    onClassClicked(cls);
+                    return;
+                }
+            }
+        });
         xrefProvider.setNavigationListener(offset -> outputProvider.scrollToOffset(offset));
         outputProvider.setSymbolHighlightCallback(word -> {
             if (word.isEmpty()) {
@@ -137,7 +154,8 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             AbcCode code = abcFile.getCodeForMethod(method);
             ArkTSDecompiler decompiler = new ArkTSDecompiler();
             String result = decompiler.decompileMethod(method, code, abcFile);
-            outputProvider.showDecompiledCode(method.getName(), result);
+            String clsName = findClassForMethod(abcFile, method);
+            outputProvider.showDecompiledCode(method.getName(), result, clsName);
             historyProvider.recordNavigation(method.getName(), result);
             tool.showComponentProvider(outputProvider, true);
             List<String> allMethodNames = getAllMethodNames(abcFile);
@@ -496,7 +514,8 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             AbcCode code = abcFile.getCodeForMethod(abcMethod);
             ArkTSDecompiler decompiler = new ArkTSDecompiler();
             String result = decompiler.decompileMethod(abcMethod, code, abcFile);
-            outputProvider.showDecompiledCode(abcMethod.getName(), result);
+            String clsName = findClassForMethod(abcFile, abcMethod);
+            outputProvider.showDecompiledCode(abcMethod.getName(), result, clsName);
             historyProvider.recordNavigation(abcMethod.getName(), result);
             List<String> allMethodNames = getAllMethodNames(abcFile);
             callGraphProvider.showCallGraph(abcMethod.getName(), result, allMethodNames);
@@ -569,6 +588,17 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             }
         }
         return names;
+    }
+
+    private String findClassForMethod(AbcFile abcFile, AbcMethod method) {
+        for (AbcClass cls : abcFile.getClasses()) {
+            for (AbcMethod m : cls.getMethods()) {
+                if (m.getOffset() == method.getOffset()) {
+                    return AbcStructureProvider.formatClassName(cls.getName());
+                }
+            }
+        }
+        return "";
     }
 
     private AbcFile getCurrentAbcFile() {
