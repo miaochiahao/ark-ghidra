@@ -318,6 +318,35 @@ public class AbcStructureProvider extends ComponentProvider {
     }
 
     /**
+     * Selects the tree node corresponding to the given class, scrolls it into view,
+     * and brings this provider to the front.
+     *
+     * @param targetClass the class to select
+     */
+    public void selectClass(AbcClass targetClass) {
+        if (targetClass == null) {
+            return;
+        }
+        DefaultMutableTreeNode root = (DefaultMutableTreeNode) treeModel.getRoot();
+        java.util.Enumeration<?> nodes = root.depthFirstEnumeration();
+        while (nodes.hasMoreElements()) {
+            DefaultMutableTreeNode node =
+                    (DefaultMutableTreeNode) nodes.nextElement();
+            Object userObj = node.getUserObject();
+            if (userObj instanceof AbcClass) {
+                AbcClass cls = (AbcClass) userObj;
+                if (cls.getName().equals(targetClass.getName())) {
+                    TreePath path = new TreePath(node.getPath());
+                    structureTree.setSelectionPath(path);
+                    structureTree.scrollPathToVisible(path);
+                    getTool().showComponentProvider(this, true);
+                    return;
+                }
+            }
+        }
+    }
+
+    /**
      * Returns true if the given name contains the filter text (case-insensitive),
      * or if the filter is empty.
      *

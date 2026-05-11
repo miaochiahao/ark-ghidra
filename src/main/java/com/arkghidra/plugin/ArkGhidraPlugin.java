@@ -14,6 +14,7 @@ import com.arkghidra.format.AbcClass;
 import com.arkghidra.format.AbcCode;
 import com.arkghidra.format.AbcFile;
 import com.arkghidra.format.AbcMethod;
+import com.arkghidra.loader.HapMetadata;
 
 /**
  * Main Ghidra plugin for ArkTS decompilation support.
@@ -38,6 +39,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
     private AbcStructureProvider abcStructureProvider;
     private ArkTSOutputProvider outputProvider;
     private XrefProvider xrefProvider;
+    private HapInfoProvider hapInfoProvider;
 
     public ArkGhidraPlugin(PluginTool tool) {
         super(tool);
@@ -53,6 +55,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         abcStructureProvider.setNavigationListener(this::onMethodDoubleClicked);
         abcStructureProvider.setClassNavigationListener(this::onClassClicked);
         outputProvider.setDecompileFileCallback(this::decompileWholeFile);
+        outputProvider.setJumpToDefinitionCallback(this::jumpToDefinition);
         xrefProvider.setNavigationListener(offset -> outputProvider.scrollToOffset(offset));
         outputProvider.setSymbolHighlightCallback(word -> {
             if (word.isEmpty()) {
@@ -66,6 +69,9 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         tool.addComponentProvider(abcStructureProvider, false);
         tool.addComponentProvider(outputProvider, false);
         tool.addComponentProvider(xrefProvider, false);
+        hapInfoProvider = new HapInfoProvider(tool, PLUGIN_NAME);
+        hapInfoProvider.setAbilityClickCallback(this::jumpToAbility);
+        tool.addComponentProvider(hapInfoProvider, false);
     }
 
     private void onMethodDoubleClicked(AbcMethod method) {
@@ -158,6 +164,61 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         tool.addAction(new ShowAbcStructureAction(this));
     }
 
+    private void jumpToDefinition(String word) {
+        AbcFile abcFile = getCurrentAbcFile();
+        if (abcFile == null) {
+            return;
+        }
+        for (AbcClass cls : abcFile.getClasses()) {
+            String shortName = AbcStructureProvider.formatClassName(cls.getName());
+            String simpleName = shortName.contains(".")
+                    ? shortName.substring(shortName.lastIndexOf('.') + 1)
+                    : shortName;
+            if (simpleName.equals(word) || shortName.equals(word)) {
+                onClassClicked(cls);
+                abcStructureProvider.selectClass(cls);
+                return;
+            }
+        }
+    }
+
+    private void jumpToAbility(String abilityName) {
+        AbcFile abcFile = getCurrentAbcFile();
+        if (abcFile == null) {
+            return;
+        }
+        String lowerAbility = abilityName.toLowerCase();
+        for (AbcClass cls : abcFile.getClasses()) {
+            String shortName = AbcStructureProvider.formatClassName(cls.getName());
+            String simpleName = shortName.contains(".")
+                    ? shortName.substring(shortName.lastIndexOf('.') + 1)
+                    : shortName;
+            if (simpleName.toLowerCase().contains(lowerAbility)
+                    || lowerAbility.contains(simpleName.toLowerCase())) {
+                onClassClicked(cls);
+                abcStructureProvider.selectClass(cls);
+                return;
+            }
+        }
+        outputProvider.showMessage("// Class not found for ability: " + abilityName);
+    }
+
+    private AbcFile getCurrentAbcFile() {
+        Program program = getCurrentProgram();
+        if (program == null) {
+            return null;
+        }
+        try {
+            byte[] abcData = DecompileToArkTSAction.readAbcData(program);
+            if (abcData == null) {
+                return null;
+            }
+            return AbcFile.parse(abcData);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /**
      * Gets the current program from the ProgramManager service.
      *
@@ -190,6 +251,25 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         return outputProvider;
     }
 
+    /**
+     * Gets the HAP info provider.
+     *
+     * @return the HAP info provider
+     */
+    public HapInfoProvider getHapInfoProvider() {
+        return hapInfoProvider;
+    }
+
+    /**
+     * Displays HAP metadata in the HAP Info panel and makes it visible.
+     *
+     * @param metadata the parsed HAP metadata, or null to clear the panel
+     */
+    public void showHapMetadata(HapMetadata metadata) {
+        hapInfoProvider.showMetadata(metadata);
+        tool.showComponentProvider(hapInfoProvider, true);
+    }
+
     @Override
     public void cleanup() {
         PluginTool pluginTool = getTool();
@@ -202,6 +282,9 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             }
             if (xrefProvider != null) {
                 pluginTool.removeComponentProvider(xrefProvider);
+            }
+            if (hapInfoProvider != null) {
+                pluginTool.removeComponentProvider(hapInfoProvider);
             }
         }
     }

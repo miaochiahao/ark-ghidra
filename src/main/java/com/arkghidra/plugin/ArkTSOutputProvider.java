@@ -113,6 +113,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
 
     private Runnable decompileFileCallback;
     private Consumer<String> symbolHighlightCallback;
+    private Consumer<String> jumpToDefinitionCallback;
 
     public ArkTSOutputProvider(Tool tool, String owner) {
         super(tool, "ArkTS Output", owner);
@@ -325,7 +326,11 @@ public class ArkTSOutputProvider extends ComponentProvider {
             @Override
             public void mouseClicked(MouseEvent e) {
                 if (e.getButton() == MouseEvent.BUTTON1) {
-                    handleSymbolClick(e);
+                    if (e.getClickCount() == 2) {
+                        handleJumpToDefinition(e);
+                    } else if (e.getClickCount() == 1) {
+                        handleSymbolClick(e);
+                    }
                 }
             }
 
@@ -381,6 +386,14 @@ public class ArkTSOutputProvider extends ComponentProvider {
             });
         }
         menu.add(findRefsItem);
+
+        JMenuItem gotoDefItem = new JMenuItem("Go to Definition");
+        gotoDefItem.setEnabled(hasWord && jumpToDefinitionCallback != null);
+        if (hasWord && jumpToDefinitionCallback != null) {
+            final String capturedWord = word;
+            gotoDefItem.addActionListener(e -> jumpToDefinitionCallback.accept(capturedWord));
+        }
+        menu.add(gotoDefItem);
 
         JMenuItem copySymbolItem = new JMenuItem("Copy Symbol Name");
         copySymbolItem.setEnabled(hasWord);
@@ -460,6 +473,18 @@ public class ArkTSOutputProvider extends ComponentProvider {
                     + newName + "\" (" + positions.size() + " occurrences)");
         } catch (BadLocationException ex) {
             Msg.warn(OWNER, "Failed to rename symbol: " + ex.getMessage());
+        }
+    }
+
+    private void handleJumpToDefinition(MouseEvent e) {
+        if (jumpToDefinitionCallback == null) {
+            return;
+        }
+        int offset = codePane.viewToModel2D(e.getPoint());
+        String text = codePane.getText();
+        String word = symbolHighlighter.extractWordAt(text, offset);
+        if (!word.isEmpty()) {
+            jumpToDefinitionCallback.accept(word);
         }
     }
 
@@ -987,6 +1012,16 @@ public class ArkTSOutputProvider extends ComponentProvider {
      */
     public void setSymbolHighlightCallback(Consumer<String> callback) {
         this.symbolHighlightCallback = callback;
+    }
+
+    /**
+     * Sets a callback invoked when the user double-clicks a word or selects "Go to Definition".
+     * The callback receives the word under the cursor so the caller can navigate to its definition.
+     *
+     * @param callback the consumer to invoke, or null to disable
+     */
+    public void setJumpToDefinitionCallback(Consumer<String> callback) {
+        this.jumpToDefinitionCallback = callback;
     }
 
     /**
