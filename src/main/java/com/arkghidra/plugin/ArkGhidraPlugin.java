@@ -430,7 +430,22 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             String clsName = AbcStructureProvider.formatClassName(cls.getName());
             // Determine class type badge
             String badge = getClassTypeBadge(cls);
-            allItems.add(badge + clsName);
+            String parentSuffix = "";
+            if (cls.getSuperClassOff() != 0) {
+                for (com.arkghidra.format.AbcClass parent : abcFile.getClasses()) {
+                    if (parent.getOffset() == cls.getSuperClassOff()) {
+                        String parentName = AbcStructureProvider.formatClassName(parent.getName());
+                        if (parentName.contains(".")) {
+                            parentName = parentName.substring(parentName.lastIndexOf('.') + 1);
+                        }
+                        if (!"Object".equals(parentName) && !parentName.isEmpty()) {
+                            parentSuffix = " \u2191" + parentName;
+                        }
+                        break;
+                    }
+                }
+            }
+            allItems.add(badge + clsName + parentSuffix);
             itemData.add(new Object[]{"class", cls, null});
             for (AbcMethod method : cls.getMethods()) {
                 String prefix = AbcStructureProvider.formatMethodPrefix(method);
@@ -463,11 +478,12 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         javax.swing.JRadioButton pageBtn = new javax.swing.JRadioButton("[P]");
         javax.swing.JRadioButton nativeBtn = new javax.swing.JRadioButton("[N]");
         javax.swing.JRadioButton classBtn = new javax.swing.JRadioButton("[C]");
+        javax.swing.JRadioButton interfaceBtn = new javax.swing.JRadioButton("[I]");
         typeGroup.add(allBtn); typeGroup.add(abilityBtn); typeGroup.add(pageBtn);
-        typeGroup.add(nativeBtn); typeGroup.add(classBtn);
+        typeGroup.add(nativeBtn); typeGroup.add(classBtn); typeGroup.add(interfaceBtn);
         JPanel typePanel = new JPanel();
         typePanel.add(allBtn); typePanel.add(abilityBtn); typePanel.add(pageBtn);
-        typePanel.add(nativeBtn); typePanel.add(classBtn);
+        typePanel.add(nativeBtn); typePanel.add(classBtn); typePanel.add(interfaceBtn);
 
         JDialog dialog = new JDialog();
         dialog.setTitle("Quick Open (Ctrl+P)");
@@ -491,7 +507,8 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             String badge = allBtn.isSelected() ? "" :
                     abilityBtn.isSelected() ? "[a]" :
                     pageBtn.isSelected() ? "[p]" :
-                    nativeBtn.isSelected() ? "[n]" : "[c]";
+                    nativeBtn.isSelected() ? "[n]" :
+                    interfaceBtn.isSelected() ? "[i]" : "[c]";
             listModel.clear();
             for (String item : allItems) {
                 String lower = item.toLowerCase();
@@ -509,6 +526,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         pageBtn.addActionListener(typeFilter);
         nativeBtn.addActionListener(typeFilter);
         classBtn.addActionListener(typeFilter);
+        interfaceBtn.addActionListener(typeFilter);
 
         filterField.getDocument().addDocumentListener(new DocumentListener() {
             private void update() {
@@ -516,7 +534,8 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                 String badge = allBtn.isSelected() ? "" :
                         abilityBtn.isSelected() ? "[a]" :
                         pageBtn.isSelected() ? "[p]" :
-                        nativeBtn.isSelected() ? "[n]" : "[c]";
+                        nativeBtn.isSelected() ? "[n]" :
+                        interfaceBtn.isSelected() ? "[i]" : "[c]";
                 listModel.clear();
                 for (String item : allItems) {
                     String lower = item.toLowerCase();

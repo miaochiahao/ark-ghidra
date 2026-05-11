@@ -279,7 +279,7 @@ public class AbcStructureProvider extends ComponentProvider {
         modifierFilterPanel.add(refreshButton);
 
         JPanel classTypePanel = new JPanel();
-        String[] classTypes = {"All", "Abilities", "Pages", "Native", "Classes"};
+        String[] classTypes = {"All", "Abilities", "Pages", "Native", "Interface", "Classes"};
         ButtonGroup classTypeGroup = new ButtonGroup();
         for (String type : classTypes) {
             JRadioButton btn = new JRadioButton(type);
@@ -743,6 +743,7 @@ public class AbcStructureProvider extends ComponentProvider {
         int abilityCount = 0;
         int pageCount = 0;
         int nativeCount = 0;
+        int interfaceCount = 0;
         int classCount = 0;
         for (AbcClass cls : currentAbcFile.getClasses()) {
             totalMethods += cls.getMethods().size();
@@ -753,6 +754,8 @@ public class AbcStructureProvider extends ComponentProvider {
                 pageCount++;
             } else if ("[N] ".equals(badge)) {
                 nativeCount++;
+            } else if ("[I] ".equals(badge)) {
+                interfaceCount++;
             } else {
                 classCount++;
             }
@@ -770,7 +773,7 @@ public class AbcStructureProvider extends ComponentProvider {
             }
         }
         statsLabel.setText("[A]:" + abilityCount + " [P]:" + pageCount
-                + " [N]:" + nativeCount + " [C]:" + classCount
+                + " [N]:" + nativeCount + " [I]:" + interfaceCount + " [C]:" + classCount
                 + " · " + totalMethods + " methods · " + (totalBytes / 1024) + " KB");
     }
 
@@ -1027,7 +1030,8 @@ public class AbcStructureProvider extends ComponentProvider {
 
         boolean showAbilities = "All".equals(classTypeFilter) || "Abilities".equals(classTypeFilter);
         boolean showPages = "All".equals(classTypeFilter) || "Pages".equals(classTypeFilter);
-        boolean showClasses = "All".equals(classTypeFilter) || "Classes".equals(classTypeFilter);
+        boolean showClasses = "All".equals(classTypeFilter) || "Classes".equals(classTypeFilter)
+                || "Interface".equals(classTypeFilter);
         boolean showNative = "All".equals(classTypeFilter) || "Classes".equals(classTypeFilter)
                 || "Native".equals(classTypeFilter);
         // When "Native" is selected, don't show the regular Classes section
@@ -1209,7 +1213,13 @@ public class AbcStructureProvider extends ComponentProvider {
                 if ((!textFilter.isEmpty() || isSpecialFilter) && !classNameMatches && !anyMethodMatches) {
                     continue;
                 }
-    
+
+                if ("Interface".equals(classTypeFilter)) {
+                    if (!"[I] ".equals(getClassTypeBadge(cls))) {
+                        continue;
+                    }
+                }
+
                 boolean anyMethodPassesModifier = false;
                 for (AbcMethod method : cls.getMethods()) {
                     if (passesModifierFilter(method) && passesMinSizeFilter(method)
@@ -1374,7 +1384,7 @@ public class AbcStructureProvider extends ComponentProvider {
         if (FILTER_PLACEHOLDER.equals(filter) || filter.isEmpty()) {
             if (currentAbcFile != null) {
                 // Show class type breakdown when no filter is active
-                int a = 0, p = 0, n = 0, c = 0;
+                int a = 0, p = 0, n = 0, iface = 0, c = 0;
                 for (AbcClass cls : currentAbcFile.getClasses()) {
                     String badge = getClassTypeBadge(cls);
                     if ("[A] ".equals(badge)) {
@@ -1383,11 +1393,13 @@ public class AbcStructureProvider extends ComponentProvider {
                         p++;
                     } else if ("[N] ".equals(badge)) {
                         n++;
+                    } else if ("[I] ".equals(badge)) {
+                        iface++;
                     } else {
                         c++;
                     }
                 }
-                filterCountLabel.setText("[A]:" + a + " [P]:" + p + " [N]:" + n + " [C]:" + c);
+                filterCountLabel.setText("[A]:" + a + " [P]:" + p + " [N]:" + n + " [I]:" + iface + " [C]:" + c);
             } else {
                 filterCountLabel.setText("");
             }
