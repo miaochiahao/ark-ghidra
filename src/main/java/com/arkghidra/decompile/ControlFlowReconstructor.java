@@ -445,6 +445,17 @@ class ControlFlowReconstructor {
                 if (forP != null) {
                     return forP;
                 }
+                // Do-while: the loop body starts BEFORE the condition
+                // block (body was already executed before the condition
+                // check). While loop: the back-edge jumps to the
+                // condition block itself.
+                if (loopBody.getStartOffset() < block.getStartOffset()) {
+                    ControlFlowPattern p = new ControlFlowPattern(
+                            PatternType.DO_WHILE);
+                    p.conditionBlock = block;
+                    p.trueBlock = loopBody;
+                    return p;
+                }
                 ControlFlowPattern p = new ControlFlowPattern(
                         PatternType.WHILE_LOOP);
                 p.conditionBlock = block;
