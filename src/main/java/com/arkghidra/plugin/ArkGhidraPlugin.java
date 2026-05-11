@@ -406,12 +406,14 @@ public class ArkGhidraPlugin extends ProgramPlugin {
 
         for (AbcClass cls : abcFile.getClasses()) {
             String clsName = AbcStructureProvider.formatClassName(cls.getName());
-            allItems.add(clsName);
+            // Determine class type badge
+            String badge = getClassTypeBadge(cls);
+            allItems.add(badge + clsName);
             itemData.add(new Object[]{"class", cls, null});
             for (AbcMethod method : cls.getMethods()) {
                 String prefix = AbcStructureProvider.formatMethodPrefix(method);
                 String suffix = buildQuickOpenMethodSuffix(method, abcFile);
-                allItems.add(clsName + "." + prefix + method.getName() + suffix);
+                allItems.add(badge + clsName + "." + prefix + method.getName() + suffix);
                 itemData.add(new Object[]{"method", method, cls});
             }
         }
@@ -528,6 +530,42 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         });
 
         dialog.setVisible(true);
+    }
+
+    /**
+     * Returns a type badge prefix for a class in Quick Open:
+     * [A] Ability, [P] Page (has build()), [N] Native (all abstract), [C] regular class.
+     */
+    private String getClassTypeBadge(AbcClass cls) {
+        // Check if it's a native/abstract class (all methods have no code)
+        if (!cls.getMethods().isEmpty()) {
+            boolean allNative = true;
+            for (AbcMethod m : cls.getMethods()) {
+                if (m.getCodeOff() != 0) {
+                    allNative = false;
+                    break;
+                }
+            }
+            if (allNative) {
+                return "[N] ";
+            }
+        }
+        // Check if it's a Page (has build() method)
+        for (AbcMethod m : cls.getMethods()) {
+            if ("build".equals(m.getName())) {
+                return "[P] ";
+            }
+        }
+        // Check if it's an Ability (has lifecycle methods)
+        java.util.Set<String> lifecycleMethods = new java.util.HashSet<>(
+                java.util.Arrays.asList("onCreate", "onDestroy", "onWindowStageCreate",
+                        "onForeground", "onBackground", "onBackup", "onRestore"));
+        for (AbcMethod m : cls.getMethods()) {
+            if (lifecycleMethods.contains(m.getName())) {
+                return "[A] ";
+            }
+        }
+        return "[C] ";
     }
 
     private String buildQuickOpenMethodSuffix(AbcMethod method, AbcFile abcFile) {
