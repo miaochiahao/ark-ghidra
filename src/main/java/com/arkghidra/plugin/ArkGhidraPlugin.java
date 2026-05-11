@@ -3,13 +3,21 @@ package com.arkghidra.plugin;
 import ghidra.app.services.ProgramManager;
 import ghidra.framework.plugintool.Plugin;
 import ghidra.framework.plugintool.PluginTool;
+import ghidra.program.model.listing.Program;
 import ghidra.util.Msg;
+
+import com.arkghidra.decompile.ArkTSDecompiler;
+import com.arkghidra.format.AbcCode;
+import com.arkghidra.format.AbcFile;
+import com.arkghidra.format.AbcMethod;
 
 /**
  * Main Ghidra plugin for ArkTS decompilation support.
  *
  * <p>Registers menu actions for decompiling Ark Bytecode methods to ArkTS
- * and for viewing the ABC file structure (classes, methods, fields).</p>
+ * and for viewing the ABC file structure (classes, methods, fields).
+ * Double-clicking a method node in the ABC Structure tree automatically
+ * decompiles and displays the method without requiring a menu action.</p>
  */
 public class ArkGhidraPlugin extends Plugin {
 
@@ -29,8 +37,36 @@ public class ArkGhidraPlugin extends Plugin {
     private void createProviders(PluginTool tool) {
         abcStructureProvider = new AbcStructureProvider(tool, PLUGIN_NAME);
         outputProvider = new ArkTSOutputProvider(tool, PLUGIN_NAME);
+        abcStructureProvider.setNavigationListener(this::onMethodDoubleClicked);
         tool.addComponentProvider(abcStructureProvider, false);
         tool.addComponentProvider(outputProvider, false);
+    }
+
+    private void onMethodDoubleClicked(AbcMethod method) {
+        Program program = getCurrentProgram();
+        if (program == null) {
+            outputProvider.showMessage("No program is open.");
+            return;
+        }
+        try {
+            byte[] abcData = DecompileToArkTSAction.readAbcData(program);
+            if (abcData == null) {
+                outputProvider.showMessage(
+                        "// Could not read ABC data from program memory");
+                return;
+            }
+            AbcFile abcFile = AbcFile.parse(abcData);
+            AbcCode code = abcFile.getCodeForMethod(method);
+            ArkTSDecompiler decompiler = new ArkTSDecompiler();
+            String result = decompiler.decompileMethod(method, code, abcFile);
+            outputProvider.showDecompiledCode(method.getName(), result);
+            tool.showComponentProvider(outputProvider, true);
+            Msg.info(OWNER, "Decompiled method via tree: " + method.getName());
+        } catch (Exception e) {
+            Msg.error(OWNER, "Decompilation failed for " + method.getName(), e);
+            outputProvider.showMessage(
+                    "// Decompilation failed: " + e.getMessage());
+        }
     }
 
     private void registerActions(PluginTool tool) {
@@ -43,7 +79,7 @@ public class ArkGhidraPlugin extends Plugin {
      *
      * @return the current program, or null if no program is open
      */
-    ghidra.program.model.listing.Program getCurrentProgram() {
+    Program getCurrentProgram() {
         ProgramManager pm = getTool().getService(ProgramManager.class);
         if (pm != null) {
             return pm.getCurrentProgram();
@@ -71,14 +107,15 @@ public class ArkGhidraPlugin extends Plugin {
 
     @Override
     public void cleanup() {
-        PluginTool tool = getTool();
-        if (tool != null) {
+        PluginTool pluginTool = getTool();
+        if (pluginTool != null) {
             if (abcStructureProvider != null) {
-                tool.removeComponentProvider(abcStructureProvider);
+                pluginTool.removeComponentProvider(abcStructureProvider);
             }
             if (outputProvider != null) {
-                tool.removeComponentProvider(outputProvider);
+                pluginTool.removeComponentProvider(outputProvider);
             }
         }
     }
 }
+

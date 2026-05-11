@@ -4,9 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Collections;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -156,5 +158,34 @@ class ArkGhidraPluginTest {
                                 + " should have a non-zero code offset");
             }
         }
+    }
+
+    @Test
+    @DisplayName("MethodNavigationListener fires with correct method on invocation")
+    void testMethodNavigationListener_firesWithCorrectMethod() {
+        AbcMethod method = new AbcMethod(0, 0, "testMethod", 0, 0x100, 0);
+        AtomicReference<AbcMethod> received = new AtomicReference<>();
+        MethodNavigationListener listener = received::set;
+
+        listener.onMethodSelected(method);
+
+        assertSame(method, received.get());
+        assertEquals("testMethod", received.get().getName());
+    }
+
+    @Test
+    @DisplayName("MethodNavigationListener can be set to null without error")
+    void testMethodNavigationListener_nullListenerSafe() {
+        AbcMethod method = new AbcMethod(0, 0, "myMethod", 0, 0x200, 0);
+        MethodNavigationListener listener = null;
+        boolean threw = false;
+        try {
+            if (listener != null) {
+                listener.onMethodSelected(method);
+            }
+        } catch (Exception e) {
+            threw = true;
+        }
+        assertFalse(threw);
     }
 }

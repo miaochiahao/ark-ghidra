@@ -2,6 +2,8 @@ package com.arkghidra.plugin;
 
 import java.awt.BorderLayout;
 import java.awt.Font;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 
 import javax.swing.JComponent;
 import javax.swing.JPanel;
@@ -9,6 +11,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JTree;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
+import javax.swing.tree.TreePath;
 
 import docking.ComponentProvider;
 import docking.Tool;
@@ -40,6 +43,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private final DefaultTreeModel treeModel;
     private final DefaultMutableTreeNode rootNode;
     private AbcFile currentAbcFile;
+    private MethodNavigationListener navigationListener;
 
     public AbcStructureProvider(Tool tool, String owner) {
         super(tool, "ABC Structure", owner);
@@ -49,6 +53,14 @@ public class AbcStructureProvider extends ComponentProvider {
         structureTree.setRootVisible(true);
         structureTree.setShowsRootHandles(true);
         structureTree.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        structureTree.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() == 2) {
+                    handleDoubleClick();
+                }
+            }
+        });
 
         JScrollPane scrollPane = new JScrollPane(structureTree);
 
@@ -57,6 +69,31 @@ public class AbcStructureProvider extends ComponentProvider {
 
         setDefaultWindowPosition(docking.WindowPosition.LEFT);
         setTitle("ABC Structure");
+    }
+
+    /**
+     * Sets the listener to be notified when the user double-clicks a method node.
+     *
+     * @param listener the navigation listener, or null to remove
+     */
+    public void setNavigationListener(MethodNavigationListener listener) {
+        this.navigationListener = listener;
+    }
+
+    private void handleDoubleClick() {
+        if (navigationListener == null) {
+            return;
+        }
+        TreePath path = structureTree.getSelectionPath();
+        if (path == null) {
+            return;
+        }
+        DefaultMutableTreeNode node =
+                (DefaultMutableTreeNode) path.getLastPathComponent();
+        Object userObj = node.getUserObject();
+        if (userObj instanceof AbcMethod) {
+            navigationListener.onMethodSelected((AbcMethod) userObj);
+        }
     }
 
     @Override
@@ -123,10 +160,14 @@ public class AbcStructureProvider extends ComponentProvider {
             classNode.add(methodsNode);
 
             for (AbcMethod method : cls.getMethods()) {
-                String methodLabel = method.getName()
-                        + formatMethodSuffix(method);
                 DefaultMutableTreeNode methodNode =
-                        new DefaultMutableTreeNode(methodLabel);
+                        new DefaultMutableTreeNode(method) {
+                            @Override
+                            public String toString() {
+                                AbcMethod m = (AbcMethod) getUserObject();
+                                return m.getName() + formatMethodSuffix(m);
+                            }
+                        };
                 methodsNode.add(methodNode);
             }
 
