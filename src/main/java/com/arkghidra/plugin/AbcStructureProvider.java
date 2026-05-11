@@ -277,7 +277,7 @@ public class AbcStructureProvider extends ComponentProvider {
         modifierFilterPanel.add(refreshButton);
 
         JPanel classTypePanel = new JPanel();
-        String[] classTypes = {"All", "Abilities", "Pages", "Classes"};
+        String[] classTypes = {"All", "Abilities", "Pages", "Native", "Classes"};
         ButtonGroup classTypeGroup = new ButtonGroup();
         for (String type : classTypes) {
             JRadioButton btn = new JRadioButton(type);
@@ -1003,12 +1003,18 @@ public class AbcStructureProvider extends ComponentProvider {
         boolean showAbilities = "All".equals(classTypeFilter) || "Abilities".equals(classTypeFilter);
         boolean showPages = "All".equals(classTypeFilter) || "Pages".equals(classTypeFilter);
         boolean showClasses = "All".equals(classTypeFilter) || "Classes".equals(classTypeFilter);
-        boolean showNative = "All".equals(classTypeFilter) || "Classes".equals(classTypeFilter);
+        boolean showNative = "All".equals(classTypeFilter) || "Classes".equals(classTypeFilter)
+                || "Native".equals(classTypeFilter);
+        // When "Native" is selected, don't show the regular Classes section
+        if ("Native".equals(classTypeFilter)) {
+            showClasses = false;
+        }
 
         // Abilities section from HapMetadata
         if (showAbilities && currentHapMetadata != null && !currentHapMetadata.getAbilities().isEmpty()) {
+            int abilityCount = currentHapMetadata.getAbilities().size();
             DefaultMutableTreeNode abilitiesNode =
-                    new DefaultMutableTreeNode("Abilities");
+                    new DefaultMutableTreeNode("Abilities (" + abilityCount + ")");
             rootNode.add(abilitiesNode);
             for (HapMetadata.AbilityInfo ability : currentHapMetadata.getAbilities()) {
                 String abilityLabel = ability.getName();
@@ -1071,7 +1077,7 @@ public class AbcStructureProvider extends ComponentProvider {
         }
         if (showPages && !pageClasses.isEmpty()) {
             DefaultMutableTreeNode pagesNode =
-                    new DefaultMutableTreeNode("Pages");
+                    new DefaultMutableTreeNode("Pages (" + pageClasses.size() + ")");
             rootNode.add(pagesNode);
             for (AbcClass pageCls : pageClasses) {
                 String pageLabel = formatClassName(pageCls.getName());
@@ -1091,8 +1097,22 @@ public class AbcStructureProvider extends ComponentProvider {
             }
         }
 
+        // Count non-native classes for the header
+        long regularClassCount = currentAbcFile.getClasses().stream()
+                .filter(c -> {
+                    if (c.getMethods().isEmpty()) {
+                        return true;
+                    }
+                    for (AbcMethod m : c.getMethods()) {
+                        if (m.getCodeOff() != 0) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }).count();
+
         DefaultMutableTreeNode classesNode =
-                new DefaultMutableTreeNode("Classes");
+                new DefaultMutableTreeNode("Classes (" + regularClassCount + ")");
         if (showClasses) {
             rootNode.add(classesNode);
         }
