@@ -486,12 +486,14 @@ public class ArkTSDecompiler {
                     simplifyIncrementDecrement(
                             eliminateDeadPropertyLoads(
                                     removeUnusedVariables(
+                                    removeAlwaysFalseConditions(
+                                    removeUnreachableCode(
                                     convertIfElseChainToSwitch(
                                             simplifyReturnIfTernary(
                                                     detectSwitchExpressions(
                                                             mergeNestedIfConditions(
                                                                     ExpressionVisitor.inlineSingleUseVariables(
-                                                                            applyConstOptimization(stmts))))))))));
+                                                                            applyConstOptimization(stmts))))))))))));
         } catch (Exception e) {
             ctx.warnings.add("Statement generation failed: "
                     + e.getMessage());
