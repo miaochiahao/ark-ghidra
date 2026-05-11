@@ -5,20 +5,30 @@ import java.awt.Color;
 import java.awt.Font;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
+import java.awt.event.ActionEvent;
+import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.util.List;
 
+import javax.swing.AbstractAction;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JTextField;
 import javax.swing.JTextPane;
 import javax.swing.JToolBar;
+import javax.swing.KeyStroke;
 import javax.swing.text.BadLocationException;
+import javax.swing.text.DefaultHighlighter;
+import javax.swing.text.Highlighter;
 import javax.swing.text.SimpleAttributeSet;
 import javax.swing.text.StyleConstants;
 import javax.swing.text.StyledDocument;
@@ -38,6 +48,12 @@ import ghidra.util.Msg;
  * results, along with toolbar actions for copying to clipboard and
  * saving to file. ArkTS keywords, types, strings, comments,
  * decorators, and numbers are each rendered in a distinct color.</p>
+ *
+ * <p>Interactive features:</p>
+ * <ul>
+ *   <li>Click a symbol to highlight all occurrences in the current view.</li>
+ *   <li>Ctrl+F opens an inline search bar; Escape closes it.</li>
+ * </ul>
  */
 public class ArkTSOutputProvider extends ComponentProvider {
 
@@ -54,19 +70,38 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private static final Color COLOR_MODIFIER = new Color(0x0000CC);
     private static final Color COLOR_PLAIN = Color.BLACK;
 
+    // Highlight colors
+    private static final Color COLOR_SYMBOL_HIGHLIGHT = new Color(0xFFE082);
+    private static final Color COLOR_SEARCH_HIGHLIGHT = new Color(0xA5D6A7);
+    private static final Color COLOR_SEARCH_CURRENT = new Color(0xFF8A65);
+
     private final JPanel mainPanel;
     private final JTextPane codePane;
     private final JLabel headerLabel;
     private final ArkTSColorizer colorizer;
+    private final SymbolHighlighter symbolHighlighter;
+
+    // Search bar components
+    private final JPanel searchPanel;
+    private JTextField searchField;
+    private JLabel searchStatusLabel;
+
+    // Highlight state
+    private String currentHighlightedWord = "";
+    private List<Integer> searchMatchPositions = java.util.Collections.emptyList();
+    private int searchMatchIndex = -1;
 
     public ArkTSOutputProvider(Tool tool, String owner) {
         super(tool, "ArkTS Output", owner);
 
         colorizer = new ArkTSColorizer();
+        symbolHighlighter = new SymbolHighlighter();
 
         codePane = new JTextPane();
         codePane.setEditable(false);
         codePane.setFont(new Font("Monospaced", Font.PLAIN, 13));
+        installClickToHighlight();
+        installCtrlFBinding();
 
         JScrollPane scrollPane = new JScrollPane(codePane);
 
@@ -76,9 +111,16 @@ public class ArkTSOutputProvider extends ComponentProvider {
         toolBar.setFloatable(false);
         addToolbarButtons(toolBar);
 
+        searchPanel = buildSearchPanel();
+        searchPanel.setVisible(false);
+
+        JPanel centerPanel = new JPanel(new BorderLayout());
+        centerPanel.add(scrollPane, BorderLayout.CENTER);
+        centerPanel.add(searchPanel, BorderLayout.SOUTH);
+
         mainPanel = new JPanel(new BorderLayout());
         mainPanel.add(headerLabel, BorderLayout.NORTH);
-        mainPanel.add(scrollPane, BorderLayout.CENTER);
+        mainPanel.add(centerPanel, BorderLayout.CENTER);
         mainPanel.add(toolBar, BorderLayout.SOUTH);
 
         setDefaultWindowPosition(docking.WindowPosition.BOTTOM);
@@ -101,6 +143,9 @@ public class ArkTSOutputProvider extends ComponentProvider {
      */
     public void showDecompiledCode(String functionName, String code) {
         headerLabel.setText("Decompiled: " + functionName);
+        currentHighlightedWord = "";
+        searchMatchPositions = java.util.Collections.emptyList();
+        searchMatchIndex = -1;
         renderHighlightedCode(code);
     }
 
@@ -122,6 +167,266 @@ public class ArkTSOutputProvider extends ComponentProvider {
     public String getCodeText() {
         return codePane.getText();
     }
+
+    /**
+     * Gets the word currently highlighted by click-to-highlight.
+     *
+     * @return the highlighted word, or empty string if none
+     */
+    public String getCurrentHighlightedWord() {
+        return currentHighlightedWord;
+    }
+
+    // --- Click-to-highlight ---
+
+    private void installClickToHighlight() {
+        codePane.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (e.getButton() == MouseEvent.BUTTON1) {
+                    handleSymbolClick(e);
+                }
+            }
+        });
+    }
+
+    private void handleSymbolClick(MouseEvent e) {
+        int offset = codePane.viewToModel2D(e.getPoint());
+        String text = codePane.getText();
+        String word = symbolHighlighter.extractWordAt(text, offset);
+
+        if (word.isEmpty()) {
+            clearSymbolHighlights();
+            currentHighlightedWord = "";
+            return;
+        }
+        if (word.equals(currentHighlightedWord)) {
+            clearSymbolHighlights();
+            currentHighlightedWord = "";
+            return;
+        }
+
+        currentHighlightedWord = word;
+        applySymbolHighlights(text, word);
+    }
+
+    private void applySymbolHighlights(String text, String word) {
+        Highlighter highlighter = codePane.getHighlighter();
+        highlighter.removeAllHighlights();
+        List<Integer> positions =
+                symbolHighlighter.findAllOccurrences(text, word);
+        Highlighter.HighlightPainter painter =
+                new DefaultHighlighter.DefaultHighlightPainter(
+                        COLOR_SYMBOL_HIGHLIGHT);
+        for (int pos : positions) {
+            try {
+                highlighter.addHighlight(pos, pos + word.length(), painter);
+            } catch (BadLocationException ex) {
+                Msg.warn(OWNER, "Highlight error: " + ex.getMessage());
+            }
+        }
+    }
+
+    private void clearSymbolHighlights() {
+        codePane.getHighlighter().removeAllHighlights();
+    }
+
+    // --- Ctrl+F search bar ---
+
+    private void installCtrlFBinding() {
+        KeyStroke ctrlF = KeyStroke.getKeyStroke(
+                KeyEvent.VK_F, Toolkit.getDefaultToolkit()
+                        .getMenuShortcutKeyMaskEx());
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(ctrlF, "openSearch");
+        codePane.getActionMap().put("openSearch", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                openSearchBar();
+            }
+        });
+    }
+
+    private JPanel buildSearchPanel() {
+        JPanel panel = new JPanel(new BorderLayout(4, 0));
+        panel.setBorder(
+                javax.swing.BorderFactory.createEmptyBorder(2, 4, 2, 4));
+
+        searchField = new JTextField(20);
+        searchStatusLabel = new JLabel("  ");
+
+        JButton prevButton = new JButton("\u25B2");
+        prevButton.setToolTipText("Previous match");
+        prevButton.addActionListener(e -> navigateSearch(-1));
+
+        JButton nextButton = new JButton("\u25BC");
+        nextButton.setToolTipText("Next match");
+        nextButton.addActionListener(e -> navigateSearch(1));
+
+        JButton closeButton = new JButton("\u00D7");
+        closeButton.setToolTipText("Close search (Esc)");
+        closeButton.addActionListener(e -> closeSearchBar());
+
+        searchField.addActionListener(e -> navigateSearch(1));
+        searchField.getDocument().addDocumentListener(
+                new javax.swing.event.DocumentListener() {
+                    @Override
+                    public void insertUpdate(
+                            javax.swing.event.DocumentEvent e) {
+                        runSearch();
+                    }
+
+                    @Override
+                    public void removeUpdate(
+                            javax.swing.event.DocumentEvent e) {
+                        runSearch();
+                    }
+
+                    @Override
+                    public void changedUpdate(
+                            javax.swing.event.DocumentEvent e) {
+                        runSearch();
+                    }
+                });
+
+        KeyStroke escape = KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0);
+        searchField.getInputMap().put(escape, "closeSearch");
+        searchField.getActionMap().put("closeSearch", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                closeSearchBar();
+            }
+        });
+
+        JPanel buttons = new JPanel();
+        buttons.add(prevButton);
+        buttons.add(nextButton);
+        buttons.add(searchStatusLabel);
+        buttons.add(closeButton);
+
+        panel.add(new JLabel("Find: "), BorderLayout.WEST);
+        panel.add(searchField, BorderLayout.CENTER);
+        panel.add(buttons, BorderLayout.EAST);
+
+        return panel;
+    }
+
+    private void openSearchBar() {
+        searchPanel.setVisible(true);
+        searchField.requestFocusInWindow();
+        searchField.selectAll();
+        mainPanel.revalidate();
+    }
+
+    private void closeSearchBar() {
+        searchPanel.setVisible(false);
+        clearSearchHighlights();
+        searchMatchPositions = java.util.Collections.emptyList();
+        searchMatchIndex = -1;
+        codePane.requestFocusInWindow();
+        mainPanel.revalidate();
+    }
+
+    private void runSearch() {
+        clearSearchHighlights();
+        String query = searchField.getText();
+        if (query.isEmpty()) {
+            searchStatusLabel.setText("  ");
+            searchMatchPositions = java.util.Collections.emptyList();
+            searchMatchIndex = -1;
+            return;
+        }
+        String text = codePane.getText();
+        searchMatchPositions = findAllSubstrings(text, query);
+        searchMatchIndex = searchMatchPositions.isEmpty() ? -1 : 0;
+        applySearchHighlights(query);
+        updateSearchStatus();
+        scrollToCurrentMatch(query);
+    }
+
+    private void navigateSearch(int direction) {
+        if (searchMatchPositions.isEmpty()) {
+            return;
+        }
+        searchMatchIndex =
+                (searchMatchIndex + direction + searchMatchPositions.size())
+                        % searchMatchPositions.size();
+        String query = searchField.getText();
+        applySearchHighlights(query);
+        updateSearchStatus();
+        scrollToCurrentMatch(query);
+    }
+
+    private void applySearchHighlights(String query) {
+        Highlighter highlighter = codePane.getHighlighter();
+        highlighter.removeAllHighlights();
+        Highlighter.HighlightPainter normalPainter =
+                new DefaultHighlighter.DefaultHighlightPainter(
+                        COLOR_SEARCH_HIGHLIGHT);
+        Highlighter.HighlightPainter currentPainter =
+                new DefaultHighlighter.DefaultHighlightPainter(
+                        COLOR_SEARCH_CURRENT);
+        for (int i = 0; i < searchMatchPositions.size(); i++) {
+            int pos = searchMatchPositions.get(i);
+            Highlighter.HighlightPainter painter =
+                    (i == searchMatchIndex) ? currentPainter : normalPainter;
+            try {
+                highlighter.addHighlight(
+                        pos, pos + query.length(), painter);
+            } catch (BadLocationException ex) {
+                Msg.warn(OWNER, "Search highlight error: " + ex.getMessage());
+            }
+        }
+    }
+
+    private void scrollToCurrentMatch(String query) {
+        if (searchMatchIndex < 0
+                || searchMatchIndex >= searchMatchPositions.size()) {
+            return;
+        }
+        int pos = searchMatchPositions.get(searchMatchIndex);
+        codePane.setCaretPosition(pos);
+        try {
+            codePane.scrollRectToVisible(
+                    codePane.modelToView2D(pos).getBounds());
+        } catch (BadLocationException ex) {
+            Msg.warn(OWNER, "Scroll error: " + ex.getMessage());
+        }
+    }
+
+    private void updateSearchStatus() {
+        if (searchMatchPositions.isEmpty()) {
+            searchStatusLabel.setText(" No matches");
+        } else {
+            searchStatusLabel.setText(
+                    " " + (searchMatchIndex + 1)
+                            + "/" + searchMatchPositions.size());
+        }
+    }
+
+    private void clearSearchHighlights() {
+        codePane.getHighlighter().removeAllHighlights();
+    }
+
+    static List<Integer> findAllSubstrings(String text, String query) {
+        if (text == null || query == null || query.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+        List<Integer> positions = new java.util.ArrayList<>();
+        String lowerText = text.toLowerCase();
+        String lowerQuery = query.toLowerCase();
+        int fromIndex = 0;
+        while (fromIndex <= text.length() - query.length()) {
+            int idx = lowerText.indexOf(lowerQuery, fromIndex);
+            if (idx < 0) {
+                break;
+            }
+            positions.add(idx);
+            fromIndex = idx + 1;
+        }
+        return positions;
+    }
+
+    // --- Toolbar ---
 
     private void addToolbarButtons(JToolBar toolBar) {
         JButton copyButton = new JButton("Copy");
@@ -167,6 +472,8 @@ public class ArkTSOutputProvider extends ComponentProvider {
         addLocalAction(saveAction);
     }
 
+    // --- Rendering ---
+
     private void renderHighlightedCode(String code) {
         StyledDocument doc = codePane.getStyledDocument();
         try {
@@ -181,12 +488,10 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 allLines = colorizer.colorizeSource(code);
 
         SimpleAttributeSet plainStyle = createStyle(COLOR_PLAIN, false);
-        SimpleAttributeSet keywordStyle = createStyle(
-                COLOR_KEYWORD, true);
+        SimpleAttributeSet keywordStyle = createStyle(COLOR_KEYWORD, true);
         SimpleAttributeSet typeStyle = createStyle(COLOR_TYPE, true);
         SimpleAttributeSet stringStyle = createStyle(COLOR_STRING, false);
-        SimpleAttributeSet commentStyle = createStyle(
-                COLOR_COMMENT, false);
+        SimpleAttributeSet commentStyle = createStyle(COLOR_COMMENT, false);
         SimpleAttributeSet decoratorStyle = createStyle(
                 COLOR_DECORATOR, true);
         SimpleAttributeSet numberStyle = createStyle(COLOR_NUMBER, false);
@@ -214,8 +519,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
             }
             if (i < allLines.size() - 1) {
                 try {
-                    doc.insertString(doc.getLength(), "\n",
-                            plainStyle);
+                    doc.insertString(doc.getLength(), "\n", plainStyle);
                 } catch (BadLocationException e) {
                     Msg.warn(OWNER,
                             "Failed to insert newline: "
@@ -257,8 +561,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
         }
     }
 
-    private static SimpleAttributeSet createStyle(Color color,
-            boolean bold) {
+    private static SimpleAttributeSet createStyle(Color color, boolean bold) {
         SimpleAttributeSet style = new SimpleAttributeSet();
         StyleConstants.setForeground(style, color);
         StyleConstants.setBold(style, bold);
@@ -266,6 +569,8 @@ public class ArkTSOutputProvider extends ComponentProvider {
         StyleConstants.setFontSize(style, 13);
         return style;
     }
+
+    // --- Clipboard / File ---
 
     private void copyToClipboard() {
         String text = codePane.getText();
@@ -304,5 +609,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private void clearOutput() {
         codePane.setText("");
         headerLabel.setText("No decompiled code");
+        currentHighlightedWord = "";
+        closeSearchBar();
     }
 }
