@@ -1470,6 +1470,21 @@ class InstructionHandler {
         }
         ArkTSExpression callee = resolveCallee(accValue, ctx);
 
+        // STA preserves accValue, so the accumulator may hold a literal
+        // (e.g., the last stored argument) instead of the class reference.
+        // The first register in the range often holds the class reference.
+        // If accValue is a literal but firstReg has a class-like expression,
+        // use the register expression as callee and shift args.
+        if (isLikelyLiteral(callee) && numArgs > 0) {
+            ArkTSExpression firstArgExpr =
+                    ctx.getRegisterExpression(firstReg);
+            if (firstArgExpr != null
+                    && !isLikelyLiteral(firstArgExpr)) {
+                callee = firstArgExpr;
+                args.remove(0);
+            }
+        }
+
         // Detect built-in class construction (Map, Set, Promise, etc.)
         if (callee instanceof ArkTSExpression.VariableExpression) {
             String name =
@@ -1521,6 +1536,23 @@ class InstructionHandler {
             }
         }
         return accValue;
+    }
+
+    private static boolean isLikelyLiteral(ArkTSExpression expr) {
+        if (expr instanceof ArkTSExpression.LiteralExpression) {
+            return true;
+        }
+        if (expr instanceof ArkTSExpression.VariableExpression) {
+            String name =
+                    ((ArkTSExpression.VariableExpression) expr).getName();
+            return "undefined".equals(name)
+                    || "null".equals(name)
+                    || "true".equals(name)
+                    || "false".equals(name)
+                    || "NaN".equals(name)
+                    || "Infinity".equals(name);
+        }
+        return false;
     }
 
     private static StatementResult handleDefineByName(int opcode,
