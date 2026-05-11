@@ -725,7 +725,26 @@ public class ArkTSOutputProvider extends ComponentProvider {
         }
         menu.add(searchAllItem);
 
+        menu.addSeparator();
+
+        JMenuItem copyMarkdownItem = new JMenuItem("Copy as Markdown");
+        copyMarkdownItem.addActionListener(e -> copyAsMarkdown());
+        menu.add(copyMarkdownItem);
+
         return menu;
+    }
+
+    private void copyAsMarkdown() {
+        String selected = codePane.getSelectedText();
+        String code = (selected != null && !selected.isEmpty())
+                ? selected : codePane.getText();
+        if (code == null || code.isEmpty()) {
+            return;
+        }
+        String markdown = "```typescript\n" + code + "\n```";
+        Toolkit.getDefaultToolkit().getSystemClipboard()
+                .setContents(new StringSelection(markdown), null);
+        Msg.info(OWNER, "Copied code as Markdown");
     }
 
     private void addCommentAtOffset(int offset) {

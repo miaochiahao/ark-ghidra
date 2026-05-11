@@ -916,9 +916,23 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             AbcFile abcFile = AbcFile.parse(abcData);
             abcStructureProvider.setAbcFile(abcFile);
             tool.showComponentProvider(abcStructureProvider, true);
-            // Load HAP metadata
             showAbcStats(abcFile);
             Msg.info(OWNER, "Auto-loaded HAP structure for: " + program.getName());
+
+            // Auto-decompile the first non-trivial class (largest by method count)
+            AbcClass firstClass = null;
+            int maxMethods = 0;
+            for (AbcClass cls : abcFile.getClasses()) {
+                int methodCount = (int) cls.getMethods().stream()
+                        .filter(m -> m.getCodeOff() != 0).count();
+                if (methodCount > maxMethods) {
+                    maxMethods = methodCount;
+                    firstClass = cls;
+                }
+            }
+            if (firstClass != null && maxMethods > 0) {
+                onClassClicked(firstClass);
+            }
         } catch (Exception e) {
             Msg.warn(OWNER, "Auto-load HAP structure failed: " + e.getMessage());
         }
