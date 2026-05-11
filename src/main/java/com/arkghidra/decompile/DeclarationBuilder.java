@@ -1035,6 +1035,15 @@ class DeclarationBuilder {
         }
         if (name != null && name.startsWith("#~@")
                 && isAccessorPrefix(name)) {
+            // Cross-check with actual numArgs: a getter must have
+            // 0 declared params. Static factory methods with params
+            // may have incorrect proto shorty (size 1 = return only)
+            // causing false getter classification.
+            AbcCode code = abcFile != null
+                    ? abcFile.getCodeForMethod(method) : null;
+            if (code != null && code.getNumArgs() > 0) {
+                return false;
+            }
             AbcProto proto = decompiler.resolveProto(method, abcFile);
             if (proto == null) {
                 return false;
