@@ -71,7 +71,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private static final String OWNER =
             AbcStructureProvider.class.getSimpleName();
 
-    private static final String FILTER_PLACEHOLDER = "Filter classes and methods...";
+    private static final String FILTER_PLACEHOLDER = "Filter... (args:N, size:>N)";
 
     private final JPanel mainPanel;
     private final JTree structureTree;
@@ -873,6 +873,48 @@ public class AbcStructureProvider extends ComponentProvider {
         }
     }
 
+    private boolean passesArgFilter(AbcMethod method, String filter) {
+        if (!filter.startsWith("args:") && !filter.startsWith("size:")) {
+            return true;
+        }
+        if (currentAbcFile == null) {
+            return true;
+        }
+        if (filter.startsWith("args:")) {
+            String spec = filter.substring(5).trim();
+            try {
+                AbcCode code = currentAbcFile.getCodeForMethod(method);
+                long numArgs = code != null ? code.getNumArgs() : 0;
+                if (spec.startsWith(">")) {
+                    return numArgs > Long.parseLong(spec.substring(1).trim());
+                } else if (spec.startsWith("<")) {
+                    return numArgs < Long.parseLong(spec.substring(1).trim());
+                } else {
+                    return numArgs == Long.parseLong(spec);
+                }
+            } catch (Exception e) {
+                return true;
+            }
+        }
+        if (filter.startsWith("size:")) {
+            String spec = filter.substring(5).trim();
+            try {
+                AbcCode code = currentAbcFile.getCodeForMethod(method);
+                long size = code != null ? code.getCodeSize() : 0;
+                if (spec.startsWith(">")) {
+                    return size > Long.parseLong(spec.substring(1).trim());
+                } else if (spec.startsWith("<")) {
+                    return size < Long.parseLong(spec.substring(1).trim());
+                } else {
+                    return size == Long.parseLong(spec);
+                }
+            } catch (Exception e) {
+                return true;
+            }
+        }
+        return true;
+    }
+
     private AbcClass findClassForAbility(String abilityName) {
         if (currentAbcFile == null || abilityName == null) {
             return null;
@@ -904,6 +946,9 @@ public class AbcStructureProvider extends ComponentProvider {
         if (FILTER_PLACEHOLDER.equals(filter)) {
             filter = "";
         }
+        // Check for special filter syntax
+        boolean isSpecialFilter = filter.startsWith("args:") || filter.startsWith("size:");
+        String textFilter = isSpecialFilter ? "" : filter;
 
         // Root node: show HAP name if available
         String rootLabel = currentHapName.isEmpty()
@@ -1053,26 +1098,28 @@ public class AbcStructureProvider extends ComponentProvider {
         if (showClasses) {
             for (AbcClass cls : currentAbcFile.getClasses()) {
                 String className = formatClassName(cls.getName());
-                boolean classNameMatches = matchesFilter(className, filter);
-    
+                boolean classNameMatches = matchesFilter(className, textFilter);
+
                 boolean anyMethodMatches = false;
-                if (!classNameMatches && !filter.isEmpty()) {
+                if (!classNameMatches && (!textFilter.isEmpty() || isSpecialFilter)) {
                     for (AbcMethod method : cls.getMethods()) {
-                        if (matchesFilter(method.getName(), filter) && passesModifierFilter(method)
-                                && passesMinSizeFilter(method)) {
+                        if (matchesFilter(method.getName(), textFilter) && passesModifierFilter(method)
+                                && passesMinSizeFilter(method)
+                                && (!isSpecialFilter || passesArgFilter(method, filter))) {
                             anyMethodMatches = true;
                             break;
                         }
                     }
                 }
-    
-                if (!filter.isEmpty() && !classNameMatches && !anyMethodMatches) {
+
+                if ((!textFilter.isEmpty() || isSpecialFilter) && !classNameMatches && !anyMethodMatches) {
                     continue;
                 }
     
                 boolean anyMethodPassesModifier = false;
                 for (AbcMethod method : cls.getMethods()) {
-                    if (passesModifierFilter(method) && passesMinSizeFilter(method)) {
+                    if (passesModifierFilter(method) && passesMinSizeFilter(method)
+                            && (!isSpecialFilter || passesArgFilter(method, filter))) {
                         anyMethodPassesModifier = true;
                         break;
                     }
@@ -1116,14 +1163,17 @@ public class AbcStructureProvider extends ComponentProvider {
                 }
     
                 for (AbcMethod method : methodList) {
-                    if (!filter.isEmpty() && !classNameMatches
-                            && !matchesFilter(method.getName(), filter)) {
+                    if (!textFilter.isEmpty() && !classNameMatches
+                            && !matchesFilter(method.getName(), textFilter)) {
                         continue;
                     }
                     if (!passesModifierFilter(method)) {
                         continue;
                     }
                     if (!passesMinSizeFilter(method)) {
+                        continue;
+                    }
+                    if (isSpecialFilter && !passesArgFilter(method, filter)) {
                         continue;
                     }
                     DefaultMutableTreeNode methodNode =
@@ -1171,17 +1221,20 @@ public class AbcStructureProvider extends ComponentProvider {
             }
             return;
         }
+        boolean isSpecialFilter = filter.startsWith("args:") || filter.startsWith("size:");
+        String textFilter = isSpecialFilter ? "" : filter;
         int classCount = 0;
         int methodCount = 0;
         if (currentAbcFile != null) {
             for (AbcClass cls : currentAbcFile.getClasses()) {
                 String className = formatClassName(cls.getName());
-                boolean classMatches = matchesFilter(className, filter);
-                if (classMatches) {
+                boolean classMatches = matchesFilter(className, textFilter);
+                if (classMatches && !isSpecialFilter) {
                     classCount++;
                 }
                 for (AbcMethod method : cls.getMethods()) {
-                    if (matchesFilter(method.getName(), filter)) {
+                    if (matchesFilter(method.getName(), textFilter)
+                            && (!isSpecialFilter || passesArgFilter(method, filter))) {
                         methodCount++;
                     }
                 }

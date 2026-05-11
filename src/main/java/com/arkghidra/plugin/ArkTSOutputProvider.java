@@ -196,6 +196,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private Runnable showSettingsCallback;
     private Runnable prevClassCallback;
     private Runnable nextClassCallback;
+    private Runnable showShortcutsCallback;
 
     private String lastClassName = "";
 
@@ -1346,7 +1347,13 @@ public class ArkTSOutputProvider extends ComponentProvider {
         toolBar.addSeparator();
         JButton helpButton = new JButton("?");
         helpButton.setToolTipText("Keyboard shortcuts");
-        helpButton.addActionListener(e -> showKeyboardShortcuts());
+        helpButton.addActionListener(e -> {
+            if (showShortcutsCallback != null) {
+                showShortcutsCallback.run();
+            } else {
+                showKeyboardShortcuts();
+            }
+        });
         toolBar.add(helpButton);
     }
 
@@ -1976,6 +1983,18 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 }
             }
         });
+
+        // Ctrl+/ — Show Shortcuts panel
+        KeyStroke ctrlSlash = KeyStroke.getKeyStroke(KeyEvent.VK_SLASH, cmdMask);
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(ctrlSlash, "showShortcuts");
+        codePane.getActionMap().put("showShortcuts", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (showShortcutsCallback != null) {
+                    showShortcutsCallback.run();
+                }
+            }
+        });
     }
 
     // --- Go to line / Copy line ---
@@ -2265,6 +2284,11 @@ public class ArkTSOutputProvider extends ComponentProvider {
     /** Sets the callback for Ctrl+Shift+, (Show Settings). */
     public void setShowSettingsCallback(Runnable callback) {
         this.showSettingsCallback = callback;
+    }
+
+    /** Sets the callback for Ctrl+/ and the "?" button (Show Shortcuts panel). */
+    public void setShowShortcutsCallback(Runnable callback) {
+        this.showShortcutsCallback = callback;
     }
 
     /**

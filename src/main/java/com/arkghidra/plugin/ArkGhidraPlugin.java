@@ -77,6 +77,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
     private StatsProvider statsProvider;
     private SettingsProvider settingsProvider;
     private NotesProvider notesProvider;
+    private ShortcutsProvider shortcutsProvider;
 
     public ArkGhidraPlugin(PluginTool tool) {
         super(tool);
@@ -188,6 +189,10 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         abcStructureProvider.setNotesProvider(notesProvider);
         abcStructureProvider.setShowCallersCallback(this::showAllCallers);
         abcStructureProvider.setShowImplementationsCallback(this::showImplementations);
+        shortcutsProvider = new ShortcutsProvider(tool, PLUGIN_NAME);
+        tool.addComponentProvider(shortcutsProvider, false);
+        outputProvider.setShowShortcutsCallback(() ->
+                tool.showComponentProvider(shortcutsProvider, true));
     }
 
     private void showAllCallers(String methodName) {
@@ -1415,6 +1420,9 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             }
             if (notesProvider != null) {
                 pluginTool.removeComponentProvider(notesProvider);
+            }
+            if (shortcutsProvider != null) {
+                pluginTool.removeComponentProvider(shortcutsProvider);
             }
         }
     }
