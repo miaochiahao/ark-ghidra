@@ -114,6 +114,7 @@ public class AbcStructureProvider extends ComponentProvider {
         structureTree.setShowsRootHandles(true);
         structureTree.setFont(new Font("Monospaced", Font.PLAIN, 12));
         structureTree.setCellRenderer(new MethodComplexityCellRenderer());
+        javax.swing.ToolTipManager.sharedInstance().registerComponent(structureTree);
         structureTree.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -1238,9 +1239,25 @@ public class AbcStructureProvider extends ComponentProvider {
                                 String name = showBadges
                                         ? getClassTypeBadge(c) + formatClassName(c.getName())
                                         : formatClassName(c.getName());
-                                int methodCount = c.getMethods().size();
-                                return (showCount && methodCount > 0)
-                                        ? name + " (" + methodCount + ")" : name;
+                                if (showCount) {
+                                    int mc = c.getMethods().size();
+                                    int fc = c.getFields().size();
+                                    if (mc > 0 || fc > 0) {
+                                        StringBuilder sb = new StringBuilder(name).append(" (");
+                                        if (mc > 0) {
+                                            sb.append(mc).append("m");
+                                        }
+                                        if (fc > 0) {
+                                            if (mc > 0) {
+                                                sb.append(" ");
+                                            }
+                                            sb.append(fc).append("f");
+                                        }
+                                        sb.append(")");
+                                        return sb.toString();
+                                    }
+                                }
+                                return name;
                             }
                         };
                 classesNode.add(classNode);
@@ -1567,6 +1584,22 @@ public class AbcStructureProvider extends ComponentProvider {
                         Map<TextAttribute, Object> attrs = new HashMap<>(f.getAttributes());
                         attrs.put(TextAttribute.STRIKETHROUGH, TextAttribute.STRIKETHROUGH_ON);
                         setFont(f.deriveFont(attrs));
+                    }
+                } else if (userObj instanceof AbcClass) {
+                    // Tooltip showing full class name for class nodes
+                    AbcClass cls = (AbcClass) userObj;
+                    String fullName = cls.getName();
+                    if (fullName != null && !fullName.isEmpty()) {
+                        // Strip L...;  wrapper for display
+                        String display = fullName;
+                        if (display.startsWith("L")) {
+                            display = display.substring(1);
+                        }
+                        if (display.endsWith(";")) {
+                            display = display.substring(0, display.length() - 1);
+                        }
+                        display = display.replace("/", ".");
+                        setToolTipText(display);
                     }
                 }
             }
