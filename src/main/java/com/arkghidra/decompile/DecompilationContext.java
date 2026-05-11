@@ -20,6 +20,21 @@ import com.arkghidra.format.AbcProto;
  * {@code ArkTSDecompiler.DecompilationContext}).
  */
 public class DecompilationContext {
+
+    private static final Set<String> RESERVED_KEYWORDS = Set.of(
+            "break", "case", "catch", "class", "const", "continue",
+            "debugger", "default", "delete", "do", "else", "export",
+            "extends", "finally", "for", "function", "if", "import",
+            "in", "instanceof", "let", "new", "return", "super",
+            "switch", "this", "throw", "try", "typeof", "var",
+            "void", "while", "with", "yield", "enum", "implements",
+            "interface", "package", "private", "protected", "public",
+            "static", "await", "abstract", "boolean", "byte", "char",
+            "double", "final", "float", "goto", "int", "long", "native",
+            "short", "synchronized", "throws", "transient", "volatile",
+            "null", "true", "false", "undefined", "number", "string",
+            "object", "bigint", "symbol", "never", "unknown", "any");
+
     final AbcMethod method;
     final AbcCode code;
     final AbcProto proto;
@@ -349,7 +364,7 @@ public class DecompilationContext {
     public String resolveRegisterName(int reg) {
         String name = registerNames.get(reg);
         if (name != null) {
-            return name;
+            return sanitizeKeyword(name);
         }
         String inferred = inferredNames.get(reg);
         return inferred != null ? inferred : "v" + reg;
@@ -365,9 +380,17 @@ public class DecompilationContext {
     public void setInferredName(int reg, String name) {
         if (name != null && !name.isEmpty()
                 && !registerNames.containsKey(reg)) {
-            String uniqueName = uniquifyName(name, reg);
+            String sanitized = sanitizeKeyword(name);
+            String uniqueName = uniquifyName(sanitized, reg);
             inferredNames.put(reg, uniqueName);
         }
+    }
+
+    private static String sanitizeKeyword(String name) {
+        if (RESERVED_KEYWORDS.contains(name)) {
+            return "_" + name;
+        }
+        return name;
     }
 
     private String uniquifyName(String name, int skipReg) {
