@@ -2288,6 +2288,22 @@ public class ArkTSOutputProvider extends ComponentProvider {
             }
             offset += line.length() + 1;
         }
+        // Annotate entries with line counts (method size indicator)
+        for (int i = 0; i < entries.size(); i++) {
+            int startOff = entries.get(i).offset;
+            int endOff = (i + 1 < entries.size()) ? entries.get(i + 1).offset : code.length();
+            int lineCount = 0;
+            for (int j = startOff; j < endOff && j < code.length(); j++) {
+                if (code.charAt(j) == '\n') {
+                    lineCount++;
+                }
+            }
+            String sizeTag = lineCount > 50 ? " \u25cf" : lineCount > 20 ? " \u25cb" : "";
+            if (!sizeTag.isEmpty()) {
+                entries.set(i, new OutlineEntry(entries.get(i).label + sizeTag,
+                        entries.get(i).offset));
+            }
+        }
         updatingOutline = true;
         DefaultComboBoxModel<OutlineEntry> combo = new DefaultComboBoxModel<>();
         for (OutlineEntry e : entries) {
