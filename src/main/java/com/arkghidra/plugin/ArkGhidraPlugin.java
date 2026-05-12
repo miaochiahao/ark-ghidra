@@ -139,6 +139,15 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             } else {
                 xrefProvider.showXrefs(
                         word, outputProvider.getLastCode(), outputProvider.getSymbolHighlighter());
+                // Also update Call Graph if word matches a method name
+                AbcFile abcFile = getCurrentAbcFile();
+                if (abcFile != null) {
+                    List<String> allMethodNames = getAllMethodNames(abcFile);
+                    if (allMethodNames.contains(word)) {
+                        callGraphProvider.showCallGraph(
+                                word, outputProvider.getLastCode(), allMethodNames);
+                    }
+                }
             }
             tool.showComponentProvider(xrefProvider, true);
         });
