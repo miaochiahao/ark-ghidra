@@ -26,7 +26,9 @@ import java.util.function.Consumer;
 
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
+import javax.swing.DefaultComboBoxModel;
 import javax.swing.JButton;
+import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JToggleButton;
 import javax.swing.JFileChooser;
@@ -89,6 +91,21 @@ public class ArkTSOutputProvider extends ComponentProvider {
         HistoryEntry(String functionName, String code) {
             this.functionName = functionName;
             this.code = code;
+        }
+    }
+
+    private static class OutlineEntry {
+        final String label;
+        final int offset;
+
+        OutlineEntry(String label, int offset) {
+            this.label = label;
+            this.offset = offset;
+        }
+
+        @Override
+        public String toString() {
+            return label;
         }
     }
 
@@ -206,6 +223,8 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private JButton backButton;
     private JButton forwardButton;
     private JToggleButton autoDecompileButton;
+    private JComboBox<OutlineEntry> methodOutlineCombo;
+    private boolean updatingOutline = false;
     private final JLabel loadingLabel;
     private final JLabel classLabel;
     private final JLabel methodInfoLabel;
@@ -302,10 +321,29 @@ public class ArkTSOutputProvider extends ComponentProvider {
         bottomPanel.add(toolBar, BorderLayout.CENTER);
 
         mainPanel = new JPanel(new BorderLayout());
-        JPanel headerPanel = new JPanel(new BorderLayout());
+        methodOutlineCombo = new JComboBox<>();
+        methodOutlineCombo.setToolTipText("Jump to method (outline)");
+        methodOutlineCombo.setMaximumSize(new Dimension(300, 24));
+        methodOutlineCombo.setPreferredSize(new Dimension(220, 24));
+        methodOutlineCombo.addActionListener(e -> {
+            if (updatingOutline) {
+                return;
+            }
+            Object selected = methodOutlineCombo.getSelectedItem();
+            if (selected instanceof OutlineEntry) {
+                int offset = ((OutlineEntry) selected).offset;
+                codePane.setCaretPosition(offset);
+                scrollToOffset(offset);
+                codePane.requestFocusInWindow();
+            }
+        });
+        JPanel headerPanel = new JPanel(new BorderLayout(4, 0));
         headerPanel.add(classLabel, BorderLayout.WEST);
         headerPanel.add(headerLabel, BorderLayout.CENTER);
-        headerPanel.add(loadingLabel, BorderLayout.EAST);
+        JPanel headerRight = new JPanel(new BorderLayout(4, 0));
+        headerRight.add(methodOutlineCombo, BorderLayout.CENTER);
+        headerRight.add(loadingLabel, BorderLayout.EAST);
+        headerPanel.add(headerRight, BorderLayout.EAST);
         mainPanel.add(headerPanel, BorderLayout.NORTH);
         mainPanel.add(centerPanel, BorderLayout.CENTER);
         mainPanel.add(bottomPanel, BorderLayout.SOUTH);
@@ -363,6 +401,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
         searchMatchIndex = -1;
         renderHighlightedCode(code);
         updateNavButtons();
+        updateMethodOutline(code);
     }
 
     /**
@@ -2164,6 +2203,56 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 && (trimmed.contains("function ") || trimmed.contains("public ")
                         || trimmed.contains("private ") || trimmed.contains("protected ")
                         || trimmed.contains("static ") || trimmed.contains("async ")));
+    }
+
+    private void updateMethodOutline(String code) {
+        if (methodOutlineCombo == null) {
+            return;
+        }
+        if (code == null || code.isEmpty()) {
+            updatingOutline = true;
+            methodOutlineCombo.setModel(new DefaultComboBoxModel<>());
+            methodOutlineCombo.setVisible(false);
+            updatingOutline = false;
+            return;
+        }
+        java.util.List<OutlineEntry> entries = new java.util.ArrayList<>();
+        String[] lines = code.split("\n", -1);
+        int offset = 0;
+        for (String line : lines) {
+            if (isMethodDefinitionLine(line)) {
+                String label = extractMethodLabel(line);
+                entries.add(new OutlineEntry(label, offset));
+            }
+            offset += line.length() + 1;
+        }
+        updatingOutline = true;
+        DefaultComboBoxModel<OutlineEntry> combo = new DefaultComboBoxModel<>();
+        for (OutlineEntry e : entries) {
+            combo.addElement(e);
+        }
+        methodOutlineCombo.setModel(combo);
+        methodOutlineCombo.setVisible(!entries.isEmpty());
+        updatingOutline = false;
+    }
+
+    private static String extractMethodLabel(String line) {
+        String trimmed = line.trim();
+        // Remove leading modifiers to get a clean label
+        int parenIdx = trimmed.indexOf('(');
+        if (parenIdx < 0) {
+            return trimmed.length() > 50 ? trimmed.substring(0, 50) + "..." : trimmed;
+        }
+        // Find the method name: last word before '('
+        String beforeParen = trimmed.substring(0, parenIdx).trim();
+        int lastSpace = beforeParen.lastIndexOf(' ');
+        String methodName = lastSpace >= 0 ? beforeParen.substring(lastSpace + 1) : beforeParen;
+        // Include params up to closing paren for context
+        int closeIdx = trimmed.indexOf(')', parenIdx);
+        String params = closeIdx > parenIdx
+                ? trimmed.substring(parenIdx, closeIdx + 1) : "(...)";
+        String label = methodName + params;
+        return label.length() > 60 ? label.substring(0, 60) + "..." : label;
     }
 
     private void goToLine() {
