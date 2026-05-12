@@ -104,6 +104,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private JToggleButton sortBySizeButton;
     private JTextField minSizeField;
     private String classTypeFilter = "All";
+    private boolean fileViewMode = false;
 
     public AbcStructureProvider(Tool tool, String owner) {
         super(tool, "HAP Explorer", owner);
@@ -265,9 +266,16 @@ public class AbcStructureProvider extends ComponentProvider {
                 decompileAllAbilitiesCallback.run();
             }
         });
+        JToggleButton fileViewButton = new JToggleButton("Files");
+        fileViewButton.setToolTipText("Toggle File View — group classes by source file");
+        fileViewButton.addActionListener(e -> {
+            fileViewMode = fileViewButton.isSelected();
+            rebuildTree();
+        });
         modifierFilterPanel.add(expandAllButton);
         modifierFilterPanel.add(collapseAllButton);
         modifierFilterPanel.add(decompileAbilitiesButton);
+        modifierFilterPanel.add(fileViewButton);
 
         JButton refreshButton = new JButton("↻");
         refreshButton.setToolTipText("Refresh — re-parse the ABC file");
@@ -1012,6 +1020,11 @@ public class AbcStructureProvider extends ComponentProvider {
             return;
         }
 
+        if (fileViewMode) {
+            rebuildFileViewTree();
+            return;
+        }
+
         String filter = filterField.getText();
         if (FILTER_PLACEHOLDER.equals(filter)) {
             filter = "";
@@ -1494,6 +1507,57 @@ public class AbcStructureProvider extends ComponentProvider {
         for (int i = structureTree.getRowCount() - 1; i >= 0; i--) {
             structureTree.collapseRow(i);
         }
+    }
+
+    private void rebuildFileViewTree() {
+        String rootLabel = currentHapName.isEmpty()
+                ? "HAP (" + currentAbcFile.getClasses().size() + " classes)"
+                : currentHapName + " (" + currentAbcFile.getClasses().size() + " classes)";
+        rootNode.setUserObject(rootLabel);
+
+        // Group classes by source file
+        java.util.LinkedHashMap<String, java.util.List<AbcClass>> byFile =
+                new java.util.LinkedHashMap<>();
+        for (AbcClass cls : currentAbcFile.getClasses()) {
+            String srcFile = currentAbcFile.getSourceFileForClass(cls);
+            if (srcFile == null || srcFile.isEmpty()) {
+                srcFile = "(unknown)";
+            }
+            byFile.computeIfAbsent(srcFile, k -> new ArrayList<>()).add(cls);
+        }
+
+        for (Map.Entry<String, java.util.List<AbcClass>> entry : byFile.entrySet()) {
+            String fileName = entry.getKey();
+            java.util.List<AbcClass> classes = entry.getValue();
+            String fileLabel = fileName + " (" + classes.size() + ")";
+            DefaultMutableTreeNode fileNode = new DefaultMutableTreeNode(fileLabel);
+            rootNode.add(fileNode);
+            for (AbcClass cls : classes) {
+                final AbcClass finalCls = cls;
+                DefaultMutableTreeNode clsNode = new DefaultMutableTreeNode(finalCls) {
+                    @Override
+                    public String toString() {
+                        return getClassTypeBadge(finalCls) + formatClassName(finalCls.getName());
+                    }
+                };
+                fileNode.add(clsNode);
+                for (AbcMethod method : cls.getMethods()) {
+                    DefaultMutableTreeNode methodNode = new DefaultMutableTreeNode(method) {
+                        @Override
+                        public String toString() {
+                            AbcMethod m = (AbcMethod) getUserObject();
+                            return formatMethodPrefix(m) + m.getName()
+                                    + formatMethodSuffixWithArgs(m, currentAbcFile);
+                        }
+                    };
+                    clsNode.add(methodNode);
+                }
+            }
+        }
+
+        treeModel.reload();
+        smartExpandTree();
+        updateFilterCount();
     }
 
     static String formatClassName(String name) {
