@@ -79,6 +79,12 @@ public class ArkGhidraPlugin extends ProgramPlugin {
     private NotesProvider notesProvider;
     private final java.util.LinkedList<String> recentQuickOpenQueries = new java.util.LinkedList<>();
     private ShortcutsProvider shortcutsProvider;
+    private final java.util.Map<String, String> tooltipCache = new java.util.LinkedHashMap<String, String>() {
+        @Override
+        protected boolean removeEldestEntry(java.util.Map.Entry<String, String> eldest) {
+            return size() > 200;
+        }
+    };
 
     public ArkGhidraPlugin(PluginTool tool) {
         super(tool);
@@ -1388,8 +1394,14 @@ public class ArkGhidraPlugin extends ProgramPlugin {
     }
 
     private String getMethodPreviewTooltip(String word) {
+        if (word == null || word.isEmpty()) {
+            return null;
+        }
+        if (tooltipCache.containsKey(word)) {
+            return tooltipCache.get(word);
+        }
         AbcFile abcFile = getCurrentAbcFile();
-        if (abcFile == null || word == null || word.isEmpty()) {
+        if (abcFile == null) {
             return null;
         }
         // Find a method matching the word
@@ -1404,6 +1416,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                     try {
                         AbcCode code = abcFile.getCodeForMethod(method);
                         if (code == null) {
+                            tooltipCache.put(word, null);
                             return null;
                         }
                         ArkTSDecompiler decompiler = createDecompiler();
@@ -1418,13 +1431,17 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                         if (lines.length > 10) {
                             sb.append("  ...");
                         }
-                        return sb.toString().trim();
+                        String preview = sb.toString().trim();
+                        tooltipCache.put(word, preview);
+                        return preview;
                     } catch (Exception e) {
+                        tooltipCache.put(word, null);
                         return null;
                     }
                 }
             }
         }
+        tooltipCache.put(word, null);
         return null;
     }
 
