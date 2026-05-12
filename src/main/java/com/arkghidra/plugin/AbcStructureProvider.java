@@ -397,6 +397,15 @@ public class AbcStructureProvider extends ComponentProvider {
     }
 
     /**
+     * Returns the current class type filter string (e.g. "All", "Pages", "Abilities").
+     *
+     * @return the active class type filter
+     */
+    public String getClassTypeFilter() {
+        return classTypeFilter;
+    }
+
+    /**
      * Returns the list of classes currently visible in the tree (matching the active filter).
      *
      * @return list of visible AbcClass instances

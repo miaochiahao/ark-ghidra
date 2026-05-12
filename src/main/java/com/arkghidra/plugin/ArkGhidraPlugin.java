@@ -486,7 +486,10 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             protected void done() {
                 try {
                     String result = get();
-                    String label = "Visible (" + classes.size() + " classes)";
+                    String filterType = abcStructureProvider.getClassTypeFilter();
+                    String label = "All".equals(filterType)
+                            ? "Visible (" + classes.size() + " classes)"
+                            : filterType + " (" + classes.size() + " classes)";
                     outputProvider.showDecompiledCode(label, result);
                     historyProvider.recordNavigation(label, result);
                     tool.showComponentProvider(outputProvider, true);
