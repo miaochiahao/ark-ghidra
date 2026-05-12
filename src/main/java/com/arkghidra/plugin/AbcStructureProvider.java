@@ -95,6 +95,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private Runnable decompileAllAbilitiesCallback;
     private Consumer<List<AbcClass>> decompileAllVisibleCallback;
     private java.util.function.BiConsumer<List<AbcClass>, File> exportVisibleCallback;
+    private java.util.function.Function<String, String> methodTooltipCallback;
     private Runnable refreshCallback;
     private NotesProvider notesProvider;
     private SettingsProvider settingsProvider;
@@ -118,6 +119,7 @@ public class AbcStructureProvider extends ComponentProvider {
         structureTree.setFont(new Font("Monospaced", Font.PLAIN, 12));
         structureTree.setCellRenderer(new MethodComplexityCellRenderer());
         javax.swing.ToolTipManager.sharedInstance().registerComponent(structureTree);
+        javax.swing.ToolTipManager.sharedInstance().setDismissDelay(8000);
         structureTree.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -453,6 +455,16 @@ public class AbcStructureProvider extends ComponentProvider {
      */
     public void setShowImplementationsCallback(Consumer<AbcClass> cb) {
         this.showImplementationsCallback = cb;
+    }
+
+    /**
+     * Sets a callback that provides a decompiled code preview for a method name.
+     * Used to show a tooltip preview when hovering over method nodes in the tree.
+     *
+     * @param cb a function receiving the method name and returning a preview string, or null
+     */
+    public void setMethodTooltipCallback(java.util.function.Function<String, String> cb) {
+        this.methodTooltipCallback = cb;
     }
 
     /**
@@ -1811,6 +1823,17 @@ public class AbcStructureProvider extends ComponentProvider {
                     if (notesProvider != null && notesProvider.hasNotes(method.getName())) {
                         setFont(getFont().deriveFont(Font.BOLD));
                         setToolTipText("Has notes");
+                    } else if (methodTooltipCallback != null) {
+                        // Show decompiled preview on hover
+                        String preview = methodTooltipCallback.apply(method.getName());
+                        if (preview != null && !preview.isEmpty()) {
+                            String escaped = preview.replace("&", "&amp;")
+                                    .replace("<", "&lt;").replace(">", "&gt;");
+                            setToolTipText("<html><pre style='font-family:monospace;font-size:11px'>"
+                                    + escaped + "</pre></html>");
+                        } else {
+                            setToolTipText(null);
+                        }
                     } else {
                         setToolTipText(null);
                     }

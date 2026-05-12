@@ -221,6 +221,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         abcStructureProvider.setSettingsProvider(settingsProvider);
         abcStructureProvider.setShowCallersCallback(this::showAllCallers);
         abcStructureProvider.setShowImplementationsCallback(this::showImplementations);
+        abcStructureProvider.setMethodTooltipCallback(this::getMethodPreviewTooltip);
         shortcutsProvider = new ShortcutsProvider(tool, PLUGIN_NAME);
         tool.addComponentProvider(shortcutsProvider, false);
         outputProvider.setShowShortcutsCallback(() ->
