@@ -102,6 +102,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         outputProvider.setDecompileFileCallback(this::decompileWholeFile);
         outputProvider.setExportAllCallback(this::exportAllClasses);
         outputProvider.setJumpToDefinitionCallback(this::jumpToDefinition);
+        outputProvider.setTooltipCallback(this::getMethodPreviewTooltip);
         outputProvider.setDecompileClassCallback(() -> {
             String clsName = outputProvider.getLastClassName();
             if (clsName.isEmpty()) {
@@ -1384,6 +1385,47 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                 }
             }
         }
+    }
+
+    private String getMethodPreviewTooltip(String word) {
+        AbcFile abcFile = getCurrentAbcFile();
+        if (abcFile == null || word == null || word.isEmpty()) {
+            return null;
+        }
+        // Find a method matching the word
+        for (AbcClass cls : abcFile.getClasses()) {
+            for (AbcMethod method : cls.getMethods()) {
+                String methodName = method.getName();
+                int hashIdx = methodName.lastIndexOf('#');
+                if (hashIdx >= 0) {
+                    methodName = methodName.substring(hashIdx + 1);
+                }
+                if (methodName.equals(word) && method.getCodeOff() != 0) {
+                    try {
+                        AbcCode code = abcFile.getCodeForMethod(method);
+                        if (code == null) {
+                            return null;
+                        }
+                        ArkTSDecompiler decompiler = createDecompiler();
+                        String decompiled = decompiler.decompileMethod(method, code, abcFile);
+                        // Return first 10 lines as preview
+                        String[] lines = decompiled.split("\n", -1);
+                        int limit = Math.min(lines.length, 10);
+                        StringBuilder sb = new StringBuilder();
+                        for (int i = 0; i < limit; i++) {
+                            sb.append(lines[i]).append("\n");
+                        }
+                        if (lines.length > 10) {
+                            sb.append("  ...");
+                        }
+                        return sb.toString().trim();
+                    } catch (Exception e) {
+                        return null;
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     private void jumpToAbility(String abilityName) {

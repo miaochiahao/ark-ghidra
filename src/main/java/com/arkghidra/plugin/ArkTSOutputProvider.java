@@ -202,6 +202,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private Runnable exportAllCallback;
     private Consumer<String> symbolHighlightCallback;
     private Consumer<String> jumpToDefinitionCallback;
+    private java.util.function.Function<String, String> tooltipCallback;
     private Runnable globalSearchCallback;
     private Consumer<String> globalSearchWordCallback;
     private Runnable addBookmarkCallback;
@@ -277,7 +278,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
         codePane.setEditable(false);
         codePane.setFont(new Font(currentFontFamily, Font.PLAIN, currentFontSize));
         ToolTipManager.sharedInstance().registerComponent(codePane);
-        ToolTipManager.sharedInstance().setDismissDelay(3000);
+        ToolTipManager.sharedInstance().setDismissDelay(8000);
         installClickToHighlight();
         installCtrlFBinding();
         installZoomBindings();
@@ -2344,11 +2345,23 @@ public class ArkTSOutputProvider extends ComponentProvider {
         if (word.isEmpty() || ArkTSColorizer.isKeyword(word)) {
             return null;
         }
+        // Try to get a method preview tooltip from the plugin
+        if (tooltipCallback != null) {
+            String preview = tooltipCallback.apply(word);
+            if (preview != null && !preview.isEmpty()) {
+                return "<html><pre style='font-family:monospace;font-size:11px'>"
+                        + escapeHtml(preview) + "</pre></html>";
+            }
+        }
         int count = symbolHighlighter.findAllOccurrences(text, word).size();
         if (count < 2) {
             return null;
         }
         return "\"" + word + "\" \u2014 " + count + " occurrences";
+    }
+
+    private static String escapeHtml(String s) {
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     /**
@@ -2387,6 +2400,17 @@ public class ArkTSOutputProvider extends ComponentProvider {
      */
     public void setJumpToDefinitionCallback(Consumer<String> callback) {
         this.jumpToDefinitionCallback = callback;
+    }
+
+    /**
+     * Sets a callback that provides a tooltip preview for a hovered symbol.
+     * The callback receives the word under the cursor and returns an HTML or plain-text
+     * preview string, or null if no preview is available.
+     *
+     * @param callback the function to invoke, or null to disable
+     */
+    public void setTooltipCallback(java.util.function.Function<String, String> callback) {
+        this.tooltipCallback = callback;
     }
 
     /**
