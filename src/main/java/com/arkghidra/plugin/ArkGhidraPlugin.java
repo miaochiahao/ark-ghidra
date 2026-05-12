@@ -128,6 +128,11 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             }
         });
         xrefProvider.setNavigationListener(offset -> outputProvider.scrollToOffset(offset));
+        xrefProvider.setGlobalSearchCallback(word -> {
+            globalSearchProvider.clearResults();
+            tool.showComponentProvider(globalSearchProvider, true);
+            performGlobalSearch(word);
+        });
         outputProvider.setSymbolHighlightCallback(word -> {
             if (word.isEmpty()) {
                 xrefProvider.showXrefs("", "", outputProvider.getSymbolHighlighter());

@@ -7,8 +7,10 @@ import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Consumer;
 
 import javax.swing.DefaultListModel;
+import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JList;
@@ -34,9 +36,12 @@ public class XrefProvider extends ComponentProvider {
     private final JList<String> xrefList;
     private final DefaultListModel<String> listModel;
     private final JLabel headerLabel;
+    private final JButton searchAllButton;
 
     private XrefNavigationListener navigationListener;
+    private Consumer<String> globalSearchCallback;
     private List<Integer> lineOffsets = Collections.emptyList();
+    private String currentSymbol = "";
 
     public XrefProvider(Tool tool, String owner) {
         super(tool, "Xref", owner);
@@ -56,9 +61,22 @@ public class XrefProvider extends ComponentProvider {
 
         headerLabel = new JLabel("No symbol selected");
 
+        searchAllButton = new JButton("Search All Methods");
+        searchAllButton.setToolTipText("Search for this symbol across all decompiled methods");
+        searchAllButton.setEnabled(false);
+        searchAllButton.addActionListener(e -> {
+            if (globalSearchCallback != null && !currentSymbol.isEmpty()) {
+                globalSearchCallback.accept(currentSymbol);
+            }
+        });
+
+        JPanel topPanel = new JPanel(new BorderLayout(4, 2));
+        topPanel.add(headerLabel, BorderLayout.CENTER);
+        topPanel.add(searchAllButton, BorderLayout.EAST);
+
         JScrollPane scrollPane = new JScrollPane(xrefList);
         mainPanel = new JPanel(new BorderLayout());
-        mainPanel.add(headerLabel, BorderLayout.NORTH);
+        mainPanel.add(topPanel, BorderLayout.NORTH);
         mainPanel.add(scrollPane, BorderLayout.CENTER);
 
         setDefaultWindowPosition(WindowPosition.BOTTOM);
@@ -80,6 +98,15 @@ public class XrefProvider extends ComponentProvider {
     }
 
     /**
+     * Sets the callback invoked when the user clicks "Search All Methods".
+     *
+     * @param callback a consumer receiving the symbol name to search globally
+     */
+    public void setGlobalSearchCallback(Consumer<String> callback) {
+        this.globalSearchCallback = callback;
+    }
+
+    /**
      * Updates the xref list for the given symbol and code text.
      *
      * @param symbol      the symbol name to search for
@@ -89,6 +116,8 @@ public class XrefProvider extends ComponentProvider {
     public void showXrefs(String symbol, String code, SymbolHighlighter highlighter) {
         listModel.clear();
         lineOffsets = new ArrayList<>();
+        currentSymbol = symbol != null ? symbol : "";
+        searchAllButton.setEnabled(!currentSymbol.isEmpty() && globalSearchCallback != null);
 
         if (symbol == null || symbol.isEmpty() || code == null || code.isEmpty()) {
             headerLabel.setText("No symbol selected");
