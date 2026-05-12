@@ -463,6 +463,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
         statusBar.setText(sb.toString());
         highlightCurrentLine();
         highlightMatchingBracket();
+        syncOutlineToCaretPosition(pos);
     }
 
     private void highlightCurrentLine() {
@@ -2253,6 +2254,29 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 ? trimmed.substring(parenIdx, closeIdx + 1) : "(...)";
         String label = methodName + params;
         return label.length() > 60 ? label.substring(0, 60) + "..." : label;
+    }
+
+    private void syncOutlineToCaretPosition(int caretPos) {
+        if (methodOutlineCombo == null || updatingOutline) {
+            return;
+        }
+        int count = methodOutlineCombo.getItemCount();
+        if (count == 0) {
+            return;
+        }
+        // Find the last outline entry whose offset is <= caretPos
+        int bestIdx = 0;
+        for (int i = 0; i < count; i++) {
+            OutlineEntry entry = methodOutlineCombo.getItemAt(i);
+            if (entry.offset <= caretPos) {
+                bestIdx = i;
+            }
+        }
+        if (methodOutlineCombo.getSelectedIndex() != bestIdx) {
+            updatingOutline = true;
+            methodOutlineCombo.setSelectedIndex(bestIdx);
+            updatingOutline = false;
+        }
     }
 
     private void goToLine() {
