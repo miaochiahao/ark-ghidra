@@ -27,6 +27,7 @@ public class ShortcutsProvider extends ComponentProvider {
             + "  Ctrl+P            Quick Open (jump to class/method)\n"
             + "  Ctrl+Down         Next method definition\n"
             + "  Ctrl+Up           Previous method definition\n"
+            + "  Ctrl+Shift+O      Focus method outline (Go to method)\n"
             + "  \u25c4 Class / Class \u25ba  Previous/next class\n\n"
             + "SEARCH\n"
             + "  Ctrl+F            Find in current view\n"

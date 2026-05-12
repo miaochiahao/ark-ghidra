@@ -2160,6 +2160,20 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 }
             }
         });
+
+        // Ctrl+Shift+O — Focus method outline combo (Go to method)
+        KeyStroke ctrlShiftO = KeyStroke.getKeyStroke(KeyEvent.VK_O,
+                cmdMask | java.awt.event.InputEvent.SHIFT_DOWN_MASK);
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(ctrlShiftO, "focusOutline");
+        codePane.getActionMap().put("focusOutline", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (methodOutlineCombo != null && methodOutlineCombo.isVisible()) {
+                    methodOutlineCombo.requestFocusInWindow();
+                    methodOutlineCombo.showPopup();
+                }
+            }
+        });
     }
 
     // --- JEB-style key bindings ---
