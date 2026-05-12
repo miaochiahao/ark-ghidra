@@ -2299,8 +2299,23 @@ public class ArkTSOutputProvider extends ComponentProvider {
         int closeIdx = trimmed.indexOf(')', parenIdx);
         String params = closeIdx > parenIdx
                 ? trimmed.substring(parenIdx, closeIdx + 1) : "(...)";
-        String label = methodName + params;
-        return label.length() > 60 ? label.substring(0, 60) + "..." : label;
+        // Include return type if present (after ': ')
+        String returnType = "";
+        if (closeIdx > 0 && closeIdx + 1 < trimmed.length()) {
+            String afterClose = trimmed.substring(closeIdx + 1).trim();
+            if (afterClose.startsWith(":")) {
+                String rt = afterClose.substring(1).trim();
+                int braceIdx = rt.indexOf('{');
+                if (braceIdx > 0) {
+                    rt = rt.substring(0, braceIdx).trim();
+                }
+                if (!rt.isEmpty()) {
+                    returnType = ": " + rt;
+                }
+            }
+        }
+        String label = methodName + params + returnType;
+        return label.length() > 70 ? label.substring(0, 70) + "..." : label;
     }
 
     private void syncOutlineToCaretPosition(int caretPos) {
