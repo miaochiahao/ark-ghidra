@@ -53,7 +53,7 @@ public class BookmarkProvider extends ComponentProvider {
         bookmarksList.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2) {
+                if (e.getClickCount() == 1 && !e.isPopupTrigger()) {
                     handleDoubleClick();
                 }
             }
