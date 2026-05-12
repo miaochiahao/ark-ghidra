@@ -71,7 +71,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private static final String OWNER =
             AbcStructureProvider.class.getSimpleName();
 
-    private static final String FILTER_PLACEHOLDER = "Filter... (args:N, size:>N, name:X, class:X)";
+    private static final String FILTER_PLACEHOLDER = "Filter... (args:N, size:>N, name:X, class:X, /regex/)";
 
     private final JPanel mainPanel;
     private final JTree structureTree;
@@ -191,6 +191,7 @@ public class AbcStructureProvider extends ComponentProvider {
         filterCountLabel = new JLabel("");
         filterCountLabel.setForeground(Color.GRAY);
         filterCountLabel.setFont(filterCountLabel.getFont().deriveFont(11f));
+        filterCountLabel.setToolTipText("Use /pattern/ for regex search");
 
         breadcrumbLabel = new JLabel("");
         breadcrumbLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 11));
@@ -1105,10 +1106,22 @@ public class AbcStructureProvider extends ComponentProvider {
         if (FILTER_PLACEHOLDER.equals(filter)) {
             filter = "";
         }
+        // Check for regex filter syntax: /pattern/
+        boolean isRegex = filter.startsWith("/") && filter.endsWith("/") && filter.length() > 2;
+        java.util.regex.Pattern compiledRegex = null;
+        if (isRegex) {
+            try {
+                compiledRegex = java.util.regex.Pattern.compile(
+                        filter.substring(1, filter.length() - 1),
+                        java.util.regex.Pattern.CASE_INSENSITIVE);
+            } catch (java.util.regex.PatternSyntaxException e) {
+                isRegex = false;
+            }
+        }
         // Check for special filter syntax
-        boolean isSpecialFilter = filter.startsWith("args:") || filter.startsWith("size:")
-                || filter.startsWith("name:") || filter.startsWith("class:");
-        String textFilter = isSpecialFilter ? "" : filter;
+        boolean isSpecialFilter = !isRegex && (filter.startsWith("args:") || filter.startsWith("size:")
+                || filter.startsWith("name:") || filter.startsWith("class:"));
+        String textFilter = (isSpecialFilter || isRegex) ? "" : filter;
         String namePattern = "";
         String classPattern = "";
         if (filter.startsWith("name:")) {
@@ -1292,12 +1305,18 @@ public class AbcStructureProvider extends ComponentProvider {
                         continue;
                     }
                 }
-                boolean classNameMatches = matchesFilter(className, textFilter);
+                boolean classNameMatches = isRegex
+                        ? (compiledRegex != null && compiledRegex.matcher(className).find())
+                        : matchesFilter(className, textFilter);
 
                 boolean anyMethodMatches = false;
-                if (!classNameMatches && (!textFilter.isEmpty() || isSpecialFilter)) {
+                if (!classNameMatches && (!textFilter.isEmpty() || isSpecialFilter || isRegex)) {
                     for (AbcMethod method : cls.getMethods()) {
-                        if (matchesFilter(method.getName(), textFilter) && passesModifierFilter(method)
+                        boolean methodNameMatches = isRegex
+                                ? (compiledRegex != null
+                                        && compiledRegex.matcher(method.getName()).find())
+                                : matchesFilter(method.getName(), textFilter);
+                        if (methodNameMatches && passesModifierFilter(method)
                                 && passesMinSizeFilter(method)
                                 && (!isSpecialFilter || passesArgFilter(method, filter))) {
                             anyMethodMatches = true;
@@ -1306,7 +1325,8 @@ public class AbcStructureProvider extends ComponentProvider {
                     }
                 }
 
-                if ((!textFilter.isEmpty() || isSpecialFilter) && !classNameMatches && !anyMethodMatches) {
+                if ((!textFilter.isEmpty() || isSpecialFilter || isRegex)
+                        && !classNameMatches && !anyMethodMatches) {
                     continue;
                 }
 
@@ -1398,7 +1418,13 @@ public class AbcStructureProvider extends ComponentProvider {
                 }
     
                 for (AbcMethod method : methodList) {
-                    if (!textFilter.isEmpty() && !classNameMatches
+                    if (isRegex) {
+                        if (compiledRegex != null
+                                && !compiledRegex.matcher(method.getName()).find()
+                                && !classNameMatches) {
+                            continue;
+                        }
+                    } else if (!textFilter.isEmpty() && !classNameMatches
                             && !matchesFilter(method.getName(), textFilter)) {
                         continue;
                     }
@@ -1516,7 +1542,18 @@ public class AbcStructureProvider extends ComponentProvider {
         }
         boolean isSpecialFilter = filter.startsWith("args:") || filter.startsWith("size:")
                 || filter.startsWith("name:") || filter.startsWith("class:");
-        String textFilter = isSpecialFilter ? "" : filter;
+        boolean isRegexFilter = filter.startsWith("/") && filter.endsWith("/") && filter.length() > 2;
+        java.util.regex.Pattern countRegex = null;
+        if (isRegexFilter) {
+            try {
+                countRegex = java.util.regex.Pattern.compile(
+                        filter.substring(1, filter.length() - 1),
+                        java.util.regex.Pattern.CASE_INSENSITIVE);
+            } catch (java.util.regex.PatternSyntaxException e) {
+                isRegexFilter = false;
+            }
+        }
+        String textFilter = (isSpecialFilter || isRegexFilter) ? "" : filter;
         String namePattern = "";
         String classPattern = "";
         if (filter.startsWith("name:")) {
@@ -1533,11 +1570,19 @@ public class AbcStructureProvider extends ComponentProvider {
                         && !className.toLowerCase().contains(classPattern)) {
                     continue;
                 }
-                boolean classMatches = matchesFilter(className, textFilter);
-                if (classMatches && !isSpecialFilter) {
+                boolean classMatches = isRegexFilter
+                        ? (countRegex != null && countRegex.matcher(className).find())
+                        : matchesFilter(className, textFilter);
+                if (classMatches && !isSpecialFilter && !isRegexFilter) {
                     classCount++;
                 }
                 for (AbcMethod method : cls.getMethods()) {
+                    if (isRegexFilter) {
+                        if (countRegex != null && countRegex.matcher(method.getName()).find()) {
+                            methodCount++;
+                        }
+                        continue;
+                    }
                     if (filter.startsWith("name:") && !namePattern.isEmpty()) {
                         if (!method.getName().toLowerCase().contains(namePattern)) {
                             continue;
