@@ -659,7 +659,10 @@ public class ArkTSOutputProvider extends ComponentProvider {
             implements DocumentListener {
 
         private final JTextPane textPane;
-        private static final int WIDTH = 40;
+        private static final int WIDTH = 44;
+        private static final Color COLOR_LARGE = new Color(0xC62828);
+        private static final Color COLOR_MEDIUM = new Color(0xE65100);
+        private static final Color COLOR_SMALL = new Color(0x2E7D32);
 
         LineNumberComponent(JTextPane textPane) {
             this.textPane = textPane;
@@ -675,7 +678,6 @@ public class ArkTSOutputProvider extends ComponentProvider {
             g.setColor(getBackground());
             g.fillRect(0, 0, getWidth(), getHeight());
             g.setFont(textPane.getFont());
-            g.setColor(Color.GRAY);
 
             String text = textPane.getText();
             if (text == null || text.isEmpty()) {
@@ -687,12 +689,56 @@ public class ArkTSOutputProvider extends ComponentProvider {
             int lineHeight = fm.getHeight();
             int y = fm.getAscent() + 2;
 
-            for (int i = 1; i <= lines.length; i++) {
-                String num = String.valueOf(i);
+            // Pre-compute method sizes: for each method definition line, count lines until next
+            int[] methodSizes = computeMethodSizes(lines);
+
+            for (int i = 0; i < lines.length; i++) {
+                Color lineColor = Color.GRAY;
+                if (methodSizes[i] > 0) {
+                    if (methodSizes[i] > 50) {
+                        lineColor = COLOR_LARGE;
+                    } else if (methodSizes[i] > 20) {
+                        lineColor = COLOR_MEDIUM;
+                    } else {
+                        lineColor = COLOR_SMALL;
+                    }
+                }
+                g.setColor(lineColor);
+                String num = String.valueOf(i + 1);
                 int x = WIDTH - fm.stringWidth(num) - 4;
                 g.drawString(num, x, y);
                 y += lineHeight;
             }
+        }
+
+        private static int[] computeMethodSizes(String[] lines) {
+            int[] sizes = new int[lines.length];
+            // Find method definition lines and compute their sizes
+            for (int i = 0; i < lines.length; i++) {
+                if (isMethodDef(lines[i])) {
+                    // Count lines until next method definition or end
+                    int count = 0;
+                    for (int j = i + 1; j < lines.length; j++) {
+                        if (isMethodDef(lines[j])) {
+                            break;
+                        }
+                        count++;
+                    }
+                    sizes[i] = count;
+                }
+            }
+            return sizes;
+        }
+
+        private static boolean isMethodDef(String line) {
+            String t = line.trim();
+            if (t.isEmpty() || t.startsWith("//") || t.startsWith("*")) {
+                return false;
+            }
+            return t.contains("(") && (t.endsWith("{") || t.endsWith(")"))
+                    && (t.contains("function ") || t.contains("public ")
+                            || t.contains("private ") || t.contains("protected ")
+                            || t.contains("static ") || t.contains("async "));
         }
 
         @Override
