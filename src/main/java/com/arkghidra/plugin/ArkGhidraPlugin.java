@@ -1254,6 +1254,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         if (abcFile == null) {
             return;
         }
+        // First try to match a class name
         for (AbcClass cls : abcFile.getClasses()) {
             String shortName = AbcStructureProvider.formatClassName(cls.getName());
             String simpleName = shortName.contains(".")
@@ -1263,6 +1264,22 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                 onClassClicked(cls);
                 abcStructureProvider.selectClass(cls);
                 return;
+            }
+        }
+        // Then try to match a method name — jump to the class containing it
+        for (AbcClass cls : abcFile.getClasses()) {
+            for (AbcMethod method : cls.getMethods()) {
+                String methodName = method.getName();
+                // Strip ABC encoding prefixes for comparison
+                int hashIdx = methodName.lastIndexOf('#');
+                if (hashIdx >= 0) {
+                    methodName = methodName.substring(hashIdx + 1);
+                }
+                if (methodName.equals(word)) {
+                    onMethodDoubleClicked(method);
+                    abcStructureProvider.selectMethod(method);
+                    return;
+                }
             }
         }
     }
