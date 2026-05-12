@@ -283,6 +283,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
         installCtrlFBinding();
         installZoomBindings();
         installNavBindings();
+        installJebKeyBindings();
 
         statusBar = new JLabel("Ready");
         statusBar.setFont(statusBar.getFont().deriveFont(11f));
@@ -400,6 +401,15 @@ public class ArkTSOutputProvider extends ComponentProvider {
         currentHighlightedWord = "";
         searchMatchPositions = java.util.Collections.emptyList();
         searchMatchIndex = -1;
+        // Update panel title to show current context (JEB-like tab title)
+        String shortName = functionName;
+        if (shortName.startsWith("Decompiled: ")) {
+            shortName = shortName.substring(12);
+        }
+        if (shortName.length() > 40) {
+            shortName = shortName.substring(shortName.length() - 40);
+        }
+        setTitle("ArkTS \u2014 " + shortName);
         renderHighlightedCode(code);
         updateNavButtons();
         updateMethodOutline(code);
@@ -682,7 +692,11 @@ public class ArkTSOutputProvider extends ComponentProvider {
                     if (e.getClickCount() == 2) {
                         handleJumpToDefinition(e);
                     } else if (e.getClickCount() == 1) {
-                        handleSymbolClick(e);
+                        if (e.isControlDown() || e.isMetaDown()) {
+                            handleJumpToDefinition(e);
+                        } else {
+                            handleSymbolClick(e);
+                        }
                     }
                 }
             }
@@ -1434,6 +1448,9 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 + "Ctrl+-          Decrease font size\n"
                 + "Ctrl+0          Reset font size\n"
                 + "Click           Highlight all occurrences\n"
+                + "Ctrl+Click      Jump to definition\n"
+                + "N               Rename highlighted symbol\n"
+                + "X               Show cross-references for highlighted symbol\n"
                 + "Double-click    Jump to definition\n"
                 + "Right-click     Context menu\n"
                 + "Hover           Show occurrence count\n";
@@ -2140,6 +2157,35 @@ public class ArkTSOutputProvider extends ComponentProvider {
             public void actionPerformed(ActionEvent e) {
                 if (showShortcutsCallback != null) {
                     showShortcutsCallback.run();
+                }
+            }
+        });
+    }
+
+    // --- JEB-style key bindings ---
+
+    private void installJebKeyBindings() {
+        // N — rename highlighted symbol
+        KeyStroke keyN = KeyStroke.getKeyStroke(KeyEvent.VK_N, 0);
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(keyN, "jebRename");
+        codePane.getActionMap().put("jebRename", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (currentHighlightedWord != null && !currentHighlightedWord.isEmpty()) {
+                    renameSymbol(currentHighlightedWord);
+                }
+            }
+        });
+
+        // X — show cross-references for highlighted symbol
+        KeyStroke keyX = KeyStroke.getKeyStroke(KeyEvent.VK_X, 0);
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(keyX, "jebXref");
+        codePane.getActionMap().put("jebXref", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (currentHighlightedWord != null && !currentHighlightedWord.isEmpty()
+                        && symbolHighlightCallback != null) {
+                    symbolHighlightCallback.accept(currentHighlightedWord);
                 }
             }
         });

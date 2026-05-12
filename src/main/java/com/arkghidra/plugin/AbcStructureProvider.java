@@ -94,6 +94,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private Runnable exportReportCallback;
     private Runnable decompileAllAbilitiesCallback;
     private Consumer<List<AbcClass>> decompileAllVisibleCallback;
+    private java.util.function.BiConsumer<List<AbcClass>, File> exportVisibleCallback;
     private Runnable refreshCallback;
     private NotesProvider notesProvider;
     private SettingsProvider settingsProvider;
@@ -427,6 +428,15 @@ public class AbcStructureProvider extends ComponentProvider {
     }
 
     /**
+     * Sets the callback invoked when the user chooses "Export Visible..." from the root context menu.
+     *
+     * @param cb a BiConsumer receiving the list of visible classes and the target directory
+     */
+    public void setExportVisibleCallback(java.util.function.BiConsumer<List<AbcClass>, File> cb) {
+        this.exportVisibleCallback = cb;
+    }
+
+    /**
      * Sets the callback invoked when the user chooses "Show Implementations" from the class context menu.
      *
      * @param cb the consumer to invoke with the selected class
@@ -563,6 +573,23 @@ public class AbcStructureProvider extends ComponentProvider {
                     exportReportItem.addActionListener(ev -> exportReportCallback.run());
                 }
                 menu.add(exportReportItem);
+                JMenuItem exportVisibleItem = new JMenuItem("Export Visible...");
+                exportVisibleItem.setEnabled(exportVisibleCallback != null);
+                if (exportVisibleCallback != null) {
+                    exportVisibleItem.addActionListener(ev -> {
+                        List<AbcClass> visible = getVisibleClasses();
+                        if (visible.isEmpty()) {
+                            return;
+                        }
+                        JFileChooser chooser = new JFileChooser();
+                        chooser.setDialogTitle("Export Visible Classes \u2014 Choose Directory");
+                        chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+                        if (chooser.showSaveDialog(mainPanel) == JFileChooser.APPROVE_OPTION) {
+                            exportVisibleCallback.accept(visible, chooser.getSelectedFile());
+                        }
+                    });
+                }
+                menu.add(exportVisibleItem);
                 menu.show(structureTree, e.getX(), e.getY());
             } else if (isClassNameNode(label)) {
                 JPopupMenu menu = new JPopupMenu();

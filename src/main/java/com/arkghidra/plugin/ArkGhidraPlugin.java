@@ -104,6 +104,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         abcStructureProvider.setCopyAsArkTSCallback(this::copyClassAsArkTS);
         abcStructureProvider.setDecompileAllAbilitiesCallback(this::decompileAllAbilities);
         abcStructureProvider.setDecompileAllVisibleCallback(this::decompileAllVisible);
+        abcStructureProvider.setExportVisibleCallback(this::exportVisibleClasses);
         abcStructureProvider.setRefreshCallback(this::refreshHapExplorer);
         outputProvider.setDecompileFileCallback(this::decompileWholeFile);
         outputProvider.setExportAllCallback(this::exportAllClasses);
@@ -1223,6 +1224,75 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             }
         }.execute();
     }
+
+    private void exportVisibleClasses(List<AbcClass> classes, File dir) {
+        if (classes == null || classes.isEmpty() || dir == null) {
+            return;
+        }
+        if (!dir.exists() && !dir.mkdirs()) {
+            Msg.error(OWNER, "Could not create directory: " + dir.getPath());
+            return;
+        }
+        Program program = getCurrentProgram();
+        if (program == null) {
+            return;
+        }
+        outputProvider.showLoading("Exporting " + classes.size() + " classes...");
+        new SwingWorker<Void, Void>() {
+            @Override
+            protected Void doInBackground() {
+                try {
+                    byte[] abcData = DecompileToArkTSAction.readAbcData(program);
+                    if (abcData == null) {
+                        return null;
+                    }
+                    AbcFile abcFile = AbcFile.parse(abcData);
+                    ArkTSDecompiler decompiler = createDecompiler();
+                    for (AbcClass cls : classes) {
+                        try {
+                            String className = AbcStructureProvider.formatClassName(cls.getName());
+                            String simpleName = className.contains(".")
+                                    ? className.substring(className.lastIndexOf('.') + 1)
+                                    : className;
+                            if (simpleName.isEmpty() || simpleName.equals("<unnamed>")) {
+                                continue;
+                            }
+                            StringBuilder sb = new StringBuilder();
+                            for (AbcMethod method : cls.getMethods()) {
+                                try {
+                                    AbcCode code = abcFile.getCodeForMethod(method);
+                                    sb.append(decompiler.decompileMethod(method, code, abcFile));
+                                    sb.append("\n\n");
+                                } catch (Exception e) {
+                                    // skip failed methods
+                                }
+                            }
+                            File outFile = new File(dir, simpleName + ".ets");
+                            try (java.io.BufferedWriter writer = new java.io.BufferedWriter(
+                                    new java.io.OutputStreamWriter(
+                                            new java.io.FileOutputStream(outFile),
+                                            java.nio.charset.StandardCharsets.UTF_8))) {
+                                writer.write(sb.toString());
+                            }
+                        } catch (Exception e) {
+                            // skip failed classes
+                        }
+                    }
+                    Msg.info(OWNER, "Exported " + classes.size() + " visible classes to "
+                            + dir.getPath());
+                } catch (Exception e) {
+                    Msg.error(OWNER, "Export visible failed", e);
+                }
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                outputProvider.hideLoading();
+            }
+        }.execute();
+    }
+
 
     private void performGlobalSearch(String query) {
         Program program = getCurrentProgram();
