@@ -412,7 +412,32 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                     int done = 0;
                     for (AbcClass cls : classes) {
                         String className = AbcStructureProvider.formatClassName(cls.getName());
-                        sb.append("// class ").append(className).append("\n\n");
+                        sb.append("// class ").append(className).append("\n");
+                        // Show inheritance
+                        long superOff = cls.getSuperClassOff();
+                        if (superOff != 0) {
+                            AbcClass parent = findClassByOffset(abcFile, superOff);
+                            if (parent != null) {
+                                String parentName = AbcStructureProvider.formatClassName(
+                                        parent.getName());
+                                sb.append("//   extends ").append(parentName).append("\n");
+                            }
+                        }
+                        // Show fields
+                        if (!cls.getFields().isEmpty()) {
+                            sb.append("//   fields:\n");
+                            for (AbcField field : cls.getFields()) {
+                                long flags = field.getAccessFlags();
+                                String prefix = (flags & AbcAccessFlags.ACC_PUBLIC) != 0 ? "+"
+                                        : (flags & AbcAccessFlags.ACC_PRIVATE) != 0 ? "-"
+                                        : (flags & AbcAccessFlags.ACC_PROTECTED) != 0 ? "#" : "~";
+                                String staticTag = ((flags & AbcAccessFlags.ACC_STATIC) != 0)
+                                        ? " [S]" : "";
+                                sb.append("//     ").append(prefix).append(staticTag)
+                                        .append(" ").append(field.getName()).append("\n");
+                            }
+                        }
+                        sb.append("\n");
                         for (AbcMethod method : cls.getMethods()) {
                             if (method.getCodeOff() == 0) {
                                 continue;
