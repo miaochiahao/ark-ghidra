@@ -226,7 +226,9 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private JButton forwardButton;
     private JToggleButton autoDecompileButton;
     private JComboBox<OutlineEntry> methodOutlineCombo;
+    private JTextField methodFilterField;
     private boolean updatingOutline = false;
+    private java.util.List<OutlineEntry> allOutlineEntries = new java.util.ArrayList<>();
     private final JLabel loadingLabel;
     private javax.swing.JProgressBar progressBar;
     private final JLabel classLabel;
@@ -371,8 +373,30 @@ public class ArkTSOutputProvider extends ComponentProvider {
         JPanel headerPanel = new JPanel(new BorderLayout(4, 0));
         headerPanel.add(classLabel, BorderLayout.WEST);
         headerPanel.add(headerLabel, BorderLayout.CENTER);
+        methodFilterField = new JTextField();
+        methodFilterField.setPreferredSize(new Dimension(80, 22));
+        methodFilterField.setToolTipText("Filter methods in outline (type to filter)");
+        methodFilterField.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                applyOutlineFilter();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                applyOutlineFilter();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                applyOutlineFilter();
+            }
+        });
         JPanel headerRight = new JPanel(new BorderLayout(4, 0));
-        headerRight.add(methodOutlineCombo, BorderLayout.CENTER);
+        JPanel outlinePanel = new JPanel(new BorderLayout(2, 0));
+        outlinePanel.add(methodFilterField, BorderLayout.WEST);
+        outlinePanel.add(methodOutlineCombo, BorderLayout.CENTER);
+        headerRight.add(outlinePanel, BorderLayout.CENTER);
         headerRight.add(loadingLabel, BorderLayout.EAST);
         headerPanel.add(headerRight, BorderLayout.EAST);
         mainPanel.add(headerPanel, BorderLayout.NORTH);
@@ -2450,12 +2474,32 @@ public class ArkTSOutputProvider extends ComponentProvider {
             }
         }
         updatingOutline = true;
+        allOutlineEntries = new java.util.ArrayList<>(entries);
         DefaultComboBoxModel<OutlineEntry> combo = new DefaultComboBoxModel<>();
         for (OutlineEntry e : entries) {
             combo.addElement(e);
         }
         methodOutlineCombo.setModel(combo);
         methodOutlineCombo.setVisible(!entries.isEmpty());
+        if (methodFilterField != null) {
+            methodFilterField.setVisible(!entries.isEmpty());
+        }
+        updatingOutline = false;
+    }
+
+    private void applyOutlineFilter() {
+        if (methodOutlineCombo == null || updatingOutline) {
+            return;
+        }
+        String filter = methodFilterField != null ? methodFilterField.getText().toLowerCase() : "";
+        updatingOutline = true;
+        DefaultComboBoxModel<OutlineEntry> combo = new DefaultComboBoxModel<>();
+        for (OutlineEntry e : allOutlineEntries) {
+            if (filter.isEmpty() || e.label.toLowerCase().contains(filter)) {
+                combo.addElement(e);
+            }
+        }
+        methodOutlineCombo.setModel(combo);
         updatingOutline = false;
     }
 
