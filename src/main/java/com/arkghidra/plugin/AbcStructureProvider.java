@@ -1526,12 +1526,36 @@ public class AbcStructureProvider extends ComponentProvider {
             byFile.computeIfAbsent(srcFile, k -> new ArrayList<>()).add(cls);
         }
 
+        // Build directory hierarchy
+        // Map from directory path to directory node
+        java.util.LinkedHashMap<String, DefaultMutableTreeNode> dirNodes =
+                new java.util.LinkedHashMap<>();
+
         for (Map.Entry<String, java.util.List<AbcClass>> entry : byFile.entrySet()) {
-            String fileName = entry.getKey();
+            String filePath = entry.getKey();
             java.util.List<AbcClass> classes = entry.getValue();
+
+            // Split path into directory and filename
+            int lastSlash = filePath.lastIndexOf('/');
+            String dirPath = lastSlash >= 0 ? filePath.substring(0, lastSlash) : "";
+            String fileName = lastSlash >= 0 ? filePath.substring(lastSlash + 1) : filePath;
+
+            // Get or create directory node
+            DefaultMutableTreeNode parentNode;
+            if (dirPath.isEmpty()) {
+                parentNode = rootNode;
+            } else {
+                parentNode = dirNodes.computeIfAbsent(dirPath, dir -> {
+                    DefaultMutableTreeNode dn = new DefaultMutableTreeNode(dir + "/");
+                    rootNode.add(dn);
+                    return dn;
+                });
+            }
+
             String fileLabel = fileName + " (" + classes.size() + ")";
             DefaultMutableTreeNode fileNode = new DefaultMutableTreeNode(fileLabel);
-            rootNode.add(fileNode);
+            parentNode.add(fileNode);
+
             for (AbcClass cls : classes) {
                 final AbcClass finalCls = cls;
                 DefaultMutableTreeNode clsNode = new DefaultMutableTreeNode(finalCls) {
