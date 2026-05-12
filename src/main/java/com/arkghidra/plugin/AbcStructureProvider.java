@@ -659,9 +659,6 @@ public class AbcStructureProvider extends ComponentProvider {
     }
 
     private void fireClassSelectionIfApplicable() {
-        if (classNavigationListener == null) {
-            return;
-        }
         TreePath path = structureTree.getSelectionPath();
         if (path == null) {
             return;
@@ -669,8 +666,10 @@ public class AbcStructureProvider extends ComponentProvider {
         DefaultMutableTreeNode node =
                 (DefaultMutableTreeNode) path.getLastPathComponent();
         Object userObj = node.getUserObject();
-        if (userObj instanceof AbcClass) {
+        if (userObj instanceof AbcClass && classNavigationListener != null) {
             classNavigationListener.onClassSelected((AbcClass) userObj);
+        } else if (userObj instanceof AbcMethod && navigationListener != null) {
+            navigationListener.onMethodSelected((AbcMethod) userObj);
         }
     }
 
