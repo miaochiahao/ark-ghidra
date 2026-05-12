@@ -988,27 +988,39 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             return;
         }
         outputProvider.showLoading("Decompiling file...");
-        try {
-            byte[] abcData = DecompileToArkTSAction.readAbcData(program);
-            if (abcData == null) {
-                outputProvider.showMessage(
-                        "// Could not read ABC data from program memory");
-                return;
+        new SwingWorker<String, Void>() {
+            @Override
+            protected String doInBackground() {
+                try {
+                    byte[] abcData = DecompileToArkTSAction.readAbcData(program);
+                    if (abcData == null) {
+                        return "// Could not read ABC data from program memory";
+                    }
+                    AbcFile abcFile = AbcFile.parse(abcData);
+                    ArkTSDecompiler decompiler = createDecompiler();
+                    return decompiler.decompileFile(abcFile);
+                } catch (Exception e) {
+                    Msg.error(OWNER, "Whole-file decompilation failed", e);
+                    return "// Decompilation failed: " + e.getMessage();
+                }
             }
-            AbcFile abcFile = AbcFile.parse(abcData);
-            ArkTSDecompiler decompiler = createDecompiler();
-            String result = decompiler.decompileFile(abcFile);
-            outputProvider.showDecompiledCode("File: " + program.getName(), result);
-            historyProvider.recordNavigation("File: " + program.getName(), result);
-            tool.showComponentProvider(outputProvider, true);
-            Msg.info(OWNER, "Decompiled whole file: " + program.getName());
-        } catch (Exception e) {
-            Msg.error(OWNER, "Whole-file decompilation failed", e);
-            outputProvider.showMessage(
-                    "// Decompilation failed: " + e.getMessage());
-        } finally {
-            outputProvider.hideLoading();
-        }
+
+            @Override
+            protected void done() {
+                try {
+                    String result = get();
+                    outputProvider.showDecompiledCode("File: " + program.getName(), result);
+                    historyProvider.recordNavigation("File: " + program.getName(), result);
+                    tool.showComponentProvider(outputProvider, true);
+                    Msg.info(OWNER, "Decompiled whole file: " + program.getName());
+                } catch (Exception e) {
+                    Msg.error(OWNER, "Whole-file decompilation failed", e);
+                    outputProvider.showMessage("// Decompilation failed: " + e.getMessage());
+                } finally {
+                    outputProvider.hideLoading();
+                }
+            }
+        }.execute();
     }
 
     private void exportAllClasses() {
