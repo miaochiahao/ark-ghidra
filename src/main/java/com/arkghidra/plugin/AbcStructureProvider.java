@@ -279,7 +279,7 @@ public class AbcStructureProvider extends ComponentProvider {
         modifierFilterPanel.add(refreshButton);
 
         JPanel classTypePanel = new JPanel();
-        String[] classTypes = {"All", "Abilities", "Pages", "Native", "Interface", "Classes"};
+        String[] classTypes = {"All", "Abilities", "Pages", "Native", "Interface", "Enum", "Classes"};
         ButtonGroup classTypeGroup = new ButtonGroup();
         for (String type : classTypes) {
             JRadioButton btn = new JRadioButton(type);
@@ -744,6 +744,7 @@ public class AbcStructureProvider extends ComponentProvider {
         int pageCount = 0;
         int nativeCount = 0;
         int interfaceCount = 0;
+        int enumCount = 0;
         int classCount = 0;
         for (AbcClass cls : currentAbcFile.getClasses()) {
             totalMethods += cls.getMethods().size();
@@ -756,6 +757,8 @@ public class AbcStructureProvider extends ComponentProvider {
                 nativeCount++;
             } else if ("[I] ".equals(badge)) {
                 interfaceCount++;
+            } else if ("[E] ".equals(badge)) {
+                enumCount++;
             } else {
                 classCount++;
             }
@@ -773,7 +776,8 @@ public class AbcStructureProvider extends ComponentProvider {
             }
         }
         statsLabel.setText("[A]:" + abilityCount + " [P]:" + pageCount
-                + " [N]:" + nativeCount + " [I]:" + interfaceCount + " [C]:" + classCount
+                + " [N]:" + nativeCount + " [I]:" + interfaceCount
+                + " [E]:" + enumCount + " [C]:" + classCount
                 + " · " + totalMethods + " methods · " + (totalBytes / 1024) + " KB");
     }
 
@@ -1031,7 +1035,7 @@ public class AbcStructureProvider extends ComponentProvider {
         boolean showAbilities = "All".equals(classTypeFilter) || "Abilities".equals(classTypeFilter);
         boolean showPages = "All".equals(classTypeFilter) || "Pages".equals(classTypeFilter);
         boolean showClasses = "All".equals(classTypeFilter) || "Classes".equals(classTypeFilter)
-                || "Interface".equals(classTypeFilter);
+                || "Interface".equals(classTypeFilter) || "Enum".equals(classTypeFilter);
         boolean showNative = "All".equals(classTypeFilter) || "Classes".equals(classTypeFilter)
                 || "Native".equals(classTypeFilter);
         // When "Native" is selected, don't show the regular Classes section
@@ -1219,6 +1223,11 @@ public class AbcStructureProvider extends ComponentProvider {
                         continue;
                     }
                 }
+                if ("Enum".equals(classTypeFilter)) {
+                    if (!"[E] ".equals(getClassTypeBadge(cls))) {
+                        continue;
+                    }
+                }
 
                 boolean anyMethodPassesModifier = false;
                 for (AbcMethod method : cls.getMethods()) {
@@ -1384,7 +1393,7 @@ public class AbcStructureProvider extends ComponentProvider {
         if (FILTER_PLACEHOLDER.equals(filter) || filter.isEmpty()) {
             if (currentAbcFile != null) {
                 // Show class type breakdown when no filter is active
-                int a = 0, p = 0, n = 0, iface = 0, c = 0;
+                int a = 0, p = 0, n = 0, iface = 0, e = 0, c = 0;
                 for (AbcClass cls : currentAbcFile.getClasses()) {
                     String badge = getClassTypeBadge(cls);
                     if ("[A] ".equals(badge)) {
@@ -1395,11 +1404,14 @@ public class AbcStructureProvider extends ComponentProvider {
                         n++;
                     } else if ("[I] ".equals(badge)) {
                         iface++;
+                    } else if ("[E] ".equals(badge)) {
+                        e++;
                     } else {
                         c++;
                     }
                 }
-                filterCountLabel.setText("[A]:" + a + " [P]:" + p + " [N]:" + n + " [I]:" + iface + " [C]:" + c);
+                filterCountLabel.setText("[A]:" + a + " [P]:" + p + " [N]:" + n
+                        + " [I]:" + iface + " [E]:" + e + " [C]:" + c);
             } else {
                 filterCountLabel.setText("");
             }
@@ -1636,8 +1648,17 @@ public class AbcStructureProvider extends ComponentProvider {
      * @return the badge string including trailing space
      */
     static String getClassTypeBadge(AbcClass cls) {
+        long flags = cls.getAccessFlags();
+        // Check for annotation flag
+        if ((flags & AbcAccessFlags.ACC_ANNOTATION) != 0) {
+            return "[Ann] ";
+        }
+        // Check for enum flag
+        if ((flags & AbcAccessFlags.ACC_ENUM) != 0) {
+            return "[E] ";
+        }
         // Check for interface flag
-        if ((cls.getAccessFlags() & AbcAccessFlags.ACC_INTERFACE) != 0) {
+        if ((flags & AbcAccessFlags.ACC_INTERFACE) != 0) {
             return "[I] ";
         }
         if (cls.getMethods().isEmpty()) {

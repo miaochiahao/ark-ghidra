@@ -479,11 +479,14 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         javax.swing.JRadioButton nativeBtn = new javax.swing.JRadioButton("[N]");
         javax.swing.JRadioButton classBtn = new javax.swing.JRadioButton("[C]");
         javax.swing.JRadioButton interfaceBtn = new javax.swing.JRadioButton("[I]");
+        javax.swing.JRadioButton enumBtn = new javax.swing.JRadioButton("[E]");
         typeGroup.add(allBtn); typeGroup.add(abilityBtn); typeGroup.add(pageBtn);
-        typeGroup.add(nativeBtn); typeGroup.add(classBtn); typeGroup.add(interfaceBtn);
+        typeGroup.add(nativeBtn); typeGroup.add(classBtn);
+        typeGroup.add(interfaceBtn); typeGroup.add(enumBtn);
         JPanel typePanel = new JPanel();
         typePanel.add(allBtn); typePanel.add(abilityBtn); typePanel.add(pageBtn);
-        typePanel.add(nativeBtn); typePanel.add(classBtn); typePanel.add(interfaceBtn);
+        typePanel.add(nativeBtn); typePanel.add(classBtn);
+        typePanel.add(interfaceBtn); typePanel.add(enumBtn);
 
         JDialog dialog = new JDialog();
         dialog.setTitle("Quick Open (Ctrl+P)");
@@ -508,7 +511,8 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                     abilityBtn.isSelected() ? "[a]" :
                     pageBtn.isSelected() ? "[p]" :
                     nativeBtn.isSelected() ? "[n]" :
-                    interfaceBtn.isSelected() ? "[i]" : "[c]";
+                    interfaceBtn.isSelected() ? "[i]" :
+                    enumBtn.isSelected() ? "[e]" : "[c]";
             listModel.clear();
             for (String item : allItems) {
                 String lower = item.toLowerCase();
@@ -527,6 +531,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         nativeBtn.addActionListener(typeFilter);
         classBtn.addActionListener(typeFilter);
         interfaceBtn.addActionListener(typeFilter);
+        enumBtn.addActionListener(typeFilter);
 
         filterField.getDocument().addDocumentListener(new DocumentListener() {
             private void update() {
@@ -535,7 +540,8 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                         abilityBtn.isSelected() ? "[a]" :
                         pageBtn.isSelected() ? "[p]" :
                         nativeBtn.isSelected() ? "[n]" :
-                        interfaceBtn.isSelected() ? "[i]" : "[c]";
+                        interfaceBtn.isSelected() ? "[i]" :
+                    enumBtn.isSelected() ? "[e]" : "[c]";
                 listModel.clear();
                 for (String item : allItems) {
                     String lower = item.toLowerCase();

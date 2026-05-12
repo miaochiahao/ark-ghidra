@@ -62,6 +62,8 @@ public class ShortcutsProvider extends ComponentProvider {
             + "  [P]  Page class (has build() method)\n"
             + "  [N]  Native/abstract class (all methods abstract)\n"
             + "  [I]  Interface class (ACC_INTERFACE flag)\n"
+            + "  [E]  Enum class (ACC_ENUM flag)\n"
+            + "  [Ann] Annotation class (ACC_ANNOTATION flag)\n"
             + "  [C]  Regular class\n\n"
             + "HAP EXPLORER FILTER SYNTAX\n"
             + "  args:N            Methods with exactly N args\n"
