@@ -277,7 +277,8 @@ These complement the standard callthis0-callthis3 (0x2D-0x30) and callthisrange 
 
 ### Loop Iteration Notes
 
-- **Open issues as of 2026-05-11:** #184, #185, #186, #196, #200, #201, #209, #210 (8 total). Issues #72, #73, #187, #189-#199, #202, #203, #204, #205, #206, #207, #208, #211 closed.
+- **Open issues as of 2026-05-12:** #184, #186, #200, #201, #209, #210 (6 total). Issues #185, #196 closed.
+- **UI improvements this iteration (2026-05-12):** [Ann] annotation badge + Ann filter; method outline dropdown in ArkTS Output header (syncs to caret); single-click method in HAP Explorer decompiles immediately; jump-to-definition resolves method names; decompileWholeFile runs in background SwingWorker; File View toggle groups classes by source file with directory hierarchy; Decompile All Visible button; hover tooltip shows decompiled method preview (JEB-like peek).
 - **Closed this iteration:** #211 (inline string literals — VariableDeclaration target inlining), #207 (comparison operators — defect 1 fixed, defects 2-3 are accumulator state loss), #185 (quality audit — 4/6 defects resolved).
 - **Fixed this iteration (continued):** #200 defect 1 (push call lost — single-successor JUMP blocks now preserved via liveContinuations in isDeadCode check).
 - **Constructor callee lastClassCandidate (commit 586fead):** `setLastClassCandidate` now called when LDA loads a register with class-like expression and when TRYLDGLOBALBYNAME loads a capitalized global name. Previously `setLastClassCandidate` was defined but never called, so the fallback in `handleNewObjRange` never triggered.
