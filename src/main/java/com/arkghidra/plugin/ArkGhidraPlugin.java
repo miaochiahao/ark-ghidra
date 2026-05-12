@@ -97,6 +97,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         abcStructureProvider.setExportReportCallback(this::exportHapReport);
         abcStructureProvider.setCopyAsArkTSCallback(this::copyClassAsArkTS);
         abcStructureProvider.setDecompileAllAbilitiesCallback(this::decompileAllAbilities);
+        abcStructureProvider.setDecompileAllVisibleCallback(this::decompileAllVisible);
         abcStructureProvider.setRefreshCallback(this::refreshHapExplorer);
         outputProvider.setDecompileFileCallback(this::decompileWholeFile);
         outputProvider.setExportAllCallback(this::exportAllClasses);
@@ -375,6 +376,95 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             decompiler.setMethodTimeoutMs(settingsProvider.getTimeoutMs());
         }
         return decompiler;
+    }
+
+    private void decompileAllVisible(List<AbcClass> classes) {
+        if (classes == null || classes.isEmpty()) {
+            outputProvider.showMessage("// No visible classes to decompile");
+            return;
+        }
+        Program program = getCurrentProgram();
+        if (program == null) {
+            outputProvider.showMessage("No program is open.");
+            return;
+        }
+        outputProvider.showLoading("Decompiling " + classes.size() + " classes...");
+        new SwingWorker<String, String>() {
+            @Override
+            protected String doInBackground() {
+                try {
+                    byte[] abcData = DecompileToArkTSAction.readAbcData(program);
+                    if (abcData == null) {
+                        return "// Could not read ABC data from program memory";
+                    }
+                    AbcFile abcFile = AbcFile.parse(abcData);
+                    ArkTSDecompiler decompiler = createDecompiler();
+                    boolean skipTrivial = settingsProvider != null
+                            && settingsProvider.isSkipTrivialMethods();
+                    StringBuilder sb = new StringBuilder();
+                    int done = 0;
+                    for (AbcClass cls : classes) {
+                        String className = AbcStructureProvider.formatClassName(cls.getName());
+                        sb.append("// class ").append(className).append("\n\n");
+                        for (AbcMethod method : cls.getMethods()) {
+                            if (method.getCodeOff() == 0) {
+                                continue;
+                            }
+                            if (skipTrivial) {
+                                try {
+                                    AbcCode code = abcFile.getCodeForMethod(method);
+                                    if (code != null && code.getCodeSize() < 10) {
+                                        continue;
+                                    }
+                                } catch (Exception ex) {
+                                    // skip failed methods
+                                }
+                            }
+                            try {
+                                AbcCode code = abcFile.getCodeForMethod(method);
+                                if (code != null) {
+                                    sb.append(decompiler.decompileMethod(method, code, abcFile));
+                                    sb.append("\n\n");
+                                }
+                            } catch (Exception ex) {
+                                // skip failed methods
+                            }
+                        }
+                        done++;
+                        if (done % 5 == 0) {
+                            publish("Decompiling " + done + "/" + classes.size() + "...");
+                        }
+                    }
+                    return sb.toString();
+                } catch (Exception e) {
+                    Msg.error(OWNER, "Decompile all visible failed", e);
+                    return "// Decompilation failed: " + e.getMessage();
+                }
+            }
+
+            @Override
+            protected void process(java.util.List<String> chunks) {
+                if (!chunks.isEmpty()) {
+                    outputProvider.showLoading(chunks.get(chunks.size() - 1));
+                }
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    String result = get();
+                    String label = "Visible (" + classes.size() + " classes)";
+                    outputProvider.showDecompiledCode(label, result);
+                    historyProvider.recordNavigation(label, result);
+                    tool.showComponentProvider(outputProvider, true);
+                } catch (Exception e) {
+                    Msg.error(OWNER, "Decompile all visible failed", e);
+                    outputProvider.showMessage("// Decompilation failed: " + e.getMessage());
+                } finally {
+                    outputProvider.hideLoading();
+                }
+            }
+        }.execute();
     }
 
     private void pinCurrentView() {

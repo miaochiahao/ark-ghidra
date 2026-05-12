@@ -93,6 +93,7 @@ public class AbcStructureProvider extends ComponentProvider {
     private Consumer<AbcClass> showImplementationsCallback;
     private Runnable exportReportCallback;
     private Runnable decompileAllAbilitiesCallback;
+    private Consumer<List<AbcClass>> decompileAllVisibleCallback;
     private Runnable refreshCallback;
     private NotesProvider notesProvider;
     private SettingsProvider settingsProvider;
@@ -266,6 +267,13 @@ public class AbcStructureProvider extends ComponentProvider {
                 decompileAllAbilitiesCallback.run();
             }
         });
+        JButton decompileVisibleButton = new JButton("▶▶");
+        decompileVisibleButton.setToolTipText("Decompile all visible classes");
+        decompileVisibleButton.addActionListener(e -> {
+            if (decompileAllVisibleCallback != null) {
+                decompileAllVisibleCallback.accept(getVisibleClasses());
+            }
+        });
         JToggleButton fileViewButton = new JToggleButton("Files");
         fileViewButton.setToolTipText("Toggle File View — group classes by source file");
         fileViewButton.addActionListener(e -> {
@@ -275,6 +283,7 @@ public class AbcStructureProvider extends ComponentProvider {
         modifierFilterPanel.add(expandAllButton);
         modifierFilterPanel.add(collapseAllButton);
         modifierFilterPanel.add(decompileAbilitiesButton);
+        modifierFilterPanel.add(decompileVisibleButton);
         modifierFilterPanel.add(fileViewButton);
 
         JButton refreshButton = new JButton("↻");
@@ -375,6 +384,37 @@ public class AbcStructureProvider extends ComponentProvider {
      */
     public void setDecompileAllAbilitiesCallback(Runnable cb) {
         this.decompileAllAbilitiesCallback = cb;
+    }
+
+    /**
+     * Sets the callback invoked when the user clicks the "Decompile All Visible" button.
+     *
+     * @param cb a consumer receiving the list of visible classes to decompile
+     */
+    public void setDecompileAllVisibleCallback(Consumer<List<AbcClass>> cb) {
+        this.decompileAllVisibleCallback = cb;
+    }
+
+    /**
+     * Returns the list of classes currently visible in the tree (matching the active filter).
+     *
+     * @return list of visible AbcClass instances
+     */
+    public List<AbcClass> getVisibleClasses() {
+        List<AbcClass> result = new ArrayList<>();
+        if (currentAbcFile == null) {
+            return result;
+        }
+        DefaultMutableTreeNode root = (DefaultMutableTreeNode) treeModel.getRoot();
+        java.util.Enumeration<?> nodes = root.depthFirstEnumeration();
+        while (nodes.hasMoreElements()) {
+            DefaultMutableTreeNode node = (DefaultMutableTreeNode) nodes.nextElement();
+            Object userObj = node.getUserObject();
+            if (userObj instanceof AbcClass) {
+                result.add((AbcClass) userObj);
+            }
+        }
+        return result;
     }
 
     /**
