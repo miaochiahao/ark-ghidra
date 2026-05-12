@@ -58,6 +58,7 @@ public class ShortcutsProvider extends ComponentProvider {
             + "  Ctrl+Click        Jump to definition\n"
             + "  N                 Rename highlighted symbol\n"
             + "  X                 Show cross-references for highlighted symbol\n"
+            + "  Ctrl+D            Decompile current class (all methods)\n"
             + "  Right-click       Context menu\n"
             + "  Hover (class)     Show full name + parent + counts\n"
             + "  Hover (method)    Show occurrence count\n\n"

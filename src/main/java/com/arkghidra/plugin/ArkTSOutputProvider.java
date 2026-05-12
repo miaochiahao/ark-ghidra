@@ -809,6 +809,10 @@ public class ArkTSOutputProvider extends ComponentProvider {
         }
         menu.add(copySymbolItem);
 
+        JMenuItem copySignatureItem = new JMenuItem("Copy Method Signature");
+        copySignatureItem.addActionListener(e -> copyCurrentMethodSignature(offset));
+        menu.add(copySignatureItem);
+
         menu.addSeparator();
 
         JMenuItem addCommentItem = new JMenuItem("Add Comment...");
@@ -840,6 +844,49 @@ public class ArkTSOutputProvider extends ComponentProvider {
 
         return menu;
     }
+
+    private void copyCurrentMethodSignature(int offset) {
+        String text = codePane.getText();
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        // Find the method definition line at or before the cursor
+        int lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+        // Search backwards for the nearest method definition line
+        int searchPos = offset;
+        while (searchPos >= 0) {
+            int ls = text.lastIndexOf('\n', searchPos - 1) + 1;
+            int le = text.indexOf('\n', searchPos);
+            if (le < 0) {
+                le = text.length();
+            }
+            String line = text.substring(ls, le);
+            if (isMethodDefinitionLine(line)) {
+                String sig = line.trim();
+                // Strip trailing '{' if present
+                if (sig.endsWith("{")) {
+                    sig = sig.substring(0, sig.length() - 1).trim();
+                }
+                Toolkit.getDefaultToolkit().getSystemClipboard()
+                        .setContents(new StringSelection(sig), null);
+                Msg.info(OWNER, "Copied method signature: " + sig);
+                return;
+            }
+            if (ls == 0) {
+                break;
+            }
+            searchPos = ls - 1;
+        }
+        // Fallback: copy current line
+        int le = text.indexOf('\n', lineStart);
+        if (le < 0) {
+            le = text.length();
+        }
+        String line = text.substring(lineStart, le).trim();
+        Toolkit.getDefaultToolkit().getSystemClipboard()
+                .setContents(new StringSelection(line), null);
+    }
+
 
     private void copyAsMarkdown() {
         String selected = codePane.getSelectedText();
@@ -2211,6 +2258,18 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 if (methodOutlineCombo != null && methodOutlineCombo.isVisible()) {
                     methodOutlineCombo.requestFocusInWindow();
                     methodOutlineCombo.showPopup();
+                }
+            }
+        });
+
+        // Ctrl+D — Decompile current class (JEB-style)
+        KeyStroke ctrlD = KeyStroke.getKeyStroke(KeyEvent.VK_D, cmdMask);
+        codePane.getInputMap(JComponent.WHEN_FOCUSED).put(ctrlD, "decompileClass");
+        codePane.getActionMap().put("decompileClass", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (decompileClassCallback != null && !lastClassName.isEmpty()) {
+                    decompileClassCallback.run();
                 }
             }
         });
