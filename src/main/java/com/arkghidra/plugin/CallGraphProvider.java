@@ -68,9 +68,7 @@ public class CallGraphProvider extends ComponentProvider {
         calleesList.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2) {
-                    handleCalleesClick();
-                }
+                handleCalleesClick();
             }
         });
 
@@ -81,9 +79,7 @@ public class CallGraphProvider extends ComponentProvider {
         callersList.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2) {
-                    handleCallersClick();
-                }
+                handleCallersClick();
             }
         });
 
