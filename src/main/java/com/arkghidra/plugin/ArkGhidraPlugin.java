@@ -1502,6 +1502,38 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         if (abcFile == null) {
             return null;
         }
+        // First check if word matches a class name — show class summary
+        for (AbcClass cls : abcFile.getClasses()) {
+            String shortName = AbcStructureProvider.formatClassName(cls.getName());
+            String simpleName = shortName.contains(".")
+                    ? shortName.substring(shortName.lastIndexOf('.') + 1) : shortName;
+            if (simpleName.equals(word) || shortName.equals(word)) {
+                String cacheKey = "class:" + word;
+                if (tooltipCache.containsKey(cacheKey)) {
+                    return tooltipCache.get(cacheKey);
+                }
+                StringBuilder sb = new StringBuilder();
+                sb.append(AbcStructureProvider.getClassTypeBadge(cls))
+                        .append(simpleName).append("\n");
+                if (cls.getSuperClassOff() != 0) {
+                    AbcClass parent = findClassByOffset(abcFile, cls.getSuperClassOff());
+                    if (parent != null) {
+                        String parentName = AbcStructureProvider.formatClassName(parent.getName());
+                        if (parentName.contains(".")) {
+                            parentName = parentName.substring(parentName.lastIndexOf('.') + 1);
+                        }
+                        sb.append("  extends ").append(parentName).append("\n");
+                    }
+                }
+                sb.append("  ").append(cls.getMethods().size()).append(" methods");
+                if (!cls.getFields().isEmpty()) {
+                    sb.append(", ").append(cls.getFields().size()).append(" fields");
+                }
+                String preview = sb.toString();
+                tooltipCache.put(cacheKey, preview);
+                return preview;
+            }
+        }
         // Find a method matching the word
         for (AbcClass cls : abcFile.getClasses()) {
             for (AbcMethod method : cls.getMethods()) {
