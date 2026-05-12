@@ -279,7 +279,7 @@ public class AbcStructureProvider extends ComponentProvider {
         modifierFilterPanel.add(refreshButton);
 
         JPanel classTypePanel = new JPanel();
-        String[] classTypes = {"All", "Abilities", "Pages", "Native", "Interface", "Enum", "Classes"};
+        String[] classTypes = {"All", "Abilities", "Pages", "Native", "Interface", "Enum", "Ann", "Classes"};
         ButtonGroup classTypeGroup = new ButtonGroup();
         for (String type : classTypes) {
             JRadioButton btn = new JRadioButton(type);
@@ -745,6 +745,7 @@ public class AbcStructureProvider extends ComponentProvider {
         int nativeCount = 0;
         int interfaceCount = 0;
         int enumCount = 0;
+        int annCount = 0;
         int classCount = 0;
         for (AbcClass cls : currentAbcFile.getClasses()) {
             totalMethods += cls.getMethods().size();
@@ -759,6 +760,8 @@ public class AbcStructureProvider extends ComponentProvider {
                 interfaceCount++;
             } else if ("[E] ".equals(badge)) {
                 enumCount++;
+            } else if ("[Ann] ".equals(badge)) {
+                annCount++;
             } else {
                 classCount++;
             }
@@ -777,7 +780,7 @@ public class AbcStructureProvider extends ComponentProvider {
         }
         statsLabel.setText("[A]:" + abilityCount + " [P]:" + pageCount
                 + " [N]:" + nativeCount + " [I]:" + interfaceCount
-                + " [E]:" + enumCount + " [C]:" + classCount
+                + " [E]:" + enumCount + " [Ann]:" + annCount + " [C]:" + classCount
                 + " · " + totalMethods + " methods · " + (totalBytes / 1024) + " KB");
     }
 
@@ -1035,7 +1038,8 @@ public class AbcStructureProvider extends ComponentProvider {
         boolean showAbilities = "All".equals(classTypeFilter) || "Abilities".equals(classTypeFilter);
         boolean showPages = "All".equals(classTypeFilter) || "Pages".equals(classTypeFilter);
         boolean showClasses = "All".equals(classTypeFilter) || "Classes".equals(classTypeFilter)
-                || "Interface".equals(classTypeFilter) || "Enum".equals(classTypeFilter);
+                || "Interface".equals(classTypeFilter) || "Enum".equals(classTypeFilter)
+                || "Ann".equals(classTypeFilter);
         boolean showNative = "All".equals(classTypeFilter) || "Classes".equals(classTypeFilter)
                 || "Native".equals(classTypeFilter);
         // When "Native" is selected, don't show the regular Classes section
@@ -1225,6 +1229,11 @@ public class AbcStructureProvider extends ComponentProvider {
                 }
                 if ("Enum".equals(classTypeFilter)) {
                     if (!"[E] ".equals(getClassTypeBadge(cls))) {
+                        continue;
+                    }
+                }
+                if ("Ann".equals(classTypeFilter)) {
+                    if (!"[Ann] ".equals(getClassTypeBadge(cls))) {
                         continue;
                     }
                 }
