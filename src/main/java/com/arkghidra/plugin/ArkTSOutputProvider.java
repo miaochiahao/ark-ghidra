@@ -228,6 +228,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private JComboBox<OutlineEntry> methodOutlineCombo;
     private boolean updatingOutline = false;
     private final JLabel loadingLabel;
+    private javax.swing.JProgressBar progressBar;
     private final JLabel classLabel;
     private final JLabel methodInfoLabel;
 
@@ -317,9 +318,16 @@ public class ArkTSOutputProvider extends ComponentProvider {
         centerPanel.add(searchPanel, BorderLayout.SOUTH);
 
         JPanel bottomPanel = new JPanel(new BorderLayout());
+        progressBar = new javax.swing.JProgressBar(0, 100);
+        progressBar.setStringPainted(true);
+        progressBar.setVisible(false);
+        progressBar.setPreferredSize(new Dimension(120, 14));
         JPanel statusRow = new JPanel(new BorderLayout());
         statusRow.add(statusBar, BorderLayout.CENTER);
-        statusRow.add(methodInfoLabel, BorderLayout.EAST);
+        JPanel statusRight = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 4, 0));
+        statusRight.add(progressBar);
+        statusRight.add(methodInfoLabel);
+        statusRow.add(statusRight, BorderLayout.EAST);
         bottomPanel.add(statusRow, BorderLayout.NORTH);
         bottomPanel.add(toolBar, BorderLayout.CENTER);
 
@@ -2701,6 +2709,25 @@ public class ArkTSOutputProvider extends ComponentProvider {
      */
     public void showLoading(String message) {
         loadingLabel.setText(message + "  ");
+        // Parse "N/M" pattern from message to update progress bar
+        if (progressBar != null) {
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                    .compile("(\\d+)/(\\d+)").matcher(message);
+            if (m.find()) {
+                int done = Integer.parseInt(m.group(1));
+                int total = Integer.parseInt(m.group(2));
+                if (total > 0) {
+                    progressBar.setMaximum(total);
+                    progressBar.setValue(done);
+                    progressBar.setString(done + "/" + total);
+                    progressBar.setVisible(true);
+                    return;
+                }
+            }
+            progressBar.setIndeterminate(true);
+            progressBar.setString(null);
+            progressBar.setVisible(true);
+        }
     }
 
     /**
@@ -2708,6 +2735,11 @@ public class ArkTSOutputProvider extends ComponentProvider {
      */
     public void hideLoading() {
         loadingLabel.setText("  ");
+        if (progressBar != null) {
+            progressBar.setVisible(false);
+            progressBar.setIndeterminate(false);
+            progressBar.setValue(0);
+        }
     }
 
     /**
