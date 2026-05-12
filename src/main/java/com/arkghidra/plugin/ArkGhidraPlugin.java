@@ -380,13 +380,14 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             outputProvider.showMessage("// No ability classes found");
             return;
         }
-        outputProvider.showLoading("Decompiling abilities...");
-        new javax.swing.SwingWorker<Void, Void>() {
+        outputProvider.showLoading("Decompiling 0/" + abilityClasses.size() + "...");
+        new javax.swing.SwingWorker<String, String>() {
             @Override
-            protected Void doInBackground() {
+            protected String doInBackground() {
                 try {
                     ArkTSDecompiler decompiler = createDecompiler();
                     StringBuilder sb = new StringBuilder();
+                    int done = 0;
                     for (AbcClass cls : abilityClasses) {
                         String clsName = AbcStructureProvider.formatClassName(cls.getName());
                         sb.append("// ===== ").append(clsName).append(" =====\n\n");
@@ -399,21 +400,35 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                                 // skip failed methods
                             }
                         }
+                        done++;
+                        publish("Decompiling " + done + "/" + abilityClasses.size() + "...");
                     }
-                    final String result = sb.toString();
-                    javax.swing.SwingUtilities.invokeLater(() -> {
-                        outputProvider.showDecompiledCode(
-                                "All Abilities (" + abilityClasses.size() + ")", result);
-                        tool.showComponentProvider(outputProvider, true);
-                    });
+                    return sb.toString();
                 } catch (Exception e) {
                     Msg.error(OWNER, "Decompile all abilities failed", e);
+                    return "// Decompilation failed: " + e.getMessage();
                 }
-                return null;
             }
+
+            @Override
+            protected void process(java.util.List<String> chunks) {
+                if (!chunks.isEmpty()) {
+                    outputProvider.showLoading(chunks.get(chunks.size() - 1));
+                }
+            }
+
             @Override
             protected void done() {
-                outputProvider.hideLoading();
+                try {
+                    String result = get();
+                    outputProvider.showDecompiledCode(
+                            "All Abilities (" + abilityClasses.size() + ")", result);
+                    tool.showComponentProvider(outputProvider, true);
+                } catch (Exception e) {
+                    Msg.error(OWNER, "Decompile all abilities failed", e);
+                } finally {
+                    outputProvider.hideLoading();
+                }
             }
         }.execute();
     }
