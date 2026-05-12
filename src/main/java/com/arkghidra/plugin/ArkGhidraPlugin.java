@@ -1450,9 +1450,21 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                                         final String mth = method.getName();
                                         final String line = lines[i];
                                         final int lineNum = i + 1;
+                                        // Build context: 2 lines before and after
+                                        StringBuilder ctx = new StringBuilder();
+                                        for (int j = Math.max(0, i - 2);
+                                                j <= Math.min(lines.length - 1, i + 2); j++) {
+                                            if (j == i) {
+                                                ctx.append(">>> ");
+                                            } else {
+                                                ctx.append("    ");
+                                            }
+                                            ctx.append(lines[j]).append("\n");
+                                        }
+                                        final String context = ctx.toString().trim();
                                         javax.swing.SwingUtilities.invokeLater(() ->
-                                                globalSearchProvider.addResult(
-                                                        cls2, mth, line, lineNum));
+                                                globalSearchProvider.addResultWithContext(
+                                                        cls2, mth, line, lineNum, context));
                                     }
                                 }
                             } catch (Exception e) {

@@ -50,6 +50,7 @@ public class GlobalSearchProvider extends ComponentProvider {
     // Parallel lists storing the class/method for each displayed result entry
     private final List<String> resultMethodNames = new ArrayList<>();
     private final List<String> resultClassNames = new ArrayList<>();
+    private final List<String> resultContexts = new ArrayList<>();
 
     // Callback: double-click on a result navigates to that method (classAndMethod[0/1])
     private Consumer<String[]> navigationCallback;
@@ -88,7 +89,23 @@ public class GlobalSearchProvider extends ComponentProvider {
         topPanel.add(searchButton, BorderLayout.EAST);
 
         resultsModel = new DefaultListModel<>();
-        resultsList = new JList<>(resultsModel);
+        resultsList = new JList<>(resultsModel) {
+            @Override
+            public String getToolTipText(MouseEvent event) {
+                int idx = locationToIndex(event.getPoint());
+                if (idx >= 0 && idx < resultContexts.size()) {
+                    String ctx = resultContexts.get(idx);
+                    if (ctx != null && !ctx.isEmpty()) {
+                        return "<html><pre style='font-family:monospace;font-size:11px'>"
+                                + ctx.replace("&", "&amp;").replace("<", "&lt;")
+                                        .replace(">", "&gt;")
+                                + "</pre></html>";
+                    }
+                }
+                return null;
+            }
+        };
+        javax.swing.ToolTipManager.sharedInstance().registerComponent(resultsList);
         resultsList.setFont(new Font("Monospaced", Font.PLAIN, 12));
         resultsList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         resultsList.addMouseListener(new MouseAdapter() {
@@ -144,6 +161,7 @@ public class GlobalSearchProvider extends ComponentProvider {
         resultsModel.clear();
         resultMethodNames.clear();
         resultClassNames.clear();
+        resultContexts.clear();
         statusLabel.setText("Searching...");
     }
 
@@ -162,6 +180,26 @@ public class GlobalSearchProvider extends ComponentProvider {
         resultsModel.addElement(display);
         resultMethodNames.add(methodName);
         resultClassNames.add(className);
+        resultContexts.add(null); // context set separately via addResultWithContext
+    }
+
+    /**
+     * Adds a result with surrounding context lines for tooltip display.
+     *
+     * @param className  the class containing the match
+     * @param methodName the method containing the match
+     * @param lineText   the matching line text
+     * @param lineNumber the 1-based line number
+     * @param context    surrounding lines for tooltip (may be null)
+     */
+    public void addResultWithContext(String className, String methodName,
+            String lineText, int lineNumber, String context) {
+        String display = className + "." + methodName
+                + " [L" + lineNumber + "]:  " + lineText.trim();
+        resultsModel.addElement(display);
+        resultMethodNames.add(methodName);
+        resultClassNames.add(className);
+        resultContexts.add(context);
     }
 
     /**
