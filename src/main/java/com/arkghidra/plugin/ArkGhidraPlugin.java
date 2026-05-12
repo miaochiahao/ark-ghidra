@@ -597,10 +597,10 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         // Add recent items at the top (from history)
         java.util.List<String> recentNames = historyProvider.getRecentNames(5);
         if (!recentNames.isEmpty()) {
-            allItems.add("--- Recent ---");
+            allItems.add("--- Recently Decompiled ---");
             itemData.add(new Object[]{"separator", null, null});
             for (String recentName : recentNames) {
-                allItems.add("★ " + recentName);
+                allItems.add("★ " + recentName + " [recent]");
                 itemData.add(new Object[]{"recent", recentName, null});
             }
             allItems.add("--- All ---");
@@ -626,7 +626,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                     }
                 }
             }
-            allItems.add(badge + clsName + parentSuffix);
+            allItems.add(badge + clsName + parentSuffix + " (" + cls.getMethods().size() + "m)");
             itemData.add(new Object[]{"class", cls, null});
             for (AbcMethod method : cls.getMethods()) {
                 String prefix = AbcStructureProvider.formatMethodPrefix(method);
@@ -774,6 +774,23 @@ public class ArkGhidraPlugin extends ProgramPlugin {
             }
         });
 
+        // Ctrl+Enter (or Meta+Enter on macOS) decompiles the class containing the selected item
+        int ctrlMask = java.awt.event.InputEvent.CTRL_DOWN_MASK;
+        int metaMask = java.awt.event.InputEvent.META_DOWN_MASK;
+        javax.swing.KeyStroke ctrlEnter = javax.swing.KeyStroke.getKeyStroke(
+                java.awt.event.KeyEvent.VK_ENTER, ctrlMask);
+        javax.swing.KeyStroke metaEnter = javax.swing.KeyStroke.getKeyStroke(
+                java.awt.event.KeyEvent.VK_ENTER, metaMask);
+        filterField.getInputMap().put(ctrlEnter, "navigateClass");
+        filterField.getInputMap().put(metaEnter, "navigateClass");
+        filterField.getActionMap().put("navigateClass", new javax.swing.AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                navigateToQuickOpenSelectionAsClass(
+                        resultList, listModel, allItems, itemData, dialog);
+            }
+        });
+
         // Arrow keys in filter field move the list selection
         javax.swing.KeyStroke down = javax.swing.KeyStroke.getKeyStroke(
                 java.awt.event.KeyEvent.VK_DOWN, 0);
@@ -879,6 +896,36 @@ public class ArkGhidraPlugin extends ProgramPlugin {
                     jumpToDefinition((String) data[1]);
                 } else {
                     onMethodDoubleClicked((AbcMethod) data[1]);
+                }
+                return;
+            }
+        }
+    }
+
+    private void navigateToQuickOpenSelectionAsClass(JList<String> resultList,
+            DefaultListModel<String> listModel, List<String> allItems,
+            List<Object[]> itemData, JDialog dialog) {
+        int idx = resultList.getSelectedIndex();
+        if (idx < 0) {
+            return;
+        }
+        String selected = listModel.getElementAt(idx);
+        for (int i = 0; i < allItems.size(); i++) {
+            if (allItems.get(i).equals(selected)) {
+                Object[] data = itemData.get(i);
+                if ("separator".equals(data[0]) || "query".equals(data[0])) {
+                    return;
+                }
+                dialog.dispose();
+                AbcClass cls = null;
+                if ("class".equals(data[0])) {
+                    cls = (AbcClass) data[1];
+                } else if ("method".equals(data[0])) {
+                    cls = (AbcClass) data[2];
+                }
+                if (cls != null) {
+                    onClassClicked(cls);
+                    abcStructureProvider.selectClass(cls);
                 }
                 return;
             }
