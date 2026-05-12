@@ -34,7 +34,7 @@ import com.arkghidra.loader.HapMetadata;
  * Dockable panel that displays HAP module metadata parsed from module.json5.
  *
  * <p>Shows the module name, type, version, package, and the list of declared
- * abilities. Double-clicking an ability entry triggers a navigation callback
+ * abilities. Clicking an ability entry triggers a navigation callback
  * so the caller can jump to the corresponding class in the ABC structure.</p>
  */
 public class HapInfoProvider extends ComponentProvider {
@@ -70,8 +70,8 @@ public class HapInfoProvider extends ComponentProvider {
         abilitiesList.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2) {
-                    handleAbilityDoubleClick();
+                if (e.getClickCount() == 1) {
+                    handleAbilityClick();
                 }
             }
         });
@@ -96,7 +96,7 @@ public class HapInfoProvider extends ComponentProvider {
     }
 
     /**
-     * Sets the callback invoked when the user double-clicks an ability entry.
+     * Sets the callback invoked when the user clicks an ability entry.
      *
      * @param cb consumer that receives the ability name (e.g. "EntryAbility")
      */
@@ -195,7 +195,7 @@ public class HapInfoProvider extends ComponentProvider {
         return sb.toString();
     }
 
-    private void handleAbilityDoubleClick() {
+    private void handleAbilityClick() {
         int idx = abilitiesList.getSelectedIndex();
         if (idx < 0 || idx >= abilityNames.size() || abilityClickCallback == null) {
             return;

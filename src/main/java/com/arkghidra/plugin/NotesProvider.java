@@ -1,6 +1,7 @@
 package com.arkghidra.plugin;
 
 import java.awt.BorderLayout;
+import java.awt.Component;
 import java.awt.Font;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -20,6 +21,7 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 
 import javax.swing.BorderFactory;
+import javax.swing.DefaultListCellRenderer;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
 import javax.swing.JComponent;
@@ -101,6 +103,25 @@ public class NotesProvider extends ComponentProvider {
                 if (selected != null) {
                     setCurrentKey(selected);
                 }
+            }
+        });
+        annotatedList.setCellRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(
+                    JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                String key = (String) value;
+                String notes = notesMap.get(key);
+                if (notes != null && !notes.isEmpty()) {
+                    String firstLine = notes.split("\n")[0].trim();
+                    if (firstLine.length() > 80) {
+                        firstLine = firstLine.substring(0, 77) + "...";
+                    }
+                    setToolTipText(firstLine);
+                } else {
+                    setToolTipText(null);
+                }
+                return this;
             }
         });
 
@@ -330,7 +351,7 @@ public class NotesProvider extends ComponentProvider {
         notesList.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2) {
+                if (e.getClickCount() == 1) {
                     int idx = notesList.getSelectedIndex();
                     if (idx >= 0 && idx < keys.size()) {
                         setCurrentKey(keys.get(idx));
