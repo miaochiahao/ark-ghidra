@@ -210,6 +210,7 @@ public class ArkTSOutputProvider extends ComponentProvider {
     private Runnable quickOpenCallback;
     private Runnable pinCallback;
     private Runnable showHapExplorerCallback;
+    private Runnable showAndSelectInExplorerCallback;
     private Runnable showBookmarksCallback;
     private Runnable showHistoryCallback;
     private Runnable showXrefCallback;
@@ -337,6 +338,26 @@ public class ArkTSOutputProvider extends ComponentProvider {
                 codePane.setCaretPosition(offset);
                 scrollToOffset(offset);
                 codePane.requestFocusInWindow();
+            }
+        });
+        methodOutlineCombo.setRenderer(new javax.swing.DefaultListCellRenderer() {
+            private static final Color COLOR_LARGE = new Color(0xC62828);
+            private static final Color COLOR_MEDIUM = new Color(0xE65100);
+
+            @Override
+            public java.awt.Component getListCellRendererComponent(
+                    javax.swing.JList<?> list, Object value, int index,
+                    boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof OutlineEntry && !isSelected) {
+                    String label = ((OutlineEntry) value).label;
+                    if (label.endsWith(" \u25cf")) {
+                        setForeground(COLOR_LARGE);
+                    } else if (label.endsWith(" \u25cb")) {
+                        setForeground(COLOR_MEDIUM);
+                    }
+                }
+                return this;
             }
         });
         JPanel headerPanel = new JPanel(new BorderLayout(4, 0));
@@ -1407,6 +1428,17 @@ public class ArkTSOutputProvider extends ComponentProvider {
             }
         });
         toolBar.add(pinButton);
+
+        JButton showInTreeButton = new JButton("\u25B6\u25B6");
+        showInTreeButton.setToolTipText("Show current method/class in HAP Explorer (Ctrl+Shift+E)");
+        showInTreeButton.addActionListener(e -> {
+            if (showAndSelectInExplorerCallback != null) {
+                showAndSelectInExplorerCallback.run();
+            } else if (showHapExplorerCallback != null) {
+                showHapExplorerCallback.run();
+            }
+        });
+        toolBar.add(showInTreeButton);
         toolBar.addSeparator();
         JButton helpButton = new JButton("?");
         helpButton.setToolTipText("Keyboard shortcuts");
@@ -2594,6 +2626,15 @@ public class ArkTSOutputProvider extends ComponentProvider {
      */
     public void setShowHapExplorerCallback(Runnable callback) {
         this.showHapExplorerCallback = callback;
+    }
+
+    /**
+     * Sets a callback that shows the HAP Explorer AND selects the current method/class in the tree.
+     *
+     * @param callback the runnable to invoke
+     */
+    public void setShowAndSelectInExplorerCallback(Runnable callback) {
+        this.showAndSelectInExplorerCallback = callback;
     }
 
     /** Sets the callback for Ctrl+Shift+B (Show Bookmarks). */

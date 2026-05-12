@@ -165,6 +165,7 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         outputProvider.setPinCallback(this::pinCurrentView);
         outputProvider.setShowHapExplorerCallback(() ->
                 tool.showComponentProvider(abcStructureProvider, true));
+        outputProvider.setShowAndSelectInExplorerCallback(this::showCurrentInExplorer);
         outputProvider.setShowBookmarksCallback(() ->
                 tool.showComponentProvider(bookmarkProvider, true));
         outputProvider.setShowHistoryCallback(() ->
@@ -310,6 +311,45 @@ public class ArkGhidraPlugin extends ProgramPlugin {
         onClassClicked(classes.get(nextIdx));
         abcStructureProvider.selectClass(classes.get(nextIdx));
     }
+
+    private void showCurrentInExplorer() {
+        tool.showComponentProvider(abcStructureProvider, true);
+        AbcFile abcFile = getCurrentAbcFile();
+        if (abcFile == null) {
+            return;
+        }
+        // Try to select the current method first, then fall back to class
+        String funcName = outputProvider.getLastFunctionName();
+        String className = outputProvider.getLastClassName();
+        if (funcName != null && !funcName.isEmpty()) {
+            for (AbcClass cls : abcFile.getClasses()) {
+                for (AbcMethod method : cls.getMethods()) {
+                    String methodName = method.getName();
+                    int hashIdx = methodName.lastIndexOf('#');
+                    if (hashIdx >= 0) {
+                        methodName = methodName.substring(hashIdx + 1);
+                    }
+                    if (methodName.equals(funcName)) {
+                        abcStructureProvider.selectMethod(method);
+                        return;
+                    }
+                }
+            }
+        }
+        // Fall back to selecting the class
+        if (className != null && !className.isEmpty()) {
+            for (AbcClass cls : abcFile.getClasses()) {
+                String shortName = AbcStructureProvider.formatClassName(cls.getName());
+                String simpleName = shortName.contains(".")
+                        ? shortName.substring(shortName.lastIndexOf('.') + 1) : shortName;
+                if (simpleName.equals(className) || shortName.equals(className)) {
+                    abcStructureProvider.selectClass(cls);
+                    return;
+                }
+            }
+        }
+    }
+
 
     private void decompileAllAbilities() {
         Program program = getCurrentProgram();
